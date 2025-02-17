@@ -19,6 +19,8 @@ from duckduckgo_search import DDGS
 from bs4 import BeautifulSoup
 import concurrent.futures
 import html2text
+from prompt_toolkit import PromptSession
+from prompt_toolkit.key_binding import KeyBindings
 
 app = typer.Typer()
 console = Console()
@@ -86,6 +88,8 @@ Focus on creating APIs that are both powerful and developer-friendly."""
         }
     }
 }
+
+PROMPT_STYLE = None
 
 def load_config():
     """Load configuration from config file"""
@@ -314,14 +318,7 @@ def view_history():
             Prompt.ask("\n[yellow]Press Enter to continue[/yellow]")
 
 def interactive_chat(model: str, system_prompt: Optional[str] = None, context_files: Optional[list[str]] = None, existing_history: Optional[list] = None):
-    """Start an interactive chat session with the specified model
-    
-    Args:
-        model (str): Name of the model to use
-        system_prompt (Optional[str]): System prompt to use for the chat
-        context_files (Optional[list[str]]): List of files to include in context
-        existing_history (Optional[list]): Previous chat history to continue from
-    """
+    """Start an interactive chat session with the specified model"""
     config = load_config()
     
     # Validate model before starting chat
@@ -333,6 +330,23 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     console.clear()
     display_banner()
     console.print(f"\n[green]Starting chat with model: [bold]{model}[/bold][/green]")
+    
+    # Set up key bindings for drag-and-drop
+    kb = KeyBindings()
+    drag_drop_active = False
+
+    @kb.add('c-v')
+    def _(event):
+        nonlocal drag_drop_active
+        drag_drop_active = not drag_drop_active
+        if drag_drop_active:
+            console.print("\n[cyan]Drag & Drop mode activated (Ctrl+V to toggle)[/cyan]")
+            console.print("[cyan]Drag a file into the terminal...[/cyan]")
+        else:
+            console.print("\n[cyan]Drag & Drop mode deactivated[/cyan]")
+    
+    # Create prompt session with key bindings
+    session = PromptSession(key_bindings=kb)
     
     # Prepare system prompt with document context
     if context_files:
@@ -347,7 +361,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
         except Exception as e:
             console.print(f"[red]Error loading documents: {str(e)}[/red]")
             return
-    
+
     if not system_prompt and config["stored_prompts"]:
         # Offer to use a stored prompt
         console.print("\n[bold yellow]Stored System Prompts[/bold yellow]")
@@ -375,11 +389,29 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     if system_prompt:
         chat_history.append({"role": "system", "content": system_prompt})
 
+    console.print("\n[cyan]Chat started. Type 'exit' to end. Press Ctrl+V to toggle drag & drop mode.[/cyan]")
+
     while True:
         try:
-            user_input = Prompt.ask("\n[cyan]You[/cyan]")
+            # Use prompt_toolkit session for input
+            console.print("\nYou:", style="cyan")
+            user_input = session.prompt("  ").strip()  # Two spaces for proper alignment
+            
             if user_input.lower() in ['exit', 'quit', 'q']:
                 break
+
+            # Handle drag & drop mode
+            if drag_drop_active and user_input:
+                # Clean up the file path by removing escape characters and expanding user path
+                cleaned_path = os.path.expanduser(user_input.replace('\\', ''))
+                if os.path.exists(cleaned_path):
+                    try:
+                        content, file_type = read_file_content(cleaned_path)
+                        user_input = f"Here's the content of the {file_type}:\n\n{content}"
+                        console.print(f"[green]Successfully loaded file: {os.path.basename(cleaned_path)}[/green]")
+                    except Exception as e:
+                        console.print(f"[red]Error reading file: {str(e)}[/red]")
+                        continue
 
             chat_history.append({"role": "user", "content": user_input})
             

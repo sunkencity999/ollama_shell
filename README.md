@@ -9,7 +9,10 @@ Created by Christopher Bradford
 - 🤖 Interactive Chat Sessions
   - Multi-turn conversations with any Ollama model
   - System prompt support
-  - Document context integration (PDF, Word, text files)
+  - Document context integration:
+    - Drag-and-drop files directly into chat (toggle with Ctrl+V)
+    - Support for PDF, Word, and text files
+    - Automatic content extraction and analysis
   - Chat history management
   - Enhanced web search integration (prefix any query with "search:")
 
@@ -36,6 +39,11 @@ Created by Christopher Bradford
   - Word documents (.docx, .doc)
   - Text files (.txt, .md)
   - Code files (.py, .js, .html, .css, .json, .yaml)
+
+  Files can be:
+  - Dragged directly into the chat (toggle with Ctrl+V)
+  - Specified as context when starting a chat
+  - Referenced during conversation for analysis
 
 - 🎨 Beautiful UI
   - Retro-style ASCII art
@@ -177,6 +185,9 @@ The startup scripts will:
 
 ### Basic Commands
 - `chat`: Start an interactive chat session
+  - Use Ctrl+V to toggle drag-and-drop mode for files
+  - Simply drag any supported file into the terminal when in drag-and-drop mode
+  - The file content will be automatically processed and included in your conversation
 - `models`: List installed models
 - `pull`: Download a new model
 - `delete`: Remove an installed model
