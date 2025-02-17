@@ -203,6 +203,8 @@ This feature is particularly useful for:
 - Fact-checking
 - Gathering multiple perspectives on a topic
 
+The best part about the enhanced search feature is that it allows your LLM to have real-time information and analysis, making it a powerful tool for research and information gathering.
+
 ### Using Document Context
 1. Start a chat session
 2. When prompted, choose to include documents
@@ -260,7 +262,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-[Add your license information here]
+Standard MIT License
 
 ## Credits
 
