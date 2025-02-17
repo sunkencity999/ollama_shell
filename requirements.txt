@@ -1,0 +1,13 @@
+rich>=13.7.0
+typer>=0.9.0
+requests>=2.31.0
+pyfiglet>=1.0.2
+termcolor>=2.4.0
+duckduckgo-search>=4.1.1
+beautifulsoup4>=4.12.2
+python-dotenv>=1.0.0
+chromadb==0.4.22
+langchain==0.1.0
+PyPDF2>=3.0.0
+python-docx>=1.0.0
+html2text>=2020.1.16
