@@ -12,3 +12,5 @@ PyPDF2>=3.0.0
 python-docx>=1.0.0
 html2text>=2020.1.16
 prompt_toolkit>=3.0.36
+weasyprint>=60.1
+markdown2>=2.4.10

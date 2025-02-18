@@ -141,7 +141,7 @@ def display_banner():
     console.print(Panel(colored(banner, 'cyan'), border_style="cyan"))
     console.print(Panel("🚀 Your friendly neighborhood LLM interface", border_style="cyan"))
 
-def send_message(model: str, message: str, system_prompt: Optional[str] = None):
+def send_message(model: str, message: str, system_prompt: Optional[str] = None, stream: bool = True):
     """Enhanced message sending with configuration options"""
     config = load_config()
     url = f"{OLLAMA_API}/chat"
@@ -154,17 +154,37 @@ def send_message(model: str, message: str, system_prompt: Optional[str] = None):
         "options": {
             "temperature": config["temperature"],
             "num_ctx": config["context_length"]
-        }
+        },
+        "stream": stream
     }
+    # Remove None values from messages
     payload["messages"] = [msg for msg in payload["messages"] if msg is not None]
     
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, stream=stream)
         response.raise_for_status()
-        return response.json()
+        
+        if stream:
+            # Return the response object for streaming
+            return response
+        else:
+            # Process non-streaming response
+            try:
+                result = response.json()
+                if isinstance(result, dict) and "message" in result and "content" in result["message"]:
+                    return result
+                else:
+                    raise Exception("Unexpected response format")
+            except json.JSONDecodeError as e:
+                # If JSON parsing fails, try to extract content from raw response
+                content = response.text.strip()
+                if content:
+                    return {"message": {"content": content}}
+                else:
+                    raise Exception(f"Failed to parse response: {str(e)}")
+    
     except requests.exceptions.RequestException as e:
-        console.print(f"[red]Error: {str(e)}[/red]")
-        return None
+        raise Exception(f"Error sending message: {str(e)}")
 
 def get_available_models():
     """Get list of available models from Ollama"""
@@ -252,6 +272,7 @@ def view_history():
         console.print("[green]r number[/green]: Resume chat")
         console.print("[green]c[/green]: Clear all history")
         console.print("[green]x[/green]: Exit to main menu")
+        console.print("[green]e number[/green]: Export chat")
         
         choice = Prompt.ask("\n[yellow]Enter your choice[/yellow]")
         
@@ -296,6 +317,45 @@ def view_history():
                               system_prompt=next((msg["content"] for msg in chat["messages"] if msg["role"] == "system"), None),
                               existing_history=chat["messages"])
                 break
+        elif choice.startswith('e ') and choice[2:].isdigit():
+            chat_num = int(choice[2:])
+            if 1 <= chat_num <= len(history):
+                chat = history[chat_num - 1]
+                console.clear()
+                display_banner()
+                
+                # Export chat
+                console.print(f"\n[cyan]Exporting chat from {chat['timestamp']}[/cyan]")
+                console.print(f"[yellow]Model: {chat['model']}[/yellow]\n")
+                
+                # Ask for export format
+                console.print("\n[cyan]Select export format:[/cyan]")
+                console.print("[green]1[/green]. Markdown")
+                console.print("[green]2[/green]. HTML")
+                console.print("[green]3[/green]. PDF")
+                
+                choice = Prompt.ask("\n[yellow]Enter your choice[/yellow]", default="1")
+                
+                if choice == "1":
+                    format = "markdown"
+                elif choice == "2":
+                    format = "html"
+                elif choice == "3":
+                    format = "pdf"
+                else:
+                    console.print("[red]Invalid choice. Defaulting to markdown.[/red]")
+                    format = "markdown"
+                
+                # Ask for output file
+                output_file = Prompt.ask("\n[cyan]Enter output file name (or press Enter for default)[/cyan]", default="")
+                
+                try:
+                    output_path = export_chat(chat["messages"], format, output_file)
+                    console.print(f"\n[green]Chat exported successfully to {output_path}![/green]")
+                except Exception as e:
+                    console.print(f"\n[red]Error exporting chat: {str(e)}[/red]")
+                
+                Prompt.ask("\n[yellow]Press Enter to continue[/yellow]")
         elif choice.isdigit() and 1 <= int(choice) <= len(history):
             chat = history[int(choice) - 1]
             console.clear()
@@ -317,6 +377,142 @@ def view_history():
             
             Prompt.ask("\n[yellow]Press Enter to continue[/yellow]")
 
+def export_chat(chat_history: list, format: str = "markdown", output_file: str = None) -> str:
+    """Export chat history to various formats
+    
+    Args:
+        chat_history: List of chat messages
+        format: Output format (markdown, html, or pdf)
+        output_file: Optional output file path
+    
+    Returns:
+        str: Path to the exported file
+    """
+    if not chat_history:
+        raise ValueError("No chat history to export")
+    
+    # Generate timestamp for default filename
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Convert chat history to markdown
+    markdown_content = "# Chat History\n\n"
+    markdown_content += f"Exported on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    
+    for msg in chat_history:
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        
+        if role == "system":
+            markdown_content += f"### System\n{content}\n\n"
+        elif role == "user":
+            markdown_content += f"### You\n{content}\n\n"
+        elif role == "assistant":
+            markdown_content += f"### Assistant\n{content}\n\n"
+    
+    # Determine output path
+    if not output_file:
+        output_file = f"chat_export_{timestamp}.{format}"
+    
+    output_path = os.path.expanduser(output_file)
+    
+    try:
+        if format == "markdown":
+            # Save as markdown
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(markdown_content)
+        
+        elif format == "html":
+            # Convert markdown to HTML
+            import markdown2
+            html_content = markdown2.markdown(markdown_content, extras=["fenced-code-blocks", "tables"])
+            
+            # Add some basic styling
+            html_template = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <style>
+                    body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }}
+                    h1 {{ color: #2c3e50; }}
+                    h3 {{ color: #34495e; margin-top: 20px; }}
+                    pre {{ background-color: #f7f9fa; padding: 10px; border-radius: 5px; }}
+                    code {{ font-family: Monaco, monospace; }}
+                </style>
+            </head>
+            <body>
+                {html_content}
+            </body>
+            </html>
+            """
+            
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(html_template)
+        
+        elif format == "pdf":
+            # First convert to HTML, then to PDF
+            import markdown2
+            from weasyprint import HTML, CSS
+            from weasyprint.text.fonts import FontConfiguration
+            
+            html_content = markdown2.markdown(markdown_content, extras=["fenced-code-blocks", "tables"])
+            
+            # Add some basic styling with proper font configuration
+            font_config = FontConfiguration()
+            css = CSS(string='''
+                @page {
+                    size: letter;
+                    margin: 2cm;
+                }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                }
+                h1 {
+                    color: #2c3e50;
+                    font-size: 24px;
+                    margin-bottom: 20px;
+                }
+                h3 {
+                    color: #34495e;
+                    font-size: 18px;
+                    margin-top: 20px;
+                    margin-bottom: 10px;
+                }
+                pre {
+                    background-color: #f7f9fa;
+                    padding: 10px;
+                    border-radius: 5px;
+                    font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+                    font-size: 14px;
+                    white-space: pre-wrap;
+                }
+                code {
+                    font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+                    font-size: 14px;
+                }
+            ''', font_config=font_config)
+            
+            html_template = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+            </head>
+            <body>
+                {html_content}
+            </body>
+            </html>
+            """
+            
+            # Create PDF with proper font configuration
+            HTML(string=html_template).write_pdf(output_path, stylesheets=[css], font_config=font_config)
+        
+        else:
+            raise ValueError(f"Unsupported format: {format}")
+            
+    except Exception as e:
+        raise Exception(f"Error exporting chat: {str(e)}")
+
 def interactive_chat(model: str, system_prompt: Optional[str] = None, context_files: Optional[list[str]] = None, existing_history: Optional[list] = None):
     """Start an interactive chat session with the specified model"""
     config = load_config()
@@ -335,6 +531,13 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     kb = KeyBindings()
     drag_drop_active = False
 
+    # Create a class to hold mutable state
+    class ChatState:
+        def __init__(self):
+            self.document_context = ""
+            
+    chat_state = ChatState()
+
     @kb.add('c-v')
     def _(event):
         nonlocal drag_drop_active
@@ -348,19 +551,29 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     # Create prompt session with key bindings
     session = PromptSession(key_bindings=kb)
     
-    # Prepare system prompt with document context
+    # Initialize base system prompt
+    base_system_prompt = """You are a helpful assistant that can engage in general conversation while also referencing 
+    documents that have been shared. When discussing shared documents, be specific and reference their content when relevant.
+    However, you can also discuss other topics naturally."""
+    
+    if system_prompt:
+        base_system_prompt = system_prompt + "\n\n" + base_system_prompt
+    
+    # Prepare initial document context if files are provided
     if context_files:
         try:
-            document_context = prepare_document_context(context_files)
-            context_prompt = "You have access to the following documents:\n" + document_context
-            if system_prompt:
-                system_prompt = system_prompt + "\n\n" + context_prompt
-            else:
-                system_prompt = context_prompt
+            chat_state.document_context = prepare_document_context(context_files)
             console.print(f"[yellow]Loaded {len(context_files)} document(s) into context[/yellow]")
         except Exception as e:
             console.print(f"[red]Error loading documents: {str(e)}[/red]")
             return
+
+    # Function to get current system prompt with document context
+    def get_current_system_prompt():
+        current_prompt = base_system_prompt
+        if chat_state.document_context:
+            current_prompt += f"\n\nAvailable document context:\n{chat_state.document_context}"
+        return current_prompt
 
     if not system_prompt and config["stored_prompts"]:
         # Offer to use a stored prompt
@@ -379,15 +592,11 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
         choice = int(choice)
         
         if choice > 0:
-            system_prompt = prompts[choice - 1][1]["prompt"]
+            base_system_prompt = prompts[choice - 1][1]["prompt"] + "\n\n" + base_system_prompt
             console.print(f"\n[cyan]Using stored prompt: {prompts[choice - 1][0]}[/cyan]")
     
-    if system_prompt:
-        console.print(f"[yellow]System prompt: {system_prompt[:200]}... (truncated)[/yellow]\n")
-    
     chat_history = existing_history if existing_history else []
-    if system_prompt:
-        chat_history.append({"role": "system", "content": system_prompt})
+    chat_history.append({"role": "system", "content": get_current_system_prompt()})
 
     console.print("\n[cyan]Chat started. Type 'exit' to end. Press Ctrl+V to toggle drag & drop mode.[/cyan]")
 
@@ -398,6 +607,18 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
             user_input = session.prompt("  ").strip()  # Two spaces for proper alignment
             
             if user_input.lower() in ['exit', 'quit', 'q']:
+                # Offer to export chat before exiting
+                if chat_history and Prompt.ask("\nWould you like to export this chat? [y/N]").lower() == 'y':
+                    format_choice = Prompt.ask(
+                        "Choose format",
+                        choices=["markdown", "html", "pdf"],
+                        default="markdown"
+                    )
+                    try:
+                        output_file = export_chat(chat_history, format=format_choice)
+                        console.print(f"[green]Chat exported to: {output_file}[/green]")
+                    except Exception as e:
+                        console.print(f"[red]Error exporting chat: {str(e)}[/red]")
                 break
 
             # Handle drag & drop mode
@@ -407,66 +628,61 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                 if os.path.exists(cleaned_path):
                     try:
                         content, file_type = read_file_content(cleaned_path)
-                        user_input = f"Here's the content of the {file_type}:\n\n{content}"
-                        console.print(f"[green]Successfully loaded file: {os.path.basename(cleaned_path)}[/green]")
+                        # Update document context
+                        chat_state.document_context += f"\n\nContent from {os.path.basename(cleaned_path)} ({file_type}):\n{content}"
+                        
+                        # Create a message about the file being shared
+                        file_message = f"I've added a {file_type} to our conversation. Please analyze it and provide key insights. The content is:\n\n{content}"
+                        
+                        # Send message to model (non-streaming for file analysis)
+                        with console.status("[cyan]Analyzing document...[/cyan]"):
+                            try:
+                                response = send_message(model, file_message, get_current_system_prompt(), stream=False)
+                                if response and "message" in response and "content" in response["message"]:
+                                    assistant_message = response["message"]["content"]
+                                    chat_history.append({"role": "user", "content": file_message})
+                                    chat_history.append({"role": "assistant", "content": assistant_message})
+                                    console.print(f"\n[green]Successfully loaded file: {os.path.basename(cleaned_path)}[/green]")
+                                    console.print("\n[green]Assistant:[/green]")
+                                    console.print(Markdown(assistant_message))
+                                else:
+                                    console.print("[red]Error: Unexpected response format from model[/red]")
+                            except Exception as e:
+                                console.print(f"[red]Error getting model response: {str(e)}[/red]")
+                        continue
                     except Exception as e:
                         console.print(f"[red]Error reading file: {str(e)}[/red]")
                         continue
 
             chat_history.append({"role": "user", "content": user_input})
             
-            # Check for enhanced search query
-            if user_input.lower().startswith("search:"):
-                process_enhanced_search(user_input, model)
-                continue
-            
-            with console.status("[cyan]Thinking...[/cyan]"):
-                response = requests.post(
-                    f"{OLLAMA_API}/chat",
-                    json={
-                        "model": model,
-                        "messages": chat_history,
-                        "stream": False,  # Disable streaming for now
-                        "options": {
-                            "temperature": config["temperature"],
-                            "num_ctx": config["context_length"]
-                        }
-                    }
-                )
+            # Regular chat - use streaming response with current context
+            try:
+                with console.status("[cyan]Thinking...[/cyan]"):
+                    response = send_message(model, user_input, get_current_system_prompt(), stream=True)
+                    assistant_message = ""
+                    console.print("\n[green]Assistant:[/green]")
                 
-                if response.status_code == 200:
-                    try:
-                        response_data = response.json()
-                        if "message" in response_data and "content" in response_data["message"]:
-                            assistant_response = response_data["message"]["content"]
-                            chat_history.append({"role": "assistant", "content": assistant_response})
-                            
-                            if config["verbose"]:
-                                console.print("\n[purple]Assistant (verbose)[/purple]")
-                                console.print(Panel(str(response_data), border_style="purple"))
-                            else:
-                                console.print("\n[purple]Assistant[/purple]")
-                                console.print(Panel(Markdown(assistant_response), border_style="purple"))
-                            
-                            if config["save_history"]:
-                                save_history(model, chat_history)
-                        else:
-                            console.print("\n[red]Error: Unexpected response format from Ollama[/red]")
-                    except json.JSONDecodeError as e:
-                        console.print(f"\n[red]Error parsing response: {str(e)}[/red]")
-                        if config["verbose"]:
-                            console.print(f"\n[red]Response content: {response.text}[/red]")
-                else:
-                    error_msg = f"Error: {response.status_code}"
-                    try:
-                        error_data = response.json()
-                        if "error" in error_data:
-                            error_msg = f"Error: {error_data['error']}"
-                    except:
-                        if response.text:
-                            error_msg = f"Error: {response.text}"
-                    console.print(f"\n[red]{error_msg}[/red]")
-
+                # Stream the response outside the loading animation
+                for line in response.iter_lines():
+                    if line:
+                        try:
+                            data = json.loads(line)
+                            if "message" in data:
+                                content = data["message"].get("content", "")
+                                assistant_message += content
+                                console.print(content, end="")
+                        except json.JSONDecodeError:
+                            continue
+                
+                console.print()  # New line after streaming
+                chat_history.append({"role": "assistant", "content": assistant_message})
+                
+                if config["save_history"]:
+                    save_history(model, chat_history)
+            except Exception as e:
+                console.print(f"\n[red]Error: {str(e)}[/red]")
+        
         except KeyboardInterrupt:
             console.print("\n[yellow]Exiting chat...[/yellow]")
             break
@@ -482,57 +698,83 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
 
 def display_help():
     """Display comprehensive help information"""
-    help_text = """
-🚀 Ollama Shell Help
-
-Commands:
---------
-chat                Start an interactive chat session
-                    - Use Ctrl+V to toggle drag-and-drop mode for files
-                    - Drag supported files directly into chat when in drag-and-drop mode
-                    - Files are automatically processed and included in conversation
-
-models             List available models and their details
-                   - Shows model name, size, and modified date
-                   - Use this to see what models you have installed
-
-pull <model>       Download a new model from Ollama
-                   - Example: pull llama2
-                   - Shows download progress
-
-delete <model>     Remove a model from Ollama
-                   - Example: delete llama2
-                   - Frees up disk space
-
-prompt             Send a single prompt to the model
-                   - Quick way to get a one-time response
-                   - Example: prompt "What is Python?"
-
-config             View or modify configuration settings
-                   - Set default model
-                   - Toggle verbose mode
-                   - Adjust temperature and context length
-                   - Manage history saving
-
-history            View and manage chat history
-                   - Browse past conversations
-                   - Search through history
-                   - Delete specific conversations
-
-Special Features:
----------------
-Search:            Prefix any message with "search:" to get web-enhanced responses
-                   Example: search: what's the latest news about AI?
-
-File Support:      Supported file types:
-                   - PDF files (.pdf)
-                   - Word documents (.docx, .doc)
-                   - Text files (.txt, .md)
-                   - Code files (.py, .js, .html, .css, .json, .yaml)
-
-Need more help? Visit: https://github.com/sunkencity999/ollama_shell
-"""
-    console.print(Panel(help_text, title="Help", border_style="cyan"))
+    # Title
+    f = Figlet(font='slant')
+    title = f.renderText('Ollama Shell')
+    console.print(Panel(colored(title, 'cyan'), border_style="cyan"))
+    console.print(Panel("A powerful interface for chatting with and managing your Ollama models", border_style="cyan"))
+    
+    # Chat Commands
+    console.print("\n[bold yellow]Chat Commands[/bold yellow]")
+    chat_commands = [
+        ("chat", "Start an interactive chat session", "chat [--model MODEL] [--system-prompt PROMPT]"),
+        ("prompt", "Send a single prompt", "prompt [--model MODEL] PROMPT_TEXT"),
+        ("history", "View chat history", "history"),
+        ("export", "Export chat to file", "export [--format FORMAT] [--output FILE] [--history-id ID]")
+    ]
+    
+    for cmd, desc, usage in chat_commands:
+        console.print(f"[cyan]{cmd}[/cyan]: {desc}")
+        console.print(f"  Usage: {usage}\n")
+    
+    # Model Management
+    console.print("\n[bold yellow]Model Management[/bold yellow]")
+    model_commands = [
+        ("models", "List available models", "models"),
+        ("pull", "Download a new model", "pull MODEL_NAME"),
+        ("delete", "Delete an installed model", "delete MODEL_NAME")
+    ]
+    
+    for cmd, desc, usage in model_commands:
+        console.print(f"[cyan]{cmd}[/cyan]: {desc}")
+        console.print(f"  Usage: {usage}\n")
+    
+    # System Prompts
+    console.print("\n[bold yellow]System Prompts[/bold yellow]")
+    prompt_commands = [
+        ("prompts", "Manage system prompts", "prompts")
+    ]
+    
+    console.print("[cyan]prompts[/cyan]: Manage your stored system prompts")
+    console.print("  Features:")
+    console.print("  • Save frequently used system prompts")
+    console.print("  • View and edit existing prompts")
+    console.print("  • Delete unused prompts")
+    console.print("  • Select saved prompts when starting a chat")
+    console.print("  Usage: prompts\n")
+    
+    # Configuration
+    console.print("\n[bold yellow]Configuration[/bold yellow]")
+    config_commands = [
+        ("settings", "View or modify settings", "settings [--show] [OPTIONS...]")
+    ]
+    
+    for cmd, desc, usage in config_commands:
+        console.print(f"[cyan]{cmd}[/cyan]: {desc}")
+        console.print(f"  Usage: {usage}\n")
+    
+    # Special Features
+    console.print("\n[bold yellow]Special Features[/bold yellow]")
+    features = [
+        "💡 Use arrow keys to navigate through command history in chat",
+        "💡 Set your preferred model in config to avoid specifying it each time",
+        "💡 Enable verbose mode in config for detailed API responses",
+        "💡 Save frequently used system prompts for quick access",
+        "💡 Check the history command to continue previous conversations",
+        "💡 Use Ctrl+V to toggle drag-and-drop mode for files",
+        "💡 Export chats to markdown, HTML, or PDF formats"
+    ]
+    
+    for feature in features:
+        console.print(f"  {feature}")
+    
+    # Additional Resources
+    console.print("\n[bold yellow]Additional Resources[/bold yellow]")
+    console.print("📚 Ollama Documentation: [link]https://ollama.ai/docs[/link]")
+    console.print("🐙 Project Repository: [link]https://github.com/sunkencity999/ollama_shell[/link]")
+    
+    # Wait for user input
+    Prompt.ask("\n[dim]Press Enter to return to menu...[/dim]")
 
 @app.command()
 def help():
@@ -964,7 +1206,22 @@ def read_file_content(file_path: str) -> tuple[str, str]:
             try:
                 from docx import Document
                 doc = Document(file_path)
-                text = '\n'.join(paragraph.text for paragraph in doc.paragraphs)
+                # Extract text from paragraphs and tables
+                text_parts = []
+                
+                # Get text from paragraphs
+                for para in doc.paragraphs:
+                    text_parts.append(para.text)
+                
+                # Get text from tables
+                for table in doc.tables:
+                    for row in table.rows:
+                        row_text = []
+                        for cell in row.cells:
+                            row_text.append(cell.text.strip())
+                        text_parts.append(" | ".join(row_text))
+                
+                text = "\n".join(text_parts)
                 return text, "Word document"
             except ImportError:
                 raise ImportError("python-docx is required for Word document support. Install it with: pip install python-docx")
@@ -1209,19 +1466,14 @@ def process_enhanced_search(query: str, model: str) -> None:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
-                    "stream": True
+                    "stream": False
                 }
             )
         
         if response.status_code == 200:
             # Print the analysis
             console.print("\n[bold cyan]Analysis:[/bold cyan]")
-            for line in response.iter_lines():
-                if line:
-                    data = json.loads(line)
-                    if "message" in data:
-                        content = data["message"].get("content", "")
-                        console.print(content, end="")
+            console.print(Markdown(response.json()["message"]["content"]))
             
             # Print sources
             console.print("\n\n[bold cyan]Sources:[/bold cyan]")
