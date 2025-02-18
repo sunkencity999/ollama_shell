@@ -109,7 +109,7 @@ The startup scripts will:
    curl https://ollama.ai/install.sh | sh
    
    # Clone the repository
-   git clone <repository-url>
+   git clone https://github.com/sunkencity999/ollama_shell
    cd ollamaShell
    
    # Run the install script
@@ -127,7 +127,7 @@ The startup scripts will:
 2. Install Python dependencies:
    ```bash
    # Clone the repository
-   git clone <repository-url>
+   git clone https://github.com/sunkencity999/ollama_shell
    cd ollamaShell
    
    # Create virtual environment
@@ -157,7 +157,7 @@ The startup scripts will:
 3. Install the application:
    ```powershell
    # Clone the repository
-   git clone <repository-url>
+   git clone https://github.com/sunkencity999/ollama_shell
    cd ollamaShell
    
    # Create virtual environment

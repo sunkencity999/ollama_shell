@@ -482,84 +482,57 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
 
 def display_help():
     """Display comprehensive help information"""
-    # Title
-    f = Figlet(font='slant')
-    title = f.renderText('Ollama Shell')
-    console.print(Panel(colored(title, 'cyan'), border_style="cyan"))
-    console.print(Panel("A powerful interface for chatting with and managing your Ollama models", border_style="cyan"))
-    
-    # Chat Commands
-    console.print("\n[bold yellow]Chat Commands[/bold yellow]")
-    chat_commands = [
-        ("chat", "Start an interactive chat session", "chat [--model MODEL] [--system-prompt PROMPT]"),
-        ("prompt", "Send a single prompt", "prompt [--model MODEL] PROMPT_TEXT"),
-        ("history", "View chat history", "history")
-    ]
-    
-    for cmd, desc, usage in chat_commands:
-        console.print(f"[cyan]{cmd}[/cyan]: {desc}")
-        console.print(f"  Usage: {usage}\n")
-    
-    # Model Management
-    console.print("\n[bold yellow]Model Management[/bold yellow]")
-    model_commands = [
-        ("models", "List available models", "models"),
-        ("pull", "Download a new model", "pull MODEL_NAME"),
-        ("delete", "Delete an installed model", "delete MODEL_NAME")
-    ]
-    
-    for cmd, desc, usage in model_commands:
-        console.print(f"[cyan]{cmd}[/cyan]: {desc}")
-        console.print(f"  Usage: {usage}\n")
-    
-    # System Prompts
-    console.print("\n[bold yellow]System Prompts[/bold yellow]")
-    prompt_commands = [
-        ("prompts", "Manage system prompts", "prompts")
-    ]
-    
-    console.print("[cyan]prompts[/cyan]: Manage your stored system prompts")
-    console.print("  Features:")
-    console.print("  • Save frequently used system prompts")
-    console.print("  • View and edit existing prompts")
-    console.print("  • Delete unused prompts")
-    console.print("  • Select saved prompts when starting a chat")
-    console.print("  Usage: prompts\n")
-    
-    # Configuration
-    console.print("\n[bold yellow]Configuration[/bold yellow]")
-    config_commands = [
-        ("settings", "View or modify settings", "settings [--show] [OPTIONS...]")
-    ]
-    
-    for cmd, desc, usage in config_commands:
-        console.print(f"[cyan]{cmd}[/cyan]: {desc}")
-        console.print(f"  Usage: {usage}\n")
-    
-    # Tips section
-    console.print("\n[bold yellow]Pro Tips[/bold yellow]")
-    tips = [
-        "💡 Use arrow keys to navigate through command history in chat",
-        "💡 Set your preferred model in config to avoid specifying it each time",
-        "💡 Enable verbose mode in config for detailed API responses",
-        "💡 Save frequently used system prompts for quick access",
-        "💡 Check the history command to continue previous conversations"
-    ]
-    
-    for tip in tips:
-        console.print(f"  {tip}")
-    
-    # Additional Resources
-    console.print("\n[bold yellow]Additional Resources[/bold yellow]")
-    console.print("📚 Ollama Documentation: [link]https://ollama.ai/docs[/link]")
-    console.print("🐙 Project Repository: [link]https://github.com/ollama/ollama[/link]")
-    
-    # Wait for user input
-    Prompt.ask("\n[dim]Press Enter to return to menu...[/dim]")
+    help_text = """
+🚀 Ollama Shell Help
 
-def help():
-    """Show help information about available commands"""
-    display_help()
+Commands:
+--------
+chat                Start an interactive chat session
+                    - Use Ctrl+V to toggle drag-and-drop mode for files
+                    - Drag supported files directly into chat when in drag-and-drop mode
+                    - Files are automatically processed and included in conversation
+
+models             List available models and their details
+                   - Shows model name, size, and modified date
+                   - Use this to see what models you have installed
+
+pull <model>       Download a new model from Ollama
+                   - Example: pull llama2
+                   - Shows download progress
+
+delete <model>     Remove a model from Ollama
+                   - Example: delete llama2
+                   - Frees up disk space
+
+prompt             Send a single prompt to the model
+                   - Quick way to get a one-time response
+                   - Example: prompt "What is Python?"
+
+config             View or modify configuration settings
+                   - Set default model
+                   - Toggle verbose mode
+                   - Adjust temperature and context length
+                   - Manage history saving
+
+history            View and manage chat history
+                   - Browse past conversations
+                   - Search through history
+                   - Delete specific conversations
+
+Special Features:
+---------------
+Search:            Prefix any message with "search:" to get web-enhanced responses
+                   Example: search: what's the latest news about AI?
+
+File Support:      Supported file types:
+                   - PDF files (.pdf)
+                   - Word documents (.docx, .doc)
+                   - Text files (.txt, .md)
+                   - Code files (.py, .js, .html, .css, .json, .yaml)
+
+Need more help? Visit: https://github.com/sunkencity999/ollama_shell
+"""
+    console.print(Panel(help_text, title="Help", border_style="cyan"))
 
 @app.command()
 def help():
