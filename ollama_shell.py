@@ -517,6 +517,11 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     """Start an interactive chat session with the specified model"""
     config = load_config()
     
+    # Create a separator style
+    separator = "─" * (console.width - 2)  # -2 to account for spacing
+    user_separator = f"[blue]{separator}[/blue]"
+    assistant_separator = f"[green]{separator}[/green]"
+    
     # Validate model before starting chat
     is_valid, error_message = validate_model(model)
     if not is_valid:
@@ -614,6 +619,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     while True:
         try:
             # Use prompt_toolkit session for input
+            console.print(user_separator)
             console.print("\nYou:", style="cyan")
             user_input = session.prompt("  ").strip()  # Two spaces for proper alignment
             
@@ -687,10 +693,14 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                             continue
                 
                 console.print()  # New line after streaming
-                chat_history.append({"role": "assistant", "content": assistant_message})
+                console.print(assistant_separator)  # Separator after assistant's response
+                
+                # Add to history
+                messages = chat_history
+                messages.append({"role": "assistant", "content": assistant_message})
                 
                 if config["save_history"]:
-                    save_history(model, chat_history)
+                    save_history(model, messages)
             except Exception as e:
                 console.print(f"\n[red]Error: {str(e)}[/red]")
         
