@@ -409,9 +409,13 @@ def export_chat(chat_history: list, format: str = "markdown", output_file: str =
         elif role == "assistant":
             markdown_content += f"### Assistant\n{content}\n\n"
     
+    # Create output directory if it doesn't exist
+    output_dir = os.path.expanduser("~/ollama_shell_exports")
+    os.makedirs(output_dir, exist_ok=True)
+    
     # Determine output path
     if not output_file:
-        output_file = f"chat_export_{timestamp}.{format}"
+        output_file = os.path.join(output_dir, f"chat_export_{timestamp}.{format}")
     
     output_path = os.path.expanduser(output_file)
     
@@ -509,6 +513,8 @@ def export_chat(chat_history: list, format: str = "markdown", output_file: str =
         
         else:
             raise ValueError(f"Unsupported format: {format}")
+        
+        return output_path
             
     except Exception as e:
         raise Exception(f"Error exporting chat: {str(e)}")
