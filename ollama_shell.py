@@ -527,6 +527,17 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     display_banner()
     console.print(f"\n[green]Starting chat with model: [bold]{model}[/bold][/green]")
     
+    # Display existing chat history if present
+    if existing_history:
+        console.print("\n[yellow]Resuming previous chat...[/yellow]")
+        for message in existing_history:
+            if message["role"] == "user":
+                console.print("\nYou:", style="cyan")
+                console.print(f"  {message['content']}")
+            elif message["role"] == "assistant":
+                console.print("\n[green]Assistant:[/green]")
+                console.print(Markdown(message["content"]))
+    
     # Set up key bindings for drag-and-drop
     kb = KeyBindings()
     drag_drop_active = False
