@@ -513,14 +513,69 @@ def export_chat(chat_history: list, format: str = "markdown", output_file: str =
     except Exception as e:
         raise Exception(f"Error exporting chat: {str(e)}")
 
+def get_model_context_window(model: str) -> int:
+    """Get the context window size for a specific model"""
+    try:
+        response = requests.get(f"{OLLAMA_API}/show", params={"name": model})
+        if response.status_code == 200:
+            model_info = response.json()
+            # Extract context window from model parameters
+            if "parameters" in model_info:
+                return model_info["parameters"].get("num_ctx", 4096)  # Default to 4096 if not specified
+        return 4096  # Default fallback
+    except Exception:
+        return 4096  # Default fallback
+
+def count_tokens(text: str, model: str = None) -> int:
+    """Count the number of tokens in a text string"""
+    try:
+        # Use Ollama's tokenize endpoint
+        response = requests.post(
+            f"{OLLAMA_API}/tokenize",
+            json={"model": model, "content": text}
+        )
+        if response.status_code == 200:
+            return len(response.json().get("tokens", []))
+    except Exception:
+        pass
+    
+    # Fallback to character-based approximation
+    return len(text) // 4  # Rough approximation: ~4 characters per token
+
+def format_token_count(current: int, max_tokens: int) -> str:
+    """Format token count for display with progress bar"""
+    percentage = (current / max_tokens) * 100
+    color = "green" if percentage < 70 else "yellow" if percentage < 90 else "red"
+    
+    # Create a visual progress bar
+    bar_width = 20
+    filled = int(bar_width * (current / max_tokens))
+    bar = f"[{color}]{'█' * filled}{'░' * (bar_width - filled)}[/{color}]"
+    
+    return f"{bar} {current}/{max_tokens} tokens ({percentage:.1f}%)"
+
 def interactive_chat(model: str, system_prompt: Optional[str] = None, context_files: Optional[list[str]] = None, existing_history: Optional[list] = None):
     """Start an interactive chat session with the specified model"""
     config = load_config()
+    max_tokens = get_model_context_window(model)
+    current_tokens = 0
     
     # Create a separator style
     separator = "─" * (console.width - 2)  # -2 to account for spacing
     user_separator = f"[blue]{separator}[/blue]"
     assistant_separator = f"[green]{separator}[/green]"
+    
+    # Calculate initial token count from system prompt
+    if system_prompt:
+        current_tokens += count_tokens(system_prompt, model)
+    
+    # Show initial token window
+    console.print(Panel(
+        format_token_count(current_tokens, max_tokens),
+        title="[blue]Context Window[/blue]",
+        border_style="blue",
+        padding=(0, 1)
+    ))
     
     # Validate model before starting chat
     is_valid, error_message = validate_model(model)
@@ -692,8 +747,21 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                         except json.JSONDecodeError:
                             continue
                 
+                # Update token counts
+                user_tokens = count_tokens(user_input, model)
+                assistant_tokens = count_tokens(assistant_message, model)
+                current_tokens += user_tokens + assistant_tokens
+                
                 console.print()  # New line after streaming
                 console.print(assistant_separator)  # Separator after assistant's response
+                
+                # Show updated token count
+                console.print(Panel(
+                    format_token_count(current_tokens, max_tokens),
+                    title="[blue]Context Window[/blue]",
+                    border_style="blue",
+                    padding=(0, 1)
+                ))
                 
                 # Add to history
                 messages = chat_history
