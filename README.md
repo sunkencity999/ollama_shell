@@ -148,7 +148,7 @@ The startup scripts will:
 
 1. Install Ollama:
    - Install WSL2 if not already installed
-   - Follow the Windows installation instructions at [ollama.ai](https://ollama.ai)
+   - Follow the Windows installation instructions at [ollama.com](https://ollama.com)
 
 2. Install Python:
    - Download Python 3.8+ from [python.org](https://python.org)
@@ -246,7 +246,7 @@ The `config.json` file stores your preferences:
 
 2. "Model not found"
    - Run `./ollama_shell.py pull <model_name>`
-   - Check available models at [ollama.ai/library](https://ollama.ai/library)
+   - Check available models at [ollama.com/library](https://ollama.com/library)
 
 3. "Permission denied"
    - Make scripts executable:
