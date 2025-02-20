@@ -30,7 +30,7 @@ console = Console()
 OLLAMA_API = "http://localhost:11434/api"
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 DEFAULT_CONFIG = {
-    "default_model": "llama2",
+    "default_model": "llama3.2:latest",
     "verbose": False,
     "save_history": True,
     "history_file": "~/.ollama_shell_history",
@@ -141,7 +141,7 @@ def display_banner():
     f = Figlet(font='slant')
     banner = f.renderText('Ollama Shell')
     console.print(Panel(colored(banner, 'cyan'), border_style="cyan"))
-    console.print(Panel("🚀 Your friendly neighborhood LLM interface", border_style="cyan"))
+    console.print(Panel("🚀 Your friendly command-line LLM interface", border_style="cyan"))
 
 def send_message(model: str, message: str, system_prompt: Optional[str] = None, stream: bool = True):
     """Enhanced message sending with configuration options"""
