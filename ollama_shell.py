@@ -21,6 +21,8 @@ import concurrent.futures
 import html2text
 from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
+import pyperclip
+from bs4 import BeautifulSoup
 
 app = typer.Typer()
 console = Console()
@@ -566,22 +568,13 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     max_tokens = get_model_context_window(model)
     current_tokens = 0
     
-    # Create a separator style
-    separator = "─" * (console.width - 2)  # -2 to account for spacing
+    # Create separator styles
+    copy_text = "(Ctrl+C to copy)"
+    separator_width = console.width - 2 - len(copy_text) - 1  # -2 for margins, -1 for space
+    separator = "─" * separator_width
+    
     user_separator = f"[blue]{separator}[/blue]"
-    assistant_separator = f"[green]{separator}[/green]"
-    
-    # Calculate initial token count from system prompt
-    if system_prompt:
-        current_tokens += count_tokens(system_prompt, model)
-    
-    # Show initial token window
-    console.print(Panel(
-        format_token_count(current_tokens, max_tokens),
-        title="[blue]Context Window[/blue]",
-        border_style="blue",
-        padding=(0, 1)
-    ))
+    assistant_separator = f"[green]{separator}[/green] [cyan]{copy_text}[/cyan]"
     
     # Validate model before starting chat
     is_valid, error_message = validate_model(model)
@@ -604,11 +597,10 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                 console.print("\n[green]Assistant:[/green]")
                 console.print(Markdown(message["content"]))
     
-    # Set up key bindings for drag-and-drop
+    # Set up key bindings for drag-and-drop and clipboard
     kb = KeyBindings()
     drag_drop_active = False
 
-    # Create a class to hold mutable state
     class ChatState:
         def __init__(self):
             self.document_context = ""
@@ -624,6 +616,15 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
             console.print("[cyan]Drag a file into the terminal...[/cyan]")
         else:
             console.print("\n[cyan]Drag & Drop mode deactivated[/cyan]")
+    
+    @kb.add('c-c')
+    def _(event):
+        nonlocal last_response
+        if last_response:
+            pyperclip.copy(last_response)
+            console.print("\n[cyan]Last response copied to clipboard![/cyan]")
+        else:
+            console.print("\n[yellow]No response to copy[/yellow]")
     
     # Create prompt session with key bindings
     session = PromptSession(key_bindings=kb)
@@ -675,7 +676,11 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     chat_history = existing_history if existing_history else []
     chat_history.append({"role": "system", "content": get_current_system_prompt()})
 
-    console.print("\n[cyan]Chat started. Type 'exit' to end. Press Ctrl+V to toggle drag & drop mode.[/cyan]")
+    console.print("\n[cyan]Chat started. Type 'exit' to end.[/cyan]")
+    console.print("[cyan]• Press Ctrl+V to toggle drag & drop mode[/cyan]")
+    console.print("[cyan]• Press Ctrl+C to copy assistant responses[/cyan]")
+
+    last_response = ""
 
     while True:
         try:
@@ -753,21 +758,23 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                         except json.JSONDecodeError:
                             continue
                 
+                console.print()  # New line after streaming
+                console.print(assistant_separator)  # Separator after assistant's response
+                
                 # Update token counts
                 user_tokens = count_tokens(user_input, model)
                 assistant_tokens = count_tokens(assistant_message, model)
                 current_tokens += user_tokens + assistant_tokens
                 
-                console.print()  # New line after streaming
-                console.print(assistant_separator)  # Separator after assistant's response
-                
-                # Show updated token count
                 console.print(Panel(
                     format_token_count(current_tokens, max_tokens),
                     title="[blue]Context Window[/blue]",
                     border_style="blue",
                     padding=(0, 1)
                 ))
+                
+                # Update last response for clipboard
+                last_response = assistant_message
                 
                 # Add to history
                 messages = chat_history
@@ -1586,3 +1593,6 @@ if __name__ == "__main__":
         display_menu()
     else:
         app()
+
+def strip_tags(html):
+    return BeautifulSoup(html, 'html.parser').get_text()
