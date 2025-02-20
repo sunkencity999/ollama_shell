@@ -737,6 +737,26 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                         console.print(f"[red]Error reading file: {str(e)}[/red]")
                         continue
 
+            # Check for search command
+            if user_input.lower().startswith("search:"):
+                search_query = user_input[7:].strip()  # Remove "search:" prefix
+                console.print("[yellow]Performing web search and analysis...[/yellow]")
+                
+                try:
+                    # Perform web search and get analysis
+                    search_results = process_enhanced_search(search_query, model)
+                    
+                    # Add search results to chat history
+                    chat_history.append({"role": "user", "content": f"Web search query: {search_query}"})
+                    chat_history.append({"role": "assistant", "content": search_results})
+                    
+                    # Display results
+                    console.print(Panel(Markdown(search_results), title="Search Results & Analysis", border_style="blue"))
+                    continue
+                except Exception as e:
+                    console.print(f"[red]Error during search: {str(e)}[/red]")
+                    continue
+
             chat_history.append({"role": "user", "content": user_input})
             
             # Regular chat - use streaming response with current context
@@ -1534,29 +1554,37 @@ def fetch_webpage_content(url: str) -> str:
         console.print(f"[dim red]Error processing {url}: {str(e)}[/dim red]")
     return ""
 
-def process_enhanced_search(query: str, model: str) -> None:
-    """Process an enhanced search query with web results"""
+def process_enhanced_search(query: str, model: str) -> str:
+    """Process an enhanced search query with web results and return formatted analysis"""
     try:
-        # Strip the "search:" prefix
+        # Strip the "search:" prefix if present
         search_query = query.replace("search:", "", 1).strip()
         
         with console.status("[cyan]Searching the web...[/cyan]"):
             results, context = perform_web_search(search_query)
         
         if not results:
-            console.print("[red]No search results found.[/red]")
-            return
+            return "No search results found for your query. Please try a different search term."
         
         # Prepare system prompt for analysis
         system_prompt = """You are a helpful AI assistant that analyzes search results and provides comprehensive summaries. 
-        For the given query, analyze the search results and provide:
-        1. A clear, concise answer or summary
-        2. Key points from multiple sources
-        3. Any relevant caveats or limitations
-        Base your response only on the provided search results."""
+        For the given query, provide a well-structured analysis including:
+        1. A direct answer or summary addressing the main query
+        2. Key findings and insights from the search results
+        3. Supporting evidence from multiple sources where available
+        4. Any important caveats, limitations, or conflicting information
+        5. Relevant quotes or specific details that support the analysis
+        
+        Format your response in clear sections with markdown headings and bullet points for readability.
+        Base your response solely on the provided search results."""
         
         # Prepare the prompt for the LLM
-        prompt = f"Query: {search_query}\n\nPlease analyze these search results and provide a comprehensive summary:\n\n{context}"
+        prompt = f"""Query: {search_query}
+
+Please analyze these search results and provide a comprehensive summary following the structure outlined in the system prompt.
+
+Search Results:
+{context}"""
         
         # Send to Ollama
         with console.status("[cyan]Analyzing search results...[/cyan]"):
@@ -1571,22 +1599,20 @@ def process_enhanced_search(query: str, model: str) -> None:
                     "stream": False
                 }
             )
-        
-        if response.status_code == 200:
-            # Print the analysis
-            console.print("\n[bold cyan]Analysis:[/bold cyan]")
-            console.print(Markdown(response.json()["message"]["content"]))
             
-            # Print sources
-            console.print("\n\n[bold cyan]Sources:[/bold cyan]")
-            for i, result in enumerate(results, 1):
-                console.print(f"[green]{i}.[/green] {result['title']}")
-                console.print(f"   [blue]{result['link']}[/blue]")
-        else:
-            console.print(f"[red]Error: Failed to analyze results. Status code: {response.status_code}[/red]")
-    
+            if response.status_code != 200:
+                return f"Error: Failed to analyze search results. Status code: {response.status_code}"
+            
+            analysis = response.json().get("message", {}).get("content", "")
+            if not analysis:
+                return "Error: No analysis was generated. Please try again."
+            
+            return analysis
+            
+    except requests.RequestException as e:
+        return f"Network error occurred while processing search: {str(e)}"
     except Exception as e:
-        console.print(f"[red]Error: {str(e)}[/red]")
+        return f"An error occurred while processing search: {str(e)}"
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
