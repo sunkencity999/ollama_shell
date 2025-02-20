@@ -1,5 +1,9 @@
 # Ollama Shell
 
+<p align="center">
+  <img src="resources/ollama_shell_logo.png" alt="Ollama Shell Logo" width="200"/>
+</p>
+
 A powerful and user-friendly command line interface for Ollama, featuring a beautiful retro-style UI and advanced features for model management and chat interactions.
 
 Created by Christopher Bradford
