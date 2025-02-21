@@ -4,17 +4,25 @@ import json
 import typer
 import requests
 import sys
+import base64
+from io import BytesIO
+from PIL import Image
+import mimetypes
+import datetime
+import markdown2
+from weasyprint import HTML, CSS
+from weasyprint.text.fonts import FontConfiguration
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.syntax import Syntax
 from rich.table import Table
+from rich.box import ASCII as ASCII_BOX
 from pyfiglet import Figlet
 from termcolor import colored
-from typing import Optional
+from typing import Optional, Union
 from pathlib import Path
-import datetime
 from duckduckgo_search import DDGS
 from bs4 import BeautifulSoup
 import concurrent.futures
@@ -23,14 +31,21 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
 import pyperclip
 from bs4 import BeautifulSoup
+import time
 
 app = typer.Typer()
-console = Console()
+console = Console(
+    force_terminal=True,
+    color_system="auto",
+    highlight=True,
+    legacy_windows=True  # Better handling of ANSI codes on Windows
+)
 
 OLLAMA_API = "http://localhost:11434/api"
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 DEFAULT_CONFIG = {
     "default_model": "llama3.2:latest",
+    "default_vision_model": "llama3.2-vision:latest",
     "verbose": False,
     "save_history": True,
     "history_file": "~/.ollama_shell_history",
@@ -138,10 +153,27 @@ def save_history(model: str, messages: list):
         console.print(f"[yellow]Warning: Could not save history: {str(e)}[/yellow]")
 
 def display_banner():
-    f = Figlet(font='slant')
-    banner = f.renderText('Ollama Shell')
-    console.print(Panel(colored(banner, 'cyan'), border_style="cyan"))
-    console.print(Panel("🚀 Your friendly command-line LLM interface", border_style="cyan"))
+    """Display the application banner"""
+    try:
+        f = Figlet(font='slant')
+        banner = f.renderText('Ollama Shell')
+    except Exception:
+        # Fallback to simple banner if figlet fails
+        banner = """
+ _____  _  _                         ____  _          _ _ 
+|  _  || || |                       / ___|| |__   ___| | |
+| | | || || |   __ _ _ __ ___      \___ \| '_ \ / _ \ | |
+| | | || || |  / _` | '_ ` _ \      ___) | | | |  __/ | |
+| |_| || || | | (_| | | | | | |    |____/|_| |_|\___|_|_|
+\_____/|_||_|  \__,_|_| |_| |_|                          
+"""
+    
+    # Clear the screen first
+    console.clear()
+    
+    # Create panels with simple ASCII borders
+    console.print(Panel(banner.rstrip(), border_style="cyan", padding=(0, 2)))
+    console.print(Panel(":rocket: Your friendly command-line LLM interface", border_style="cyan", padding=(0, 2)))
 
 def send_message(model: str, message: str, system_prompt: Optional[str] = None, stream: bool = True):
     """Enhanced message sending with configuration options"""
@@ -281,7 +313,8 @@ def view_history():
         if choice.lower() == 'x':
             break
         elif choice.lower() == 'c':
-            if Prompt.ask("\n[red]Are you sure you want to clear all history?[/red] (y/n)", default="n").lower() == 'y':
+            confirm = Prompt.ask("\n[red]Are you sure you want to clear all history?[/red]", choices=["y", "n", "yes", "no"], default="n").lower()
+            if confirm in ['y', 'yes']:
                 config = load_config()
                 history_file = os.path.expanduser(config["history_file"])
                 try:
@@ -336,13 +369,13 @@ def view_history():
                 console.print("[green]2[/green]. HTML")
                 console.print("[green]3[/green]. PDF")
                 
-                choice = Prompt.ask("\n[yellow]Enter your choice[/yellow]", default="1")
+                format_choice = Prompt.ask("\n[yellow]Enter your choice[/yellow]", choices=["1", "2", "3"], default="1")
                 
-                if choice == "1":
+                if format_choice == "1":
                     format = "markdown"
-                elif choice == "2":
+                elif format_choice == "2":
                     format = "html"
-                elif choice == "3":
+                elif format_choice == "3":
                     format = "pdf"
                 else:
                     console.print("[red]Invalid choice. Defaulting to markdown.[/red]")
@@ -351,11 +384,16 @@ def view_history():
                 # Ask for output file
                 output_file = Prompt.ask("\n[cyan]Enter output file name (or press Enter for default)[/cyan]", default="")
                 
-                try:
-                    output_path = export_chat(chat["messages"], format, output_file)
-                    console.print(f"\n[green]Chat exported successfully to {output_path}![/green]")
-                except Exception as e:
-                    console.print(f"\n[red]Error exporting chat: {str(e)}[/red]")
+                # Confirm export
+                confirm = Prompt.ask("\n[yellow]Proceed with export?[/yellow]", choices=["y", "n", "yes", "no"], default="y").lower()
+                if confirm in ['y', 'yes']:
+                    try:
+                        output_path = export_chat(chat["messages"], format, output_file)
+                        console.print(f"\n[green]Chat exported successfully to {output_path}![/green]")
+                    except Exception as e:
+                        console.print(f"\n[red]Error exporting chat: {str(e)}[/red]")
+                else:
+                    console.print("\n[yellow]Export cancelled.[/yellow]")
                 
                 Prompt.ask("\n[yellow]Press Enter to continue[/yellow]")
         elif choice.isdigit() and 1 <= int(choice) <= len(history):
@@ -691,7 +729,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
             
             if user_input.lower() in ['exit', 'quit', 'q']:
                 # Offer to export chat before exiting
-                if chat_history and Prompt.ask("\nWould you like to export this chat? [y/N]").lower() == 'y':
+                if chat_history and Prompt.ask("\nWould you like to export this chat? [y/N]", choices=["y", "n", "yes", "no"], default="n").lower() in ['y', 'yes']:
                     format_choice = Prompt.ask(
                         "Choose format",
                         choices=["markdown", "html", "pdf"],
@@ -818,86 +856,6 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                 console.print(f"\n[red]Traceback: {traceback.format_exc()}[/red]")
             continue
 
-def display_help():
-    """Display comprehensive help information"""
-    # Title
-    f = Figlet(font='slant')
-    title = f.renderText('Ollama Shell')
-    console.print(Panel(colored(title, 'cyan'), border_style="cyan"))
-    console.print(Panel("A powerful interface for chatting with and managing your Ollama models", border_style="cyan"))
-    
-    # Chat Commands
-    console.print("\n[bold yellow]Chat Commands[/bold yellow]")
-    chat_commands = [
-        ("chat", "Start an interactive chat session", "chat [--model MODEL] [--system-prompt PROMPT]"),
-        ("prompt", "Send a single prompt", "prompt [--model MODEL] PROMPT_TEXT"),
-        ("history", "View chat history", "history"),
-        ("export", "Export chat to file", "export [--format FORMAT] [--output FILE] [--history-id ID]")
-    ]
-    
-    for cmd, desc, usage in chat_commands:
-        console.print(f"[cyan]{cmd}[/cyan]: {desc}")
-        console.print(f"  Usage: {usage}\n")
-    
-    # Model Management
-    console.print("\n[bold yellow]Model Management[/bold yellow]")
-    model_commands = [
-        ("models", "List available models", "models"),
-        ("pull", "Download a new model", "pull MODEL_NAME"),
-        ("delete", "Delete an installed model", "delete MODEL_NAME")
-    ]
-    
-    for cmd, desc, usage in model_commands:
-        console.print(f"[cyan]{cmd}[/cyan]: {desc}")
-        console.print(f"  Usage: {usage}\n")
-    
-    # System Prompts
-    console.print("\n[bold yellow]System Prompts[/bold yellow]")
-    prompt_commands = [
-        ("prompts", "Manage system prompts", "prompts")
-    ]
-    
-    console.print("[cyan]prompts[/cyan]: Manage your stored system prompts")
-    console.print("  Features:")
-    console.print("  • Save frequently used system prompts")
-    console.print("  • View and edit existing prompts")
-    console.print("  • Delete unused prompts")
-    console.print("  • Select saved prompts when starting a chat")
-    console.print("  Usage: prompts\n")
-    
-    # Configuration
-    console.print("\n[bold yellow]Configuration[/bold yellow]")
-    config_commands = [
-        ("settings", "View or modify settings", "settings [--show] [OPTIONS...]")
-    ]
-    
-    for cmd, desc, usage in config_commands:
-        console.print(f"[cyan]{cmd}[/cyan]: {desc}")
-        console.print(f"  Usage: {usage}\n")
-    
-    # Special Features
-    console.print("\n[bold yellow]Special Features[/bold yellow]")
-    features = [
-        "💡 Use arrow keys to navigate through command history in chat",
-        "💡 Set your preferred model in config to avoid specifying it each time",
-        "💡 Enable verbose mode in config for detailed API responses",
-        "💡 Save frequently used system prompts for quick access",
-        "💡 Check the history command to continue previous conversations",
-        "💡 Use Ctrl+V to toggle drag-and-drop mode for files",
-        "💡 Export chats to markdown, HTML, or PDF formats"
-    ]
-    
-    for feature in features:
-        console.print(f"  {feature}")
-    
-    # Additional Resources
-    console.print("\n[bold yellow]Additional Resources[/bold yellow]")
-    console.print("📚 Ollama Documentation: [link]https://ollama.ai/docs[/link]")
-    console.print("🐙 Project Repository: [link]https://github.com/sunkencity999/ollama_shell[/link]")
-    
-    # Wait for user input
-    Prompt.ask("\n[dim]Press Enter to return to menu...[/dim]")
-
 @app.command()
 def help():
     """Show help information about available commands"""
@@ -910,9 +868,20 @@ def chat(
     context_files: Optional[list[str]] = typer.Option(None, help="List of files to include in context")
 ):
     """Start an interactive chat session with the specified model"""
-    config = load_config()
-    model = model or config["default_model"]
-    interactive_chat(model, system_prompt, context_files)
+    try:
+        # If no model specified, use default from config
+        if model is None:
+            config = load_config()
+            model = config.get("default_model", "llama2")
+        
+        # Convert model from OptionInfo to string if needed
+        if not isinstance(model, str):
+            model = str(model)
+        
+        # Start interactive chat
+        interactive_chat(model, system_prompt, context_files)
+    except Exception as e:
+        console.print(f"[red]Error starting chat: {str(e)}[/red]")
 
 @app.command()
 def models():
@@ -951,44 +920,85 @@ def pull(
     try:
         console.print(f"\n[cyan]Downloading model: {model}[/cyan]")
         
-        # Track unique statuses to avoid repetition
+        # Track progress
         seen_statuses = set()
         current_status = None
+        download_started = False
+        last_update = time.time()
+        timeout = 30  # seconds
         
         with console.status("[cyan]Starting download...[/cyan]") as status:
             response = requests.post(
                 f"{OLLAMA_API}/pull",
                 json={"name": model},
-                stream=True
+                stream=True,
+                timeout=10  # Initial connection timeout
             )
             
             if response.status_code == 200:
                 for line in response.iter_lines():
                     if line:
-                        data = json.loads(line)
-                        if 'status' in data:
-                            # Only show new or changed status messages
-                            if data['status'] != current_status:
+                        try:
+                            data = json.loads(line)
+                            
+                            # Reset timeout counter on any data
+                            last_update = time.time()
+                            
+                            if 'status' in data:
                                 current_status = data['status']
-                                if current_status not in seen_statuses:
+                                
+                                # Show progress for downloading
+                                if 'downloading' in current_status.lower():
+                                    download_started = True
+                                    if 'completed' in data:
+                                        completed = data['completed']
+                                        total = data.get('total', 0)
+                                        if total > 0:
+                                            percentage = (completed / total) * 100
+                                            status.update(f"[cyan]Downloading: {percentage:.1f}% ({completed}/{total} chunks)[/cyan]")
+                                        else:
+                                            status.update(f"[cyan]Downloading: {completed} chunks completed[/cyan]")
+                                
+                                # Show other status updates
+                                elif current_status not in seen_statuses:
                                     seen_statuses.add(current_status)
-                                    # Format the status message
-                                    if "pulling" in current_status:
+                                    if "pulling" in current_status.lower():
                                         status.update(f"[cyan]Pulling model files...[/cyan]")
-                                    elif "verifying" in current_status:
+                                    elif "verifying" in current_status.lower():
                                         status.update(f"[yellow]Verifying download...[/yellow]")
-                                    elif "writing" in current_status:
+                                    elif "writing" in current_status.lower():
                                         status.update(f"[green]Writing model to disk...[/green]")
                                     else:
                                         status.update(f"[cyan]{current_status}[/cyan]")
-                        
-                        if 'error' in data:
-                            console.print(f"\n[red]Error: {data['error']}[/red]")
-                            return
+                            
+                            if 'error' in data:
+                                console.print(f"\n[red]Error: {data['error']}[/red]")
+                                return
+                            
+                        except json.JSONDecodeError:
+                            # Skip invalid JSON lines
+                            continue
+                            
+                        # Check for timeout
+                        if time.time() - last_update > timeout:
+                            raise TimeoutError("No progress updates received for too long")
                 
-                console.print(f"\n[green]Successfully downloaded {model}![/green]")
+                if download_started:
+                    console.print(f"\n[green]Successfully downloaded {model}![/green]")
+                else:
+                    console.print(f"\n[green]Model {model} is already up to date![/green]")
+            
             else:
-                console.print(f"\n[red]Error downloading model: {response.text}[/red]")
+                console.print(f"\n[red]Error: Server returned status code {response.status_code}[/red]")
+                if response.text:
+                    console.print(f"[red]Details: {response.text}[/red]")
+                
+    except requests.exceptions.Timeout:
+        console.print("\n[red]Error: Connection to Ollama timed out. Please check if Ollama is running.[/red]")
+    except TimeoutError as e:
+        console.print(f"\n[red]Error: {str(e)}. The download may have stalled.[/red]")
+    except requests.exceptions.ConnectionError:
+        console.print("\n[red]Error: Could not connect to Ollama. Please check if it's running.[/red]")
     except Exception as e:
         console.print(f"\n[red]Error: {str(e)}[/red]")
 
@@ -1021,7 +1031,7 @@ def delete(
                 model = choice
         
         # Confirm deletion
-        if not Prompt.ask(f"\n[yellow]Are you sure you want to delete {model}?[/yellow]", choices=["y", "n"]) == "y":
+        if not Prompt.ask(f"\n[yellow]Are you sure you want to delete {model}?[/yellow]", choices=["y", "n", "yes", "no"], default="n").lower() in ['y', 'yes']:
             console.print("[yellow]Operation cancelled.[/yellow]")
             return
         
@@ -1205,7 +1215,7 @@ def manage_prompts():
         if choice == "1":
             name = Prompt.ask("\nEnter a name for the prompt (used for selection)")
             if name in config["stored_prompts"]:
-                if not Prompt.ask(f"[yellow]Prompt '{name}' already exists. Overwrite?[/yellow]", choices=["y", "n"]) == "y":
+                if not Prompt.ask(f"[yellow]Prompt '{name}' already exists. Overwrite?[/yellow]", choices=["y", "n", "yes", "no"], default="n").lower() in ['y', 'yes']:
                     continue
             
             title = Prompt.ask("Enter a descriptive title for the prompt")
@@ -1245,7 +1255,7 @@ def manage_prompts():
                 console.print(f"[red]Prompt '{name}' not found.[/red]")
                 continue
                 
-            if Prompt.ask(f"[yellow]Are you sure you want to delete '{config['stored_prompts'][name]['title']}'?[/yellow]", choices=["y", "n"]) == "y":
+            if Prompt.ask(f"[yellow]Are you sure you want to delete '{config['stored_prompts'][name]['title']}'?[/yellow]", choices=["y", "n", "yes", "no"], default="n").lower() in ['y', 'yes']:
                 del config["stored_prompts"][name]
                 save_config(config)
                 console.print("[green]Prompt deleted successfully![/green]")
@@ -1312,7 +1322,12 @@ def read_file_content(file_path: str) -> tuple[str, str]:
     ext = ext.lower()
     
     try:
-        if ext in ['.pdf']:
+        if ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
+            # For image files, perform analysis
+            analysis = analyze_image(file_path)
+            return f"Image Analysis:\n{analysis}", "Image file"
+            
+        elif ext in ['.pdf']:
             # For PDF files, we'll need PyPDF2
             try:
                 import PyPDF2
@@ -1348,11 +1363,20 @@ def read_file_content(file_path: str) -> tuple[str, str]:
             except ImportError:
                 raise ImportError("python-docx is required for Word document support. Install it with: pip install python-docx")
         
-        elif ext in ['.md', '.txt', '.py', '.js', '.html', '.css', '.json', '.yaml', '.yml']:
+        elif ext in ['.md', '.txt', '.py', '.js', '.html', '.css', '.json', '.yaml', '.yml'] or not ext:
             # Text files can be read directly
-            with open(file_path, 'r', encoding='utf-8') as file:
-                text = file.read()
-                return text, f"{ext[1:].upper()} file"
+            # Also handle files without extensions as text files
+            try:
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    text = file.read()
+                    file_type = f"{ext[1:].upper()} file" if ext else "Text file"
+                    return text, file_type
+            except UnicodeDecodeError:
+                # If UTF-8 fails, try with system default encoding
+                with open(file_path, 'r') as file:
+                    text = file.read()
+                    file_type = f"{ext[1:].upper()} file" if ext else "Text file"
+                    return text, file_type
         
         else:
             raise ValueError(f"Unsupported file type: {ext}")
@@ -1374,107 +1398,103 @@ def prepare_document_context(files: list[str]) -> str:
 
 def display_menu():
     """Display interactive menu and handle command selection"""
-    commands = [
-        ("chat", "Start an interactive chat session with a model", chat),
-        ("models", "List all available models", models),
-        ("pull", "Download a new model", pull),
-        ("delete", "Delete an installed model", lambda: delete(None)),
-        ("history", "View chat history", view_history),
-        ("settings", "View or modify configuration settings", interactive_config),
-        ("prompts", "Manage stored system prompts", manage_prompts),
-        ("help", "Show help information", help),
-        ("exit", "Exit the application", None)
+    # Define commands with their functions
+    commands = {
+        "chat": chat,
+        "models": models,
+        "pull": pull,
+        "delete": lambda: delete(None),
+        "history": view_history,
+        "settings": interactive_config,
+        "prompts": manage_prompts,
+        "analyze": lambda: analyze_from_menu(),
+        "help": help,
+        "exit": None
+    }
+    
+    # Menu items with numbers
+    menu_items = [
+        ("1", "chat", "Start an interactive chat session with a model"),
+        ("2", "models", "List all available models"),
+        ("3", "pull", "Download a new model"),
+        ("4", "delete", "Delete an installed model"),
+        ("5", "history", "View chat history"),
+        ("6", "settings", "View or modify configuration settings"),
+        ("7", "prompts", "Manage stored system prompts"),
+        ("8", "analyze", "Analyze an image using vision model"),
+        ("9", "help", "Show help information"),
+        ("10", "exit", "Exit the application")
     ]
     
     while True:
         console.clear()
         display_banner()
-        console.print("\n[cyan]Available Commands:[/cyan]")
         
-        # Create a table for better visualization
-        table = Table(show_header=False, box=None)
-        table.add_column("Number", style="green")
-        table.add_column("Command", style="cyan")
+        # Create a table that works well on both Windows and Mac
+        table = Table(
+            show_header=True,
+            header_style="bold magenta",
+            border_style="cyan",
+            box=ASCII_BOX if sys.platform == "win32" else None
+        )
+        table.add_column("#", style="cyan", justify="right")
+        table.add_column("Command", style="green")
         table.add_column("Description", style="white")
         
-        for i, (cmd, desc, _) in enumerate(commands, 1):
-            table.add_row(f"[green]{i}[/green]", cmd, desc)
+        for num, cmd, desc in menu_items:
+            table.add_row(num, cmd, desc)
         
         console.print(table)
         
         try:
             choice = Prompt.ask("\n[yellow]Enter a number to select a command[/yellow]", default="1")
-            if not choice.isdigit() or int(choice) < 1 or int(choice) > len(commands):
-                console.print("[red]Invalid choice. Please enter a number between 1 and {len(commands)}[/red]")
+            if not choice.isdigit() or int(choice) < 1 or int(choice) > len(menu_items):
+                console.print(f"[red]Invalid choice. Please enter a number between 1 and {len(menu_items)}[/red]")
                 continue
             
             index = int(choice) - 1
-            command_name, _, command_func = commands[index]
+            _, command_name, _ = menu_items[index]
             
             if command_name == "exit":
                 console.print("[yellow]Goodbye![/yellow]")
                 break
-            
-            # Clear screen for better UI
-            console.clear()
-            
-            if command_name == "chat":
-                # Special handling for chat to prompt for model
-                config = load_config()
-                available_models = get_available_models()
-                
-                if not available_models:
-                    console.print("[red]Error: Could not fetch available models. Is Ollama running?[/red]")
-                    Prompt.ask("\n[yellow]Press Enter to continue[/yellow]")
+            elif command_name == "chat":
+                # Handle chat command with model selection
+                models_list = get_available_models()
+                if not models_list:
+                    console.print("[red]No models available. Please install a model first.[/red]")
                     continue
                 
-                # Show available models
                 console.print("\n[cyan]Available models:[/cyan]")
-                for i, m in enumerate(available_models, 1):
-                    console.print(f"[green]{i}[/green]. {m}")
+                for i, model in enumerate(models_list, 1):
+                    console.print(f"[green]{i}[/green]. {model}")
                 
-                model = Prompt.ask("\n[cyan]Enter model name or number[/cyan]", default=config["default_model"])
+                model_choice = Prompt.ask("\nSelect model number", default="1")
+                if not model_choice.isdigit() or int(model_choice) < 1 or int(model_choice) > len(models_list):
+                    console.print("[red]Invalid model selection[/red]")
+                    continue
                 
-                # Handle numeric choice
-                if model.isdigit() and 1 <= int(model) <= len(available_models):
-                    model = available_models[int(model) - 1]
-                
-                system_prompt = Prompt.ask("[cyan]Enter system prompt (optional)[/cyan]", default="")
-                
-                # Ask for document context
-                use_docs = Prompt.ask("[cyan]Would you like to include documents in the chat context?[/cyan] (y/n)", default="n")
-                context_files = []
-                if use_docs.lower() == 'y':
-                    while True:
-                        file_path = Prompt.ask("[cyan]Enter path to document (or press Enter to finish)[/cyan]")
-                        if not file_path:
-                            break
-                        context_files.append(file_path)
-                
-                chat(model=model, system_prompt=system_prompt if system_prompt else None, context_files=context_files if context_files else None)
+                selected_model = models_list[int(model_choice) - 1]
+                # Pass the model name directly as a string
+                interactive_chat(model=selected_model, system_prompt=None, context_files=None)
             elif command_name == "pull":
-                # Special handling for pull to prompt for model name
-                model = Prompt.ask("[cyan]Enter model name to download[/cyan]")
-                pull(model=model)
-            elif command_name == "prompt":
-                # Special handling for prompt to get model and prompt text
-                config = load_config()
-                model = Prompt.ask("[cyan]Enter model name[/cyan]", default=config["default_model"])
-                prompt_text = Prompt.ask("[cyan]Enter your prompt[/cyan]")
-                prompt(model=model, prompt_text=prompt_text)
+                # Handle pull command
+                model_name = Prompt.ask("\nEnter model name to pull")
+                pull(model=model_name)
             else:
-                # Execute the command function
-                command_func()
+                # Execute the command
+                command_func = commands.get(command_name)
+                if command_func:
+                    command_func()
             
-            # Pause before showing menu again
-            if command_name != "settings":  # Don't show extra prompt for settings
+            # Pause before showing menu again (except for settings which has its own pause)
+            if command_name != "settings":
                 Prompt.ask("\n[yellow]Press Enter to continue[/yellow]")
-            
         except KeyboardInterrupt:
-            console.print("\n[yellow]Goodbye![/yellow]")
-            break
+            console.print("\n[yellow]Operation cancelled. Returning to menu...[/yellow]")
+            continue
         except Exception as e:
-            console.print(f"[red]Error: {str(e)}[/red]")
+            console.print(f"\n[red]Error: {str(e)}[/red]")
             Prompt.ask("\n[yellow]Press Enter to continue[/yellow]")
 
 def perform_web_search(query: str) -> tuple[list, str]:
@@ -1589,13 +1609,10 @@ Search Results:
         # Send to Ollama
         with console.status("[cyan]Analyzing search results...[/cyan]"):
             response = requests.post(
-                f"{OLLAMA_API}/chat",
+                f"{OLLAMA_API}/generate",
                 json={
                     "model": model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
+                    "prompt": prompt,
                     "stream": False
                 }
             )
@@ -1603,7 +1620,7 @@ Search Results:
             if response.status_code != 200:
                 return f"Error: Failed to analyze search results. Status code: {response.status_code}"
             
-            analysis = response.json().get("message", {}).get("content", "")
+            analysis = response.json().get("response", "")
             if not analysis:
                 return "Error: No analysis was generated. Please try again."
             
@@ -1614,11 +1631,129 @@ Search Results:
     except Exception as e:
         return f"An error occurred while processing search: {str(e)}"
 
+def encode_image(image_path: str) -> tuple[str, str]:
+    """
+    Encode an image file to base64 and determine its MIME type.
+    Returns a tuple of (base64_string, mime_type)
+    """
+    mime_type = mimetypes.guess_type(image_path)[0]
+    if not mime_type or not mime_type.startswith('image/'):
+        raise ValueError(f"Unsupported file type: {image_path}")
+    
+    try:
+        with Image.open(image_path) as img:
+            # Convert to RGB if necessary
+            if img.mode in ('RGBA', 'LA'):
+                img = img.convert('RGB')
+            
+            # Save to BytesIO in appropriate format
+            img_byte_arr = BytesIO()
+            img.save(img_byte_arr, format=img.format or 'JPEG')
+            img_byte_arr.seek(0)
+            
+            return base64.b64encode(img_byte_arr.getvalue()).decode('utf-8'), mime_type
+    except Exception as e:
+        raise Exception(f"Error processing image {image_path}: {str(e)}")
+
+def analyze_image(image_path: str, prompt: Optional[str] = None) -> str:
+    """
+    Analyze an image using the vision model.
+    Args:
+        image_path: Path to the image file
+        prompt: Optional prompt to guide the analysis
+    Returns:
+        Analysis result from the model
+    """
+    try:
+        config = load_config()
+        model = config.get("default_vision_model", "llama3.2-vision:latest")
+        
+        # First verify the model exists
+        models_list = get_available_models()
+        if model not in models_list:
+            raise Exception(f"Vision model {model} not found. Please pull it first using: ollama pull {model}")
+        
+        # Encode image
+        base64_image, mime_type = encode_image(image_path)
+        
+        # Format according to Ollama vision model spec
+        default_prompt = "Please analyze this image and describe what you see in detail."
+        user_prompt = prompt or default_prompt
+        
+        # Send to Ollama using the correct format for vision models
+        with console.status(f"[cyan]Analyzing image with {model}...[/cyan]"):
+            response = requests.post(
+                f"{OLLAMA_API}/generate",
+                json={
+                    "model": model,
+                    "prompt": user_prompt,
+                    "images": [base64_image],  # Use the images field for vision models
+                    "stream": False
+                }
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"Error from Ollama API: {response.text}")
+            
+            result = response.json().get("response", "")
+            if not result:
+                raise Exception("No analysis received from model")
+            
+            return result
+            
+    except Exception as e:
+        raise Exception(f"Error analyzing image: {str(e)}")
+
+@app.command()
+def analyze(
+    image: str = typer.Argument(..., help="Path to the image file to analyze"),
+    prompt: Optional[str] = typer.Option(None, help="Custom prompt for image analysis")
+):
+    """Analyze an image using the vision model"""
+    try:
+        result = analyze_image(image, prompt)
+        console.print("\n[bold cyan]Image Analysis:[/bold cyan]")
+        console.print(Panel(result, border_style="cyan"))
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+
+def analyze_from_menu():
+    """Handle image analysis from the menu"""
+    try:
+        # First check if vision model is available
+        config = load_config()
+        vision_model = config.get("default_vision_model", "llama3.2-vision:latest")
+        models_list = get_available_models()
+        
+        if vision_model not in models_list:
+            console.print(f"[yellow]Warning: Vision model {vision_model} not found.[/yellow]")
+            pull_model = Prompt.ask(f"Would you like to pull {vision_model} now? (y/n)", choices=["y", "n", "yes", "no"], default="y")
+            if pull_model.lower() in ['y', 'yes']:
+                pull(vision_model)
+            else:
+                console.print("[red]Cannot analyze images without a vision model.[/red]")
+                return
+        
+        image_path = Prompt.ask("[cyan]Enter the path to the image file[/cyan]")
+        image_path = os.path.expanduser(image_path)
+        
+        if not os.path.exists(image_path):
+            console.print("[red]Error: File not found[/red]")
+            return
+        
+        use_custom_prompt = Prompt.ask("[cyan]Would you like to use a custom prompt? (y/n)[/cyan]", choices=["y", "n", "yes", "no"], default="n")
+        prompt = None
+        if use_custom_prompt.lower() in ['y', 'yes']:
+            prompt = Prompt.ask("[cyan]Enter your custom prompt[/cyan]")
+        
+        result = analyze_image(image_path, prompt)
+        console.print("\n[bold cyan]Image Analysis:[/bold cyan]")
+        console.print(Panel(result, border_style="cyan"))
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+
 if __name__ == "__main__":
     if len(sys.argv) == 1:
         display_menu()
     else:
         app()
-
-def strip_tags(html):
-    return BeautifulSoup(html, 'html.parser').get_text()

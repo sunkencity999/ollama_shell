@@ -1,61 +1,58 @@
 @echo off
-echo Installing Ollama Shell for Windows...
+setlocal enabledelayedexpansion
 
-REM Check if Python is installed
-python --version >nul 2>&1
+echo Checking Python installation...
+python --version > nul 2>&1
 if errorlevel 1 (
-    echo Python is not installed. Please install Python 3.8 or higher from https://www.python.org/downloads/
+    echo Python is not installed or not in PATH
+    echo Please install Python 3.8 or higher from python.org
     pause
     exit /b 1
 )
 
-REM Check if pip is installed
-python -m pip --version >nul 2>&1
+echo Checking pip installation...
+python -m pip --version > nul 2>&1
 if errorlevel 1 (
-    echo pip is not installed. Installing pip...
+    echo pip is not installed
+    echo Installing pip...
     python -m ensurepip --default-pip
 )
 
-REM Create virtual environment if it doesn't exist
-if not exist "venv" (
-    echo Creating virtual environment...
+echo Creating virtual environment if it doesn't exist...
+if not exist venv (
     python -m venv venv
 )
 
-REM Activate virtual environment
+echo Activating virtual environment...
 call venv\Scripts\activate.bat
 
-REM Upgrade pip
+echo Installing/Upgrading pip...
 python -m pip install --upgrade pip
 
-REM Install wheel first
-pip install wheel
+echo Installing dependencies...
+pip install -r requirements.txt
 
-REM Install basic requirements that don't need compilation
-echo Installing basic requirements...
-pip install typer rich requests prompt_toolkit pyfiglet termcolor pyperclip
+echo Installing additional dependencies for enhanced features...
+pip install Pillow>=10.0.0 python-docx>=1.0.0 PyPDF2>=3.0.0 weasyprint>=60.1 markdown2>=2.4.10 duckduckgo-search>=4.1.1 beautifulsoup4>=4.12.0 html2text>=2020.1.16
 
-REM Try to install chroma-hnswlib with precompiled wheel
-echo Installing chroma-hnswlib...
-pip install --only-binary :all: chroma-hnswlib
+echo Checking Microsoft Visual C++ Build Tools...
+where cl.exe >nul 2>&1
+if errorlevel 1 (
+    echo Microsoft Visual C++ Build Tools not found
+    echo Some features may require Microsoft Visual C++ Build Tools
+    echo Please install from: https://visualstudio.microsoft.com/visual-cpp-build-tools/
+)
 
-REM Install remaining requirements
-echo Installing remaining requirements...
-pip install duckduckgo_search beautifulsoup4 html2text
+echo Creating run script...
+(
+echo @echo off
+echo call venv\Scripts\activate.bat
+echo cd /d "%%~dp0"
+echo python ollama_shell.py
+echo pause
+) > run_ollama_shell.bat
 
-REM Create run script
-echo @echo off > run_ollama_shell.bat
-echo call venv\Scripts\activate.bat >> run_ollama_shell.bat
-echo python ollama_shell.py >> run_ollama_shell.bat
-echo pause >> run_ollama_shell.bat
+echo Installation complete!
+echo To start Ollama Shell, run 'run_ollama_shell.bat'
 
-echo.
-echo Installation complete! 
-echo A new file 'run_ollama_shell.bat' has been created.
-echo Double-click it to run Ollama Shell.
-echo.
-echo Note: If you encounter any errors about missing Visual C++,
-echo please install Microsoft Visual C++ Build Tools from:
-echo https://visualstudio.microsoft.com/visual-cpp-build-tools/
-echo.
 pause

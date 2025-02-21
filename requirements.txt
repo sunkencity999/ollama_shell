@@ -1,17 +1,23 @@
-rich>=13.7.0
+# Core dependencies
 typer>=0.9.0
+rich>=13.6.0
 requests>=2.31.0
+prompt_toolkit>=3.0.39
 pyfiglet>=1.0.2
-termcolor>=2.4.0
-duckduckgo-search>=4.1.1
-beautifulsoup4>=4.12.0
-python-dotenv>=1.0.0
-chromadb==0.4.22
-langchain==0.1.0
-PyPDF2>=3.0.0
-python-docx>=1.0.0
-html2text>=2020.1.16
-prompt_toolkit>=3.0.36
-weasyprint>=60.1
-markdown2>=2.4.10
+termcolor>=2.3.0
 pyperclip>=1.8.2
+
+# Document processing
+Pillow>=10.0.0  # Image processing
+python-docx>=1.0.0  # Word document support
+PyPDF2>=3.0.0  # PDF support
+weasyprint>=60.1  # PDF export
+markdown2>=2.4.10  # Markdown processing
+
+# Web and search
+duckduckgo-search>=4.1.1  # Web search
+beautifulsoup4>=4.12.0  # HTML parsing
+html2text>=2020.1.16  # HTML to text conversion
+
+# Optional but recommended
+chroma-hnswlib>=0.7.3  # For enhanced search capabilities
