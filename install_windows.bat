@@ -30,17 +30,54 @@ call venv\Scripts\activate.bat
 echo Installing/Upgrading pip...
 python -m pip install --upgrade pip
 
-:: Function to install core dependencies
-:install_core_deps
-echo Installing core dependencies...
+:: Function to install required dependencies
+:install_required_deps
+echo Installing required dependencies...
 :: CLI and interface dependencies
 pip install typer rich requests prompt_toolkit pyfiglet termcolor pyperclip
-:: Image and document processing
-pip install Pillow python-docx
 :: Web and search dependencies
-pip install duckduckgo-search beautifulsoup4 html2text markdown2
-:: PDF processing
-pip install PyPDF2
+pip install duckduckgo-search beautifulsoup4 html2text
+:: Basic document processing
+pip install markdown2
+goto :eof
+
+:: Function to install document processing dependencies
+:install_doc_deps
+echo Installing document processing dependencies...
+pip install Pillow python-docx PyPDF2
+goto :eof
+
+:: Function to install optional dependencies
+:install_optional_deps
+echo Installing optional dependencies...
+pip install weasyprint chroma-hnswlib
+goto :eof
+
+:: Function to modify ollama_shell.py to work without weasyprint
+:patch_weasyprint
+echo Patching ollama_shell.py for PDF export compatibility...
+python -c "
+import re
+with open('ollama_shell.py', 'r', encoding='utf-8') as f:
+    content = f.read()
+
+# Replace weasyprint imports with a try-except block
+content = re.sub(
+    r'from weasyprint import HTML, CSS\nfrom weasyprint\.text\.fonts import FontConfiguration',
+    'try:\n    from weasyprint import HTML, CSS\n    from weasyprint.text.fonts import FontConfiguration\n    WEASYPRINT_AVAILABLE = True\nexcept ImportError:\n    WEASYPRINT_AVAILABLE = False',
+    content
+)
+
+# Add check for weasyprint availability in PDF export
+content = re.sub(
+    r'elif format == \"pdf\":\s+# First convert to HTML, then to PDF',
+    'elif format == \"pdf\":\n            if not WEASYPRINT_AVAILABLE:\n                raise ImportError(\"PDF export requires weasyprint. Please install Build Tools and run the installer again.\")\n            # First convert to HTML, then to PDF',
+    content
+)
+
+with open('ollama_shell.py', 'w', encoding='utf-8') as f:
+    f.write(content)
+"
 goto :eof
 
 echo Checking for Microsoft Visual C++ Build Tools...
@@ -76,18 +113,18 @@ if errorlevel 1 (
             :: Clean up
             rmdir /s /q "%TEMP%\vsbuildtools" 2>nul
             
-            echo Installing only core dependencies...
-            call :install_core_deps
+            echo Installing required dependencies...
+            call :install_required_deps
+            call :install_doc_deps
+            call :patch_weasyprint
             
-            echo [33mNote: Some advanced features will be limited until Build Tools are installed.[0m
+            echo [33mNote: PDF export will be disabled until Build Tools are installed.[0m
         ) else (
             echo [32mBuild Tools installed successfully![0m
             echo Installing all dependencies...
-            call :install_core_deps
-            
-            echo Installing advanced dependencies...
-            pip install weasyprint
-            pip install chroma-hnswlib
+            call :install_required_deps
+            call :install_doc_deps
+            call :install_optional_deps
         )
         
         :: Clean up
@@ -95,19 +132,20 @@ if errorlevel 1 (
     ) else (
         echo [31mFailed to download Build Tools installer.[0m
         echo Please install manually from: https://visualstudio.microsoft.com/visual-cpp-build-tools/
-        echo Installing only core dependencies...
+        echo Installing basic dependencies...
         
-        call :install_core_deps
-        echo [33mNote: Some advanced features will be limited until Build Tools are installed.[0m
+        call :install_required_deps
+        call :install_doc_deps
+        call :patch_weasyprint
+        
+        echo [33mNote: PDF export will be disabled until Build Tools are installed.[0m
     )
 ) else (
     echo [32mBuild Tools already installed.[0m
     echo Installing all dependencies...
-    call :install_core_deps
-    
-    echo Installing advanced dependencies...
-    pip install weasyprint
-    pip install chroma-hnswlib
+    call :install_required_deps
+    call :install_doc_deps
+    call :install_optional_deps
 )
 
 echo Creating run script...
