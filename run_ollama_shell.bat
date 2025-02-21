@@ -81,16 +81,35 @@ if errorlevel 1 (
 )
 del %TEMP_SCRIPT%
 
-:: Check if Ollama is running
+:: Check if Ollama is running (with timeout)
 call :log "Checking Ollama service..."
-powershell -Command "& {try { $response = Invoke-WebRequest -Uri 'http://localhost:11434/api/version' -TimeoutSec 2; Write-Host $response.Content; exit 0 } catch { Write-Host $_.Exception.Message; exit 1 }}" >> %LOGFILE% 2>&1
+set "OLLAMA_RUNNING=0"
+powershell -Command "& {
+    $webRequest = [System.Net.WebRequest]::Create('http://localhost:11434/api/version')
+    $webRequest.Timeout = 2000
+    try {
+        $response = $webRequest.GetResponse()
+        $stream = $response.GetResponseStream()
+        $reader = New-Object System.IO.StreamReader($stream)
+        $content = $reader.ReadToEnd()
+        Write-Host $content
+        exit 0
+    } catch {
+        Write-Host $_.Exception.Message
+        exit 1
+    }
+}" > nul 2>&1
 if errorlevel 1 (
-    call :log "[WARNING] Ollama service does not appear to be running"
-    echo Please make sure Ollama is installed and running
+    call :log "[WARNING] Ollama service not detected"
+    echo [33mWarning: Ollama service not detected[0m
+    echo Make sure Ollama is installed and running before using chat features
     echo Download from: https://ollama.ai/download
     echo.
-    choice /C YN /M "Do you want to continue anyway" > nul
-    if errorlevel 2 exit /b 1
+    echo [32mProceeding anyway...[0m
+    set "OLLAMA_RUNNING=0"
+) else (
+    call :log "[INFO] Ollama service is running"
+    set "OLLAMA_RUNNING=1"
 )
 
 :: Run the application with error handling and debug output
@@ -106,6 +125,8 @@ set "WRAPPER_SCRIPT=run_app.py"
 echo import sys, traceback
 echo try:
 echo     import ollama_shell
+echo     if __name__ == '__main__':
+echo         ollama_shell.app(^)
 echo except Exception as e:
 echo     print('Error running ollama_shell:'^)
 echo     traceback.print_exc(^)
