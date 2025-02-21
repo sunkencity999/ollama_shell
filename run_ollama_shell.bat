@@ -30,6 +30,22 @@ if errorlevel 1 (
     exit /b 1
 )
 
+:: Install/verify dependencies
+call :log "Installing/verifying dependencies..."
+echo [32mInstalling required packages...[0m
+pip install -q typer rich requests prompt_toolkit pyfiglet termcolor pyperclip ^
+    duckduckgo-search beautifulsoup4 html2text markdown2 Pillow python-docx PyPDF2
+
+:: Verify critical dependencies
+python -c "import requests, typer, rich, PIL" 2>nul
+if errorlevel 1 (
+    call :log "[ERROR] Failed to verify critical dependencies"
+    echo [31mError: Failed to install required packages[0m
+    echo Please run install_windows.bat again
+    pause
+    exit /b 1
+)
+
 :: Check if Ollama is running (with timeout)
 call :log "Checking Ollama service..."
 set "OLLAMA_RUNNING=0"
