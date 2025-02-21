@@ -21,7 +21,7 @@ if not exist venv (
     exit /b 1
 )
 
-:: Activate virtual environment
+:: Activate virtual environment and verify Python path
 call :log "Activating virtual environment..."
 call venv\Scripts\activate.bat
 if errorlevel 1 (
@@ -30,14 +30,38 @@ if errorlevel 1 (
     exit /b 1
 )
 
+:: Verify Python is from virtual environment
+for /f "tokens=*" %%i in ('python -c "import sys; print(sys.executable)"') do set PYTHON_PATH=%%i
+echo Python executable: !PYTHON_PATH! >> %LOGFILE%
+if not "!PYTHON_PATH!"=="%CD%\venv\Scripts\python.exe" (
+    call :log "[ERROR] Python is not running from virtual environment!"
+    echo Python should be: %CD%\venv\Scripts\python.exe
+    echo Python is: !PYTHON_PATH!
+    pause
+    exit /b 1
+)
+
 :: Install/verify dependencies
 call :log "Installing/verifying dependencies..."
 echo [32mInstalling required packages...[0m
-pip install -q typer rich requests prompt_toolkit pyfiglet termcolor pyperclip ^
-    duckduckgo-search beautifulsoup4 html2text markdown2 Pillow python-docx PyPDF2
 
-:: Verify critical dependencies
-python -c "import requests, typer, rich, PIL" 2>nul
+:: Update pip first
+python -m pip install --upgrade pip
+
+:: Install packages with explicit paths
+echo Installing packages...
+%CD%\venv\Scripts\pip install -q typer rich requests prompt_toolkit pyfiglet termcolor pyperclip
+%CD%\venv\Scripts\pip install -q duckduckgo-search beautifulsoup4 html2text markdown2
+%CD%\venv\Scripts\pip install -q Pillow python-docx PyPDF2
+
+:: Verify critical dependencies with explicit Python path
+echo Verifying dependencies...
+%CD%\venv\Scripts\python -c "import sys; print('Python version:', sys.version)" >> %LOGFILE%
+%CD%\venv\Scripts\python -c "import PIL; print('PIL version:', PIL.__version__)" >> %LOGFILE%
+%CD%\venv\Scripts\python -c "import requests; print('Requests version:', requests.__version__)" >> %LOGFILE%
+%CD%\venv\Scripts\python -c "import typer; print('Typer version:', typer.__version__)" >> %LOGFILE%
+%CD%\venv\Scripts\python -c "import rich; print('Rich version:', rich.__version__)" >> %LOGFILE%
+
 if errorlevel 1 (
     call :log "[ERROR] Failed to verify critical dependencies"
     echo [31mError: Failed to install required packages[0m
@@ -81,10 +105,10 @@ if errorlevel 1 (
 call :log "Starting Ollama Shell..."
 echo ===== Starting Ollama Shell ===== >> %LOGFILE%
 echo Current directory: %CD% >> %LOGFILE%
-echo Python path: %PYTHONPATH% >> %LOGFILE%
+echo Python path: !PYTHON_PATH! >> %LOGFILE%
 
 echo [32mLaunching Ollama Shell...[0m
-python ollama_shell.py
+%CD%\venv\Scripts\python ollama_shell.py
 set PYTHON_EXIT_CODE=%errorlevel%
 
 if %PYTHON_EXIT_CODE% neq 0 (
