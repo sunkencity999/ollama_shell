@@ -65,8 +65,11 @@ if errorlevel 1 (
             
             echo Installing only packages that don't require compilation...
             echo Installing core dependencies...
-            pip install --no-deps typer rich requests prompt_toolkit pyfiglet termcolor pyperclip
-            pip install --no-deps duckduckgo-search beautifulsoup4 html2text markdown2
+            :: Install typer with its dependencies
+            pip install typer
+            :: Install other core packages
+            pip install rich requests prompt_toolkit pyfiglet termcolor pyperclip
+            pip install duckduckgo-search beautifulsoup4 html2text markdown2
         ) else (
             echo [32mBuild Tools installed successfully![0m
             echo Installing all dependencies...
@@ -81,8 +84,11 @@ if errorlevel 1 (
         echo Installing only packages that don't require compilation...
         
         echo Installing core dependencies...
-        pip install --no-deps typer rich requests prompt_toolkit pyfiglet termcolor pyperclip
-        pip install --no-deps duckduckgo-search beautifulsoup4 html2text markdown2
+        :: Install typer with its dependencies
+        pip install typer
+        :: Install other core packages
+        pip install rich requests prompt_toolkit pyfiglet termcolor pyperclip
+        pip install duckduckgo-search beautifulsoup4 html2text markdown2
     )
 ) else (
     echo [32mBuild Tools already installed.[0m
