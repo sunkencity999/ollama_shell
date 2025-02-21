@@ -30,6 +30,19 @@ call venv\Scripts\activate.bat
 echo Installing/Upgrading pip...
 python -m pip install --upgrade pip
 
+:: Function to install core dependencies
+:install_core_deps
+echo Installing core dependencies...
+:: CLI and interface dependencies
+pip install typer rich requests prompt_toolkit pyfiglet termcolor pyperclip
+:: Image and document processing
+pip install Pillow python-docx
+:: Web and search dependencies
+pip install duckduckgo-search beautifulsoup4 html2text markdown2
+:: PDF processing
+pip install PyPDF2
+goto :eof
+
 echo Checking for Microsoft Visual C++ Build Tools...
 where cl.exe >nul 2>&1
 if errorlevel 1 (
@@ -63,17 +76,18 @@ if errorlevel 1 (
             :: Clean up
             rmdir /s /q "%TEMP%\vsbuildtools" 2>nul
             
-            echo Installing only packages that don't require compilation...
-            echo Installing core dependencies...
-            :: Install typer with its dependencies
-            pip install typer
-            :: Install other core packages
-            pip install rich requests prompt_toolkit pyfiglet termcolor pyperclip
-            pip install duckduckgo-search beautifulsoup4 html2text markdown2
+            echo Installing only core dependencies...
+            call :install_core_deps
+            
+            echo [33mNote: Some advanced features will be limited until Build Tools are installed.[0m
         ) else (
             echo [32mBuild Tools installed successfully![0m
             echo Installing all dependencies...
-            pip install -r requirements.txt
+            call :install_core_deps
+            
+            echo Installing advanced dependencies...
+            pip install weasyprint
+            pip install chroma-hnswlib
         )
         
         :: Clean up
@@ -81,19 +95,19 @@ if errorlevel 1 (
     ) else (
         echo [31mFailed to download Build Tools installer.[0m
         echo Please install manually from: https://visualstudio.microsoft.com/visual-cpp-build-tools/
-        echo Installing only packages that don't require compilation...
+        echo Installing only core dependencies...
         
-        echo Installing core dependencies...
-        :: Install typer with its dependencies
-        pip install typer
-        :: Install other core packages
-        pip install rich requests prompt_toolkit pyfiglet termcolor pyperclip
-        pip install duckduckgo-search beautifulsoup4 html2text markdown2
+        call :install_core_deps
+        echo [33mNote: Some advanced features will be limited until Build Tools are installed.[0m
     )
 ) else (
     echo [32mBuild Tools already installed.[0m
     echo Installing all dependencies...
-    pip install -r requirements.txt
+    call :install_core_deps
+    
+    echo Installing advanced dependencies...
+    pip install weasyprint
+    pip install chroma-hnswlib
 )
 
 echo Creating run script...
