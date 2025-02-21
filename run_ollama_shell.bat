@@ -12,6 +12,44 @@ if not exist venv (
     exit /b 1
 )
 
+:: Activate virtual environment
+echo Activating virtual environment...
+call venv\Scripts\activate.bat
+
+:: Verify dependencies are installed
+echo Checking dependencies...
+python -c "
+import sys
+required_packages = ['PIL', 'typer', 'rich', 'requests', 'prompt_toolkit', 'pyfiglet', 'termcolor', 'pyperclip', 
+                    'duckduckgo_search', 'beautifulsoup4', 'html2text', 'markdown2', 'PyPDF2', 'python-docx']
+missing_packages = []
+for package in required_packages:
+    try:
+        if package == 'PIL':
+            __import__('PIL')
+        else:
+            __import__(package.replace('-', '_'))
+    except ImportError:
+        missing_packages.append(package)
+if missing_packages:
+    print('[31mMissing dependencies found:[0m', ', '.join(missing_packages))
+    print('Running repair...')
+    import subprocess
+    for package in missing_packages:
+        if package == 'PIL':
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'Pillow'])
+        else:
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', package])
+    print('[32mRepair complete![0m')
+else:
+    print('[32mAll required dependencies are installed![0m')
+" || (
+    echo [31mError checking dependencies![0m
+    echo Please run install_windows.bat again
+    pause
+    exit /b 1
+)
+
 :: Check if Ollama is running
 powershell -Command "& {try { $response = Invoke-WebRequest -Uri 'http://localhost:11434/api/version' -TimeoutSec 2; exit 0 } catch { exit 1 }}"
 if errorlevel 1 (
@@ -22,10 +60,6 @@ if errorlevel 1 (
     choice /C YN /M "Do you want to continue anyway"
     if errorlevel 2 exit /b 1
 )
-
-:: Activate virtual environment
-echo Activating virtual environment...
-call venv\Scripts\activate.bat
 
 :: Run the application with error handling
 echo Starting Ollama Shell...
