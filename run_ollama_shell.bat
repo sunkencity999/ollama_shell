@@ -30,43 +30,56 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Verify dependencies are installed
+:: Create a temporary Python script for dependency checking
+call :log "Creating dependency check script..."
+set "TEMP_SCRIPT=check_deps.py"
+(
+echo import sys, traceback
+echo try:
+echo     print('Python version:', sys.version^)
+echo     required_packages = ['PIL', 'typer', 'rich', 'requests', 'prompt_toolkit', 'pyfiglet', 'termcolor', 'pyperclip',
+echo                         'duckduckgo_search', 'beautifulsoup4', 'html2text', 'markdown2', 'PyPDF2', 'python-docx']
+echo     missing_packages = []
+echo     for package in required_packages:
+echo         try:
+echo             if package == 'PIL':
+echo                 __import__('PIL'^)
+echo                 print(f'Successfully imported {package}'^)
+echo             else:
+echo                 __import__(package.replace('-', '_'^)^)
+echo                 print(f'Successfully imported {package}'^)
+echo         except ImportError as e:
+echo             missing_packages.append(package^)
+echo             print(f'Error importing {package}: {str(e^)}'^)
+echo     if missing_packages:
+echo         print('Missing dependencies:', ', '.join(missing_packages^)^)
+echo         print('Running repair...'^)
+echo         import subprocess
+echo         for package in missing_packages:
+echo             if package == 'PIL':
+echo                 subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'Pillow']^)
+echo             else:
+echo                 subprocess.check_call([sys.executable, '-m', 'pip', 'install', package]^)
+echo         print('Repair complete!'^)
+echo     else:
+echo         print('All required dependencies are installed!'^)
+echo except Exception as e:
+echo     print('Error during dependency check:'^)
+echo     traceback.print_exc(^)
+echo     sys.exit(1^)
+) > %TEMP_SCRIPT%
+
+:: Run the dependency check script
 call :log "Checking dependencies..."
-python -c "
-import sys, traceback
-try:
-    print('Python version:', sys.version)
-    required_packages = ['PIL', 'typer', 'rich', 'requests', 'prompt_toolkit', 'pyfiglet', 'termcolor', 'pyperclip', 
-                        'duckduckgo_search', 'beautifulsoup4', 'html2text', 'markdown2', 'PyPDF2', 'python-docx']
-    missing_packages = []
-    for package in required_packages:
-        try:
-            if package == 'PIL':
-                __import__('PIL')
-                print(f'Successfully imported {package}')
-            else:
-                __import__(package.replace('-', '_'))
-                print(f'Successfully imported {package}')
-        except ImportError as e:
-            missing_packages.append(package)
-            print(f'Error importing {package}: {str(e)}')
-    if missing_packages:
-        print('Missing dependencies:', ', '.join(missing_packages))
-        print('Running repair...')
-        import subprocess
-        for package in missing_packages:
-            if package == 'PIL':
-                subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'Pillow'])
-            else:
-                subprocess.check_call([sys.executable, '-m', 'pip', 'install', package])
-        print('Repair complete!')
-    else:
-        print('All required dependencies are installed!')
-except Exception as e:
-    print('Error during dependency check:')
-    traceback.print_exc()
-    sys.exit(1)
-" >> %LOGFILE% 2>&1
+python %TEMP_SCRIPT% >> %LOGFILE% 2>&1
+if errorlevel 1 (
+    call :log "[ERROR] Dependency check failed!"
+    type %LOGFILE%
+    del %TEMP_SCRIPT%
+    pause
+    exit /b 1
+)
+del %TEMP_SCRIPT%
 
 :: Check if Ollama is running
 call :log "Checking Ollama service..."
@@ -76,7 +89,7 @@ if errorlevel 1 (
     echo Please make sure Ollama is installed and running
     echo Download from: https://ollama.ai/download
     echo.
-    choice /C YN /M "Do you want to continue anyway"
+    choice /C YN /M "Do you want to continue anyway" > nul
     if errorlevel 2 exit /b 1
 )
 
@@ -86,8 +99,22 @@ echo Current directory: %CD% >> %LOGFILE%
 echo Python path: %PYTHONPATH% >> %LOGFILE%
 echo. >> %LOGFILE%
 echo ===== Starting Python Application ===== >> %LOGFILE%
-python -v ollama_shell.py >> %LOGFILE% 2>&1
+
+:: Create a wrapper script to catch any Python errors
+set "WRAPPER_SCRIPT=run_app.py"
+(
+echo import sys, traceback
+echo try:
+echo     import ollama_shell
+echo except Exception as e:
+echo     print('Error running ollama_shell:'^)
+echo     traceback.print_exc(^)
+echo     sys.exit(1^)
+) > %WRAPPER_SCRIPT%
+
+python %WRAPPER_SCRIPT% >> %LOGFILE% 2>&1
 set PYTHON_EXIT_CODE=%errorlevel%
+del %WRAPPER_SCRIPT%
 
 if %PYTHON_EXIT_CODE% neq 0 (
     call :log "[ERROR] Ollama Shell exited with code %PYTHON_EXIT_CODE%"
