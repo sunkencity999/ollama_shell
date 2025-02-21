@@ -1,31 +1,41 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: Change to the script's directory
+:: Create a log file
+set "LOGFILE=ollama_shell_debug.log"
+echo Starting Ollama Shell Debug Log > %LOGFILE%
+echo Timestamp: %date% %time% >> %LOGFILE%
+echo. >> %LOGFILE%
+
+:: Log all output to file
+call :log "Changing to script directory..."
 cd /d "%~dp0"
+echo Current directory: %CD% >> %LOGFILE%
 
 :: Check if virtual environment exists
+call :log "Checking virtual environment..."
 if not exist venv (
-    echo [31mVirtual environment not found![0m
+    call :log "[ERROR] Virtual environment not found!"
     echo Please run install_windows.bat first
     pause
     exit /b 1
 )
 
 :: Activate virtual environment
-echo Activating virtual environment...
-call venv\Scripts\activate.bat || (
-    echo [31mFailed to activate virtual environment![0m
+call :log "Activating virtual environment..."
+call venv\Scripts\activate.bat
+if errorlevel 1 (
+    call :log "[ERROR] Failed to activate virtual environment!"
     pause
     exit /b 1
 )
 
 :: Verify dependencies are installed
-echo Checking dependencies...
+call :log "Checking dependencies..."
 python -c "
-import sys
-import traceback
+import sys, traceback
 try:
+    print('Python version:', sys.version)
     required_packages = ['PIL', 'typer', 'rich', 'requests', 'prompt_toolkit', 'pyfiglet', 'termcolor', 'pyperclip', 
                         'duckduckgo_search', 'beautifulsoup4', 'html2text', 'markdown2', 'PyPDF2', 'python-docx']
     missing_packages = []
@@ -33,13 +43,15 @@ try:
         try:
             if package == 'PIL':
                 __import__('PIL')
+                print(f'Successfully imported {package}')
             else:
                 __import__(package.replace('-', '_'))
+                print(f'Successfully imported {package}')
         except ImportError as e:
             missing_packages.append(package)
-            print(f'[33mError importing {package}: {str(e)}[0m')
+            print(f'Error importing {package}: {str(e)}')
     if missing_packages:
-        print('[31mMissing dependencies found:[0m', ', '.join(missing_packages))
+        print('Missing dependencies:', ', '.join(missing_packages))
         print('Running repair...')
         import subprocess
         for package in missing_packages:
@@ -47,25 +59,20 @@ try:
                 subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'Pillow'])
             else:
                 subprocess.check_call([sys.executable, '-m', 'pip', 'install', package])
-        print('[32mRepair complete![0m')
+        print('Repair complete!')
     else:
-        print('[32mAll required dependencies are installed![0m')
+        print('All required dependencies are installed!')
 except Exception as e:
-    print('[31mError during dependency check:[0m')
+    print('Error during dependency check:')
     traceback.print_exc()
     sys.exit(1)
-" || (
-    echo [31mError checking dependencies![0m
-    echo Please run install_windows.bat again
-    pause
-    exit /b 1
-)
+" >> %LOGFILE% 2>&1
 
 :: Check if Ollama is running
-echo Checking Ollama service...
-powershell -Command "& {try { $response = Invoke-WebRequest -Uri 'http://localhost:11434/api/version' -TimeoutSec 2; Write-Host $response.Content; exit 0 } catch { Write-Host $_.Exception.Message; exit 1 }}"
+call :log "Checking Ollama service..."
+powershell -Command "& {try { $response = Invoke-WebRequest -Uri 'http://localhost:11434/api/version' -TimeoutSec 2; Write-Host $response.Content; exit 0 } catch { Write-Host $_.Exception.Message; exit 1 }}" >> %LOGFILE% 2>&1
 if errorlevel 1 (
-    echo [33mWarning: Ollama service does not appear to be running[0m
+    call :log "[WARNING] Ollama service does not appear to be running"
     echo Please make sure Ollama is installed and running
     echo Download from: https://ollama.ai/download
     echo.
@@ -74,28 +81,37 @@ if errorlevel 1 (
 )
 
 :: Run the application with error handling and debug output
-echo Starting Ollama Shell...
-echo Current directory: %CD%
-echo Python path: %PYTHONPATH%
-python -v ollama_shell.py 2>&1
-if errorlevel 1 (
+call :log "Starting Ollama Shell..."
+echo Current directory: %CD% >> %LOGFILE%
+echo Python path: %PYTHONPATH% >> %LOGFILE%
+echo. >> %LOGFILE%
+echo ===== Starting Python Application ===== >> %LOGFILE%
+python -v ollama_shell.py >> %LOGFILE% 2>&1
+set PYTHON_EXIT_CODE=%errorlevel%
+
+if %PYTHON_EXIT_CODE% neq 0 (
+    call :log "[ERROR] Ollama Shell exited with code %PYTHON_EXIT_CODE%"
     echo.
-    echo [31mError: Ollama Shell exited with an error[0m
-    echo Exit code: !errorlevel!
+    echo An error occurred while running Ollama Shell.
+    echo Please check the debug log file: %LOGFILE%
     echo.
-    echo Checking Python version and environment:
-    python --version
-    echo.
-    echo Checking if we can import required modules:
-    python -c "import typer; import rich; import PIL; print('Core modules can be imported successfully')" 2>&1
-    echo.
-    echo If you're seeing dependency errors, try running install_windows.bat again
-    echo For other issues, please check the error messages above
+    echo Last few lines of the log:
+    echo ================================
+    powershell -Command "Get-Content '%LOGFILE%' -Tail 10"
+    echo ================================
 )
 
 :: Deactivate virtual environment
 call venv\Scripts\deactivate.bat
 
 echo.
+echo Debug log has been saved to: %LOGFILE%
 echo Press any key to exit...
-pause
+pause > nul
+
+goto :eof
+
+:log
+echo %~1
+echo [%date% %time%] %~1 >> %LOGFILE%
+goto :eof
