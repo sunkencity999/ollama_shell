@@ -54,18 +54,30 @@ echo Installing packages...
 %CD%\venv\Scripts\pip install -q duckduckgo-search beautifulsoup4 html2text markdown2
 %CD%\venv\Scripts\pip install -q Pillow python-docx PyPDF2
 
-:: Verify critical dependencies with explicit Python path
+:: Verify critical dependencies
 echo Verifying dependencies...
-%CD%\venv\Scripts\python -c "import sys; print('Python version:', sys.version)" >> %LOGFILE%
-%CD%\venv\Scripts\python -c "import PIL; print('PIL version:', PIL.__version__)" >> %LOGFILE%
-%CD%\venv\Scripts\python -c "import requests; print('Requests version:', requests.__version__)" >> %LOGFILE%
-%CD%\venv\Scripts\python -c "import typer; print('Typer version:', typer.__version__)" >> %LOGFILE%
-%CD%\venv\Scripts\python -c "import rich; print('Rich version:', rich.__version__)" >> %LOGFILE%
+%CD%\venv\Scripts\python -c "
+import sys
+print('Python version:', sys.version)
+required = ['PIL', 'typer', 'rich', 'requests']
+for pkg in required:
+    try:
+        if pkg == 'PIL':
+            import PIL
+            print('PIL installed successfully')
+        else:
+            __import__(pkg)
+            print(f'{pkg} installed successfully')
+    except ImportError as e:
+        print(f'Error importing {pkg}: {e}')
+        sys.exit(1)
+" >> %LOGFILE% 2>&1
 
 if errorlevel 1 (
     call :log "[ERROR] Failed to verify critical dependencies"
     echo [31mError: Failed to install required packages[0m
-    echo Please run install_windows.bat again
+    echo Please check the log file for details: %LOGFILE%
+    type %LOGFILE%
     pause
     exit /b 1
 )
