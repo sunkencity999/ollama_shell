@@ -175,24 +175,42 @@ def display_banner():
     console.print(Panel(banner.rstrip(), border_style="cyan", padding=(0, 2)))
     console.print(Panel(":rocket: Your friendly command-line LLM interface", border_style="cyan", padding=(0, 2)))
 
-def send_message(model: str, message: str, system_prompt: Optional[str] = None, stream: bool = True):
-    """Enhanced message sending with configuration options"""
+def send_message(model: str, message: str, system_prompt: Optional[str] = None, stream: bool = True, context_messages: Optional[list] = None):
+    """Enhanced message sending with configuration options and context support"""
     config = load_config()
     url = f"{OLLAMA_API}/chat"
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt} if system_prompt else None,
-            {"role": "user", "content": message}
-        ],
-        "options": {
-            "temperature": config["temperature"],
-            "num_ctx": config["context_length"]
-        },
-        "stream": stream
-    }
-    # Remove None values from messages
-    payload["messages"] = [msg for msg in payload["messages"] if msg is not None]
+    
+    # If context_messages is provided, use it instead of creating a new message list
+    if context_messages:
+        payload = {
+            "model": model,
+            "messages": context_messages,
+            "options": {
+                "temperature": config["temperature"],
+                "num_ctx": config["context_length"]
+            },
+            "stream": stream
+        }
+        
+        # Add the user message if it's not already included
+        if message and (not context_messages or context_messages[-1]["role"] != "user" or context_messages[-1]["content"] != message):
+            payload["messages"].append({"role": "user", "content": message})
+    else:
+        # Traditional message format
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt} if system_prompt else None,
+                {"role": "user", "content": message}
+            ],
+            "options": {
+                "temperature": config["temperature"],
+                "num_ctx": config["context_length"]
+            },
+            "stream": stream
+        }
+        # Remove None values from messages
+        payload["messages"] = [msg for msg in payload["messages"] if msg is not None]
     
     try:
         response = requests.post(url, json=payload, stream=stream)
@@ -642,6 +660,9 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     class ChatState:
         def __init__(self):
             self.document_context = ""
+            self.pinned_messages = []  # Store pinned messages
+            self.excluded_messages = []  # Store indices of messages to exclude
+            self.summary = None  # Store conversation summary
             
     chat_state = ChatState()
 
@@ -681,7 +702,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
             chat_state.document_context = prepare_document_context(context_files)
             console.print(f"[yellow]Loaded {len(context_files)} document(s) into context[/yellow]")
         except Exception as e:
-            console.print(f"[red]Error loading documents: {str(e)}[/red]")
+            console.print(f"[yellow]Warning: Could not read {context_files}: {str(e)}[/yellow]")
             return
 
     # Function to get current system prompt with document context
@@ -717,6 +738,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     console.print("\n[cyan]Chat started. Type 'exit' to end.[/cyan]")
     console.print("[cyan]• Press Ctrl+V to toggle drag & drop mode[/cyan]")
     console.print("[cyan]• Press Ctrl+C to copy assistant responses[/cyan]")
+    console.print("[cyan]• Type '/help' to see context management commands[/cyan]")
 
     last_response = ""
 
@@ -741,8 +763,8 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                     except Exception as e:
                         console.print(f"[red]Error exporting chat: {str(e)}[/red]")
                 break
-
-            # Handle drag & drop mode
+                
+            # Handle drag & drop mode first
             if drag_drop_active and user_input:
                 # Clean up the file path by removing escape characters and expanding user path
                 cleaned_path = os.path.expanduser(user_input.replace('\\', ''))
@@ -770,11 +792,206 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                                     console.print("[red]Error: Unexpected response format from model[/red]")
                             except Exception as e:
                                 console.print(f"[red]Error getting model response: {str(e)}[/red]")
-                        continue
                     except Exception as e:
                         console.print(f"[red]Error reading file: {str(e)}[/red]")
-                        continue
-
+                    continue
+                
+            # Handle context management commands
+            if user_input.startswith('/'):
+                command_parts = user_input.split(' ', 1)
+                command = command_parts[0].lower()
+                args = command_parts[1] if len(command_parts) > 1 else ""
+                
+                if command == '/help':
+                    console.print("\n[bold cyan]Context Management Commands:[/bold cyan]")
+                    console.print("[green]/pin [message_number][/green] - Pin a message to keep it in context")
+                    console.print("[green]/unpin [message_number][/green] - Unpin a previously pinned message")
+                    console.print("[green]/exclude [message_number][/green] - Exclude a message from context")
+                    console.print("[green]/include [message_number][/green] - Include a previously excluded message")
+                    console.print("[green]/summarize[/green] - Summarize the conversation to save tokens")
+                    console.print("[green]/context[/green] - Show current context management status")
+                    console.print("[green]/tokens[/green] - Show token usage information")
+                    console.print("[green]/help[/green] - Show this help message")
+                    
+                    console.print("\n[bold cyan]Other Commands:[/bold cyan]")
+                    console.print("[green]search: [query][/green] - Search the web for information")
+                    console.print("[green]Ctrl+V[/green] - Toggle drag & drop mode for file sharing")
+                    console.print("[green]Ctrl+C[/green] - Copy assistant's response to clipboard")
+                    console.print("[green]exit, quit, q[/green] - Exit the chat")
+                    continue
+                    
+                elif command == '/pin':
+                    if args and args.strip().isdigit():
+                        msg_idx = int(args.strip())
+                        if msg_idx in chat_state.pinned_messages:
+                            console.print(f"[yellow]Message {msg_idx} is already pinned[/yellow]")
+                        elif 0 < msg_idx < len(chat_history):
+                            chat_state.pinned_messages.append(msg_idx)
+                            console.print(f"[green]Message {msg_idx} pinned to context[/green]")
+                        else:
+                            console.print(f"[red]Invalid message number. Must be between 1 and {len(chat_history)-1}[/red]")
+                    else:
+                        console.print("[red]Please specify a valid message number to pin (e.g., /pin 3)[/red]")
+                    continue
+                    
+                elif command == '/unpin':
+                    if args and args.strip().isdigit():
+                        msg_idx = int(args.strip())
+                        if msg_idx in chat_state.pinned_messages:
+                            chat_state.pinned_messages.remove(msg_idx)
+                            console.print(f"[green]Message {msg_idx} unpinned[/green]")
+                        else:
+                            console.print(f"[yellow]Message {msg_idx} is not pinned[/yellow]")
+                    else:
+                        console.print("[red]Please specify a valid message number to unpin (e.g., /unpin 3)[/red]")
+                    continue
+                    
+                elif command == '/exclude':
+                    if args and args.strip().isdigit():
+                        msg_idx = int(args.strip())
+                        if 0 < msg_idx < len(chat_history):
+                            if msg_idx not in chat_state.excluded_messages:
+                                chat_state.excluded_messages.append(msg_idx)
+                                console.print(f"[green]Message {msg_idx} excluded from context[/green]")
+                            else:
+                                console.print(f"[yellow]Message {msg_idx} is already excluded[/yellow]")
+                        else:
+                            console.print(f"[red]Invalid message number. Must be between 1 and {len(chat_history)-1}[/red]")
+                    else:
+                        console.print("[red]Please specify a valid message number to exclude (e.g., /exclude 3)[/red]")
+                    continue
+                    
+                elif command == '/include':
+                    if args and args.strip().isdigit():
+                        msg_idx = int(args.strip())
+                        if msg_idx in chat_state.excluded_messages:
+                            chat_state.excluded_messages.remove(msg_idx)
+                            console.print(f"[green]Message {msg_idx} included in context[/green]")
+                        else:
+                            console.print(f"[yellow]Message {msg_idx} is not excluded[/yellow]")
+                    else:
+                        console.print("[red]Please specify a valid message number to include (e.g., /include 3)[/red]")
+                    continue
+                    
+                elif command == '/summarize':
+                    # Generate a summary of the conversation
+                    with console.status("[cyan]Generating conversation summary...[/cyan]"):
+                        summary_prompt = """Please create a concise summary of the conversation so far. 
+                        Focus on the key points, questions, and answers. This summary will be used to 
+                        maintain context while saving tokens."""
+                        
+                        # Prepare a temporary message list for the summary request
+                        summary_messages = [
+                            {"role": "system", "content": "You are a helpful assistant that summarizes conversations."},
+                            {"role": "user", "content": summary_prompt}
+                        ]
+                        
+                        # Add the conversation history excluding system messages
+                        for msg in chat_history:
+                            if msg["role"] != "system":
+                                summary_messages.append(msg)
+                        
+                        try:
+                            response = send_message(model, summary_prompt, "You are a helpful assistant that summarizes conversations.", stream=False)
+                            if response and "message" in response and "content" in response["message"]:
+                                chat_state.summary = response["message"]["content"]
+                                console.print("\n[green]Conversation summarized successfully[/green]")
+                                console.print(Panel(Markdown(chat_state.summary), title="Conversation Summary", border_style="green"))
+                            else:
+                                console.print("[red]Error: Failed to generate summary[/red]")
+                        except Exception as e:
+                            console.print(f"[red]Error generating summary: {str(e)}[/red]")
+                    continue
+                    
+                elif command == '/context':
+                    # Display context management status
+                    console.print("\n[bold cyan]Context Management Status:[/bold cyan]")
+                    
+                    # Count tokens
+                    total_tokens = sum(count_tokens(msg["content"], model) for msg in chat_history)
+                    max_tokens = config["context_length"]
+                    
+                    # Display pinned messages
+                    if chat_state.pinned_messages:
+                        console.print("\n[yellow]Pinned Messages:[/yellow]")
+                        for idx in chat_state.pinned_messages:
+                            if 0 <= idx < len(chat_history):
+                                msg = chat_history[idx]
+                                preview = msg["content"][:50] + "..." if len(msg["content"]) > 50 else msg["content"]
+                                console.print(f"[green]{idx}[/green]: [{msg['role']}] {preview}")
+                    else:
+                        console.print("\n[yellow]No pinned messages[/yellow]")
+                    
+                    # Display excluded messages
+                    if chat_state.excluded_messages:
+                        console.print("\n[yellow]Excluded Messages:[/yellow]")
+                        for idx in chat_state.excluded_messages:
+                            if 0 <= idx < len(chat_history):
+                                msg = chat_history[idx]
+                                preview = msg["content"][:50] + "..." if len(msg["content"]) > 50 else msg["content"]
+                                console.print(f"[green]{idx}[/green]: [{msg['role']}] {preview}")
+                    else:
+                        console.print("\n[yellow]No excluded messages[/yellow]")
+                    
+                    # Display summary status
+                    if chat_state.summary:
+                        console.print("\n[yellow]Conversation Summary:[/yellow]")
+                        console.print(Panel(Markdown(chat_state.summary[:200] + "..." if len(chat_state.summary) > 200 else chat_state.summary), 
+                                           border_style="green"))
+                    else:
+                        console.print("\n[yellow]No conversation summary[/yellow]")
+                    
+                    # Display token usage
+                    console.print(f"\n[yellow]Total tokens: {total_tokens}/{max_tokens} ({(total_tokens/max_tokens)*100:.1f}%)[/yellow]")
+                    continue
+                    
+                elif command == '/tokens':
+                    # Display detailed token usage
+                    console.print("\n[bold cyan]Token Usage:[/bold cyan]")
+                    max_tokens = config["context_length"]
+                    
+                    table = Table(title="Message Token Counts")
+                    table.add_column("Msg #", style="cyan")
+                    table.add_column("Role", style="green")
+                    table.add_column("Tokens", style="yellow")
+                    table.add_column("Status", style="magenta")
+                    table.add_column("Preview", style="white")
+                    
+                    total_tokens = 0
+                    for i, msg in enumerate(chat_history):
+                        tokens = count_tokens(msg["content"], model)
+                        total_tokens += tokens
+                        
+                        status = []
+                        if i in chat_state.pinned_messages:
+                            status.append("Pinned")
+                        if i in chat_state.excluded_messages:
+                            status.append("Excluded")
+                        status_str = ", ".join(status) if status else "Normal"
+                        
+                        preview = msg["content"][:30] + "..." if len(msg["content"]) > 30 else msg["content"]
+                        preview = preview.replace("\n", " ")
+                        
+                        table.add_row(
+                            str(i),
+                            msg["role"],
+                            str(tokens),
+                            status_str,
+                            preview
+                        )
+                    
+                    console.print(table)
+                    console.print(f"\n[yellow]Total tokens: {total_tokens}/{max_tokens} ({(total_tokens/max_tokens)*100:.1f}%)[/yellow]")
+                    
+                    if chat_state.summary:
+                        summary_tokens = count_tokens(chat_state.summary, model)
+                        console.print(f"[yellow]Summary tokens: {summary_tokens} (saves {total_tokens - summary_tokens} tokens if used)[/yellow]")
+                    continue
+                
+                # If we get here, it's an unrecognized command
+                elif user_input.startswith('/'):
+                    console.print("[red]Unrecognized command. Type /help for available commands.[/red]")
+                    continue
             # Check for search command
             if user_input.lower().startswith("search:"):
                 search_query = user_input[7:].strip()  # Remove "search:" prefix
@@ -799,47 +1016,87 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
             
             # Regular chat - use streaming response with current context
             try:
-                with console.status("[cyan]Thinking...[/cyan]"):
-                    response = send_message(model, user_input, get_current_system_prompt(), stream=True)
-                    assistant_message = ""
-                    console.print("\n[green]Assistant:[/green]")
+                # Prepare messages for context
+                context_messages = []
                 
-                # Stream the response outside the loading animation
+                # Always include system message
+                for msg in chat_history:
+                    if msg["role"] == "system":
+                        context_messages.append(msg)
+                        break
+                
+                # If we have a summary, use it instead of the full history
+                if chat_state.summary and len(chat_history) > 10:  # Only use summary if conversation is substantial
+                    context_messages.append({"role": "system", "content": f"Previous conversation summary: {chat_state.summary}"})
+                    
+                    # Add the last few messages for immediate context
+                    recent_messages = [msg for i, msg in enumerate(chat_history) if i > 0 and i >= len(chat_history) - 5]
+                    context_messages.extend(recent_messages)
+                else:
+                    # Add all messages that aren't excluded, or are pinned
+                    for i, msg in enumerate(chat_history):
+                        if i > 0:  # Skip system message (already added)
+                            if i in chat_state.pinned_messages or i not in chat_state.excluded_messages:
+                                context_messages.append(msg)
+                
+                # Add the current user message
+                if not context_messages[-1]["role"] == "user" or context_messages[-1]["content"] != user_input:
+                    context_messages.append({"role": "user", "content": user_input})
+                
+                # Calculate token count for logging
+                current_tokens = sum(count_tokens(msg["content"], model) for msg in context_messages)
+                token_display = format_token_count(current_tokens, max_tokens)
+                
+                # Log token usage if verbose
+                if config["verbose"]:
+                    console.print(f"[dim]{token_display}[/dim]")
+                
+                # Stream the response
+                console.print(assistant_separator)
+                console.print("\n[green]Assistant:[/green]")
+                
+                # Use the context_messages instead of just the user input
+                # Create a temporary copy of the messages without the last user message
+                temp_context = context_messages[:-1]
+                
+                # Send the message with the prepared context
+                with console.status("[cyan]Thinking...[/cyan]"):
+                    response = send_message(model, "", None, True, context_messages)
+                
+                full_response = ""
                 for line in response.iter_lines():
                     if line:
                         try:
-                            data = json.loads(line)
-                            if "message" in data:
-                                content = data["message"].get("content", "")
-                                assistant_message += content
+                            chunk = json.loads(line)
+                            if "message" in chunk and "content" in chunk["message"]:
+                                content = chunk["message"]["content"]
+                                full_response += content
                                 console.print(content, end="")
                         except json.JSONDecodeError:
-                            continue
+                            pass
                 
-                console.print()  # New line after streaming
-                console.print(assistant_separator)  # Separator after assistant's response
+                # Add a newline after the response
+                console.print()
                 
-                # Update token counts
-                user_tokens = count_tokens(user_input, model)
-                assistant_tokens = count_tokens(assistant_message, model)
-                current_tokens += user_tokens + assistant_tokens
+                # Store the response for copying
+                last_response = full_response
                 
+                # Add the response to chat history
+                chat_history.append({"role": "assistant", "content": full_response})
+                
+                # Display token usage
+                response_tokens = count_tokens(full_response, model)
+                total_tokens = current_tokens + response_tokens
                 console.print(Panel(
-                    format_token_count(current_tokens, max_tokens),
+                    format_token_count(total_tokens, max_tokens),
                     title="[blue]Context Window[/blue]",
                     border_style="blue",
                     padding=(0, 1)
                 ))
                 
-                # Update last response for clipboard
-                last_response = assistant_message
+                # Save history if enabled
+                save_history(model, chat_history)
                 
-                # Add to history
-                messages = chat_history
-                messages.append({"role": "assistant", "content": assistant_message})
-                
-                if config["save_history"]:
-                    save_history(model, messages)
             except Exception as e:
                 console.print(f"\n[red]Error: {str(e)}[/red]")
         
@@ -859,7 +1116,46 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
 @app.command()
 def help():
     """Show help information about available commands"""
-    display_help()
+    console.clear()
+    display_banner()
+    
+    console.print("\n[bold cyan]Ollama Shell Help[/bold cyan]")
+    
+    # Basic commands
+    console.print("\n[yellow]Basic Commands:[/yellow]")
+    console.print("  [green]chat[/green] - Start an interactive chat session with a model")
+    console.print("  [green]models[/green] - List all available models")
+    console.print("  [green]pull[/green] - Download a new model")
+    console.print("  [green]delete[/green] - Delete an installed model")
+    console.print("  [green]history[/green] - View chat history")
+    console.print("  [green]settings[/green] - View or modify configuration settings")
+    console.print("  [green]prompts[/green] - Manage stored system prompts")
+    console.print("  [green]analyze[/green] - Analyze an image using vision model")
+    
+    # Chat features
+    console.print("\n[yellow]Chat Features:[/yellow]")
+    console.print("  [green]search: [query][/green] - Perform a web search and analyze results")
+    console.print("  [green]Ctrl+V[/green] - Toggle drag & drop mode for file sharing")
+    console.print("  [green]Ctrl+C[/green] - Copy assistant's response to clipboard")
+    
+    # Context Management
+    console.print("\n[yellow]Context Management Commands:[/yellow]")
+    console.print("  [green]/pin [message_number][/green] - Pin a message to keep it in context")
+    console.print("  [green]/unpin [message_number][/green] - Unpin a previously pinned message")
+    console.print("  [green]/exclude [message_number][/green] - Exclude a message from context")
+    console.print("  [green]/include [message_number][/green] - Include a previously excluded message")
+    console.print("  [green]/summarize[/green] - Summarize the conversation to save tokens")
+    console.print("  [green]/context[/green] - Show current context management status")
+    console.print("  [green]/tokens[/green] - Show token usage information")
+    console.print("  [green]/help[/green] - Show context management help")
+    
+    # File handling
+    console.print("\n[yellow]File Handling:[/yellow]")
+    console.print("  Drag & drop files into the chat for analysis")
+    console.print("  Supported formats: PDF, DOCX, TXT, code files, images (with vision models)")
+    
+    # Press Enter to continue
+    Prompt.ask("\n[cyan]Press Enter to continue[/cyan]")
 
 @app.command()
 def chat(
@@ -1599,14 +1895,16 @@ def process_enhanced_search(query: str, model: str) -> str:
         Base your response solely on the provided search results."""
         
         # Prepare the prompt for the LLM
-        prompt = f"""Query: {search_query}
+        prompt = f"""
+        Query: {search_query}
 
-Please analyze these search results and provide a comprehensive summary following the structure outlined in the system prompt.
+        Please analyze these search results and provide a comprehensive summary following the structure outlined in the system prompt.
 
-Search Results:
-{context}"""
+        Search Results:
+        {context}
+        """
         
-        # Send to Ollama
+        # Send to Ollama using the correct format for vision models
         with console.status("[cyan]Analyzing search results...[/cyan]"):
             response = requests.post(
                 f"{OLLAMA_API}/generate",

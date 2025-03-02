@@ -25,6 +25,7 @@ Contact: contact@christopherdanielbradford.com
 - 🌐 **Real-time Information**: Combine search results with model analysis
 - 💾 **Export Capabilities**: Export chats in multiple formats
 - ⚡ **Drag & Drop**: Easy file sharing in chat
+- 🧠 **Context Management**: Intelligent management of conversation context
 
 ## Quick Start
 
@@ -50,6 +51,39 @@ python ollama_shell.py
 ```
 
 ## Tutorial
+
+### Context Management
+The Context Management feature allows you to optimize token usage and maintain important information in long conversations:
+
+1. **Pin Important Messages**:
+   ```
+   /pin 5
+   ```
+   This pins message #5 to ensure it stays in context even as the conversation grows.
+
+2. **Exclude Irrelevant Messages**:
+   ```
+   /exclude 3
+   ```
+   This excludes message #3 from the context, saving tokens for more relevant information.
+
+3. **Summarize Conversations**:
+   ```
+   /summarize
+   ```
+   This creates a concise summary of the conversation to save tokens while maintaining context.
+
+4. **View Context Status**:
+   ```
+   /context
+   ```
+   Shows the current status of your context management, including pinned and excluded messages.
+
+5. **Check Token Usage**:
+   ```
+   /tokens
+   ```
+   Displays detailed token usage information for each message.
 
 ### Enhanced Search Queries
 The Enhanced Search feature allows you to combine real-time web information with model analysis:
@@ -141,6 +175,18 @@ Configuration is stored in `config.json` and includes:
 - Save frequently used prompts for quick access
 - Export important conversations for future reference
 - Use custom prompts with image analysis for specific insights
+- Use `/pin` to keep important context in long conversations
+- Use `/summarize` to condense long conversations while maintaining context
+
+## Context Management Commands
+- `/pin [message_number]` - Pin a message to keep it in context
+- `/unpin [message_number]` - Unpin a previously pinned message
+- `/exclude [message_number]` - Exclude a message from context
+- `/include [message_number]` - Include a previously excluded message
+- `/summarize` - Summarize the conversation to save tokens
+- `/context` - Show current context management status
+- `/tokens` - Show token usage information
+- `/help` - Show context management help
 
 ## Contributing
 Contributions are welcome! Please feel free to submit a Pull Request.
