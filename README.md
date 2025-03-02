@@ -128,6 +128,7 @@ Analyze various document types:
 
 1. **Supported Formats**:
    - Word Documents (.docx, .doc)
+   - Excel Spreadsheets (.xlsx, .xls)
    - PDF Files (.pdf)
    - Text Files (.txt, .md, etc.)
    - Code Files (.py, .js, etc.)
@@ -141,6 +142,7 @@ Analyze various document types:
 
 ### Documents
 - 📝 Word Documents (.docx, .doc)
+- 📊 Excel Spreadsheets (.xlsx, .xls)
 - 📄 PDF Files (.pdf)
 - ✍️ Text Files (.txt, .md)
 - 💻 Code Files (.py, .js, .html, .css, .json, .yaml, .yml)

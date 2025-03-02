@@ -1659,6 +1659,28 @@ def read_file_content(file_path: str) -> tuple[str, str]:
             except ImportError:
                 raise ImportError("python-docx is required for Word document support. Install it with: pip install python-docx")
         
+        elif ext in ['.xlsx', '.xls']:
+            # For Excel files, we'll need pandas and openpyxl
+            try:
+                import pandas as pd
+                
+                # Read all sheets
+                sheets = pd.read_excel(file_path, sheet_name=None, engine='openpyxl' if ext == '.xlsx' else 'xlrd')
+                
+                text_parts = []
+                # Process each sheet
+                for sheet_name, df in sheets.items():
+                    text_parts.append(f"\n--- Sheet: {sheet_name} ---\n")
+                    
+                    # Convert dataframe to string representation
+                    sheet_text = df.to_string(index=False)
+                    text_parts.append(sheet_text)
+                
+                text = "\n".join(text_parts)
+                return text, "Excel spreadsheet"
+            except ImportError:
+                raise ImportError("pandas and openpyxl/xlrd are required for Excel support. Install them with: pip install pandas openpyxl xlrd")
+        
         elif ext in ['.md', '.txt', '.py', '.js', '.html', '.css', '.json', '.yaml', '.yml'] or not ext:
             # Text files can be read directly
             # Also handle files without extensions as text files

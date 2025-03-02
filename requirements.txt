@@ -19,3 +19,6 @@ python-docx>=1.0.0  # Word document support
 PyPDF2>=3.0.0  # PDF support
 weasyprint>=60.1  # PDF export
 chroma-hnswlib>=0.7.3  # For enhanced search capabilities
+pandas>=2.0.0  # Excel file support
+openpyxl>=3.1.0  # Excel .xlsx file support
+xlrd>=2.0.1  # Excel .xls file support
