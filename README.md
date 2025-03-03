@@ -26,6 +26,7 @@ Contact: contact@christopherdanielbradford.com
 - 💾 **Export Capabilities**: Export chats in multiple formats
 - ⚡ **Drag & Drop**: Easy file sharing in chat
 - 🧠 **Context Management**: Intelligent management of conversation context
+- 📚 **Knowledge Base**: Local vector database for persistent information storage
 
 ## Quick Start
 
@@ -138,6 +139,33 @@ Analyze various document types:
    - Reference documents in prompts
    - Include multiple documents for context
 
+### Knowledge Base
+Store and retrieve information using a local vector database:
+
+1. **Features**:
+   - Persistent storage across sessions
+   - Semantic search for relevant information
+   - Automatic integration with chat context
+   - Vector embeddings for similarity matching
+
+2. **Usage**:
+   - Add important information with `/kb add [text]`
+   - Search the knowledge base with `/kb search [query]`
+   - Enable/disable with `/kb toggle`
+   - View status with `/kb status`
+
+3. **Benefits**:
+   - Remember important facts between sessions
+   - Build a personalized knowledge repository
+   - Automatically enhance responses with relevant context
+   - Reduce repetitive questions
+
+4. **Adding Documents**:
+   - Drag & drop documents directly into the chat
+   - Choose to add them to the knowledge base when prompted
+   - Documents are automatically chunked for optimal storage
+   - Search across all documents with `/kb search [query]`
+
 ## Supported File Formats
 
 ### Documents
@@ -179,6 +207,8 @@ Configuration is stored in `config.json` and includes:
 - Use custom prompts with image analysis for specific insights
 - Use `/pin` to keep important context in long conversations
 - Use `/summarize` to condense long conversations while maintaining context
+- Use the knowledge base to store and retrieve important information across sessions
+- Add documents to your knowledge base via drag & drop for persistent access to their content
 
 ## Context Management Commands
 - `/pin [message_number]` - Pin a message to keep it in context
@@ -189,6 +219,12 @@ Configuration is stored in `config.json` and includes:
 - `/context` - Show current context management status
 - `/tokens` - Show token usage information
 - `/help` - Show context management help
+
+## Knowledge Base Commands
+- `/kb status` - Show knowledge base status and statistics
+- `/kb add [text]` - Add text to your knowledge base
+- `/kb search [query]` - Search your knowledge base for relevant information
+- `/kb toggle` - Enable or disable knowledge base integration
 
 ## Contributing
 Contributions are welcome! Please feel free to submit a Pull Request.

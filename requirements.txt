@@ -22,3 +22,7 @@ chroma-hnswlib>=0.7.3  # For enhanced search capabilities
 pandas>=2.0.0  # Excel file support
 openpyxl>=3.1.0  # Excel .xlsx file support
 xlrd>=2.0.1  # Excel .xls file support
+
+# Vector database and embeddings
+chromadb>=0.4.18  # Vector database
+sentence-transformers>=2.2.2  # For generating embeddings

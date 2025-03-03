@@ -33,6 +33,14 @@ import pyperclip
 from bs4 import BeautifulSoup
 import time
 
+# Import vector database and embedding libraries
+try:
+    import chromadb
+    from sentence_transformers import SentenceTransformer
+    VECTOR_DB_AVAILABLE = True
+except ImportError:
+    VECTOR_DB_AVAILABLE = False
+
 app = typer.Typer()
 console = Console(
     force_terminal=True,
@@ -52,6 +60,12 @@ DEFAULT_CONFIG = {
     "show_model_details": True,
     "temperature": 0.7,
     "context_length": 4096,
+    "knowledge_base": {
+        "enabled": True,
+        "path": "~/.ollama_shell_kb",
+        "max_results": 5,
+        "similarity_threshold": 0.7
+    },
     "stored_prompts": {
         "code_expert": {
             "title": "Code Review & Improvement Expert",
@@ -591,32 +605,196 @@ def get_model_context_window(model: str) -> int:
         return 4096  # Default fallback
 
 def count_tokens(text: str, model: str = None) -> int:
-    """Count the number of tokens in a text string"""
-    try:
-        # Use Ollama's tokenize endpoint
-        response = requests.post(
-            f"{OLLAMA_API}/tokenize",
-            json={"model": model, "content": text}
-        )
-        if response.status_code == 200:
-            return len(response.json().get("tokens", []))
-    except Exception:
-        pass
-    
-    # Fallback to character-based approximation
-    return len(text) // 4  # Rough approximation: ~4 characters per token
+    """Count tokens in a text string"""
+    # Simple estimation - can be improved with tiktoken or similar
+    return len(text.split()) * 1.3  # Rough approximation
 
-def format_token_count(current: int, max_tokens: int) -> str:
-    """Format token count for display with progress bar"""
-    percentage = (current / max_tokens) * 100
-    color = "green" if percentage < 70 else "yellow" if percentage < 90 else "red"
+def format_token_count(current_tokens: int, max_tokens: int) -> str:
+    """Format token count for display"""
+    percentage = (current_tokens / max_tokens) * 100
+    return f"Tokens: {current_tokens}/{max_tokens} ({percentage:.1f}%)"
+
+class KnowledgeBase:
+    """Knowledge base using vector embeddings for semantic search"""
     
-    # Create a visual progress bar
-    bar_width = 20
-    filled = int(bar_width * (current / max_tokens))
-    bar = f"[{color}]{'█' * filled}{'░' * (bar_width - filled)}[/{color}]"
+    def __init__(self, path: str = None):
+        """Initialize the knowledge base"""
+        if not VECTOR_DB_AVAILABLE:
+            raise ImportError("Vector database dependencies not available. Install with: pip install chromadb sentence-transformers")
+        
+        self.config = load_config()
+        kb_config = self.config.get("knowledge_base", {})
+        
+        # Use provided path or default from config
+        self.path = path or os.path.expanduser(kb_config.get("path", "~/.ollama_shell_kb"))
+        self.max_results = kb_config.get("max_results", 5)
+        self.similarity_threshold = kb_config.get("similarity_threshold", 0.7)
+        
+        # Create directory if it doesn't exist
+        os.makedirs(self.path, exist_ok=True)
+        
+        # Initialize the vector database
+        self.client = chromadb.PersistentClient(path=self.path)
+        
+        # Create or get the collection
+        try:
+            self.collection = self.client.get_collection("ollama_shell_kb")
+        except ValueError:
+            self.collection = self.client.create_collection(
+                "ollama_shell_kb",
+                metadata={"description": "Ollama Shell Knowledge Base"}
+            )
+        
+        # Initialize the embedding model
+        self.embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
     
-    return f"{bar} {current}/{max_tokens} tokens ({percentage:.1f}%)"
+    def add_to_knowledge_base(self, text: str, metadata: dict = None, id_prefix: str = None) -> str:
+        """Add text to the knowledge base"""
+        if not text or len(text.strip()) < 10:
+            return None
+            
+        # Generate a unique ID
+        doc_id = f"{id_prefix or 'doc'}_{int(time.time())}_{hash(text) % 10000}"
+        
+        # Default metadata if none provided
+        if metadata is None:
+            metadata = {"source": "chat", "timestamp": datetime.datetime.now().isoformat()}
+        
+        # Generate embedding using the model
+        embedding = self.embedding_model.encode(text).tolist()
+        
+        # Add to collection
+        self.collection.add(
+            documents=[text],
+            embeddings=[embedding],
+            metadatas=[metadata],
+            ids=[doc_id]
+        )
+        
+        return doc_id
+    
+    def search_knowledge_base(self, query: str, limit: int = None) -> list:
+        """Search the knowledge base for relevant information"""
+        if not query or len(query.strip()) < 3:
+            return []
+            
+        # Generate embedding for the query
+        query_embedding = self.embedding_model.encode(query).tolist()
+        
+        # Search the collection
+        results = self.collection.query(
+            query_embeddings=[query_embedding],
+            n_results=limit or self.max_results
+        )
+        
+        # Format results
+        formatted_results = []
+        if results and "documents" in results and results["documents"]:
+            for i, doc in enumerate(results["documents"][0]):
+                # Get metadata and distance if available
+                metadata = results["metadatas"][0][i] if "metadatas" in results and results["metadatas"] else {}
+                distance = results["distances"][0][i] if "distances" in results and results["distances"] else 1.0
+                
+                # Only include results above similarity threshold
+                similarity = 1.0 - distance  # Convert distance to similarity
+                if similarity >= self.similarity_threshold:
+                    formatted_results.append({
+                        "text": doc,
+                        "metadata": metadata,
+                        "similarity": similarity
+                    })
+        
+        return formatted_results
+    
+    def delete_from_knowledge_base(self, doc_id: str) -> bool:
+        """Delete a document from the knowledge base by ID"""
+        try:
+            self.collection.delete(ids=[doc_id])
+            return True
+        except Exception:
+            return False
+    
+    def get_stats(self) -> dict:
+        """Get statistics about the knowledge base"""
+        count = self.collection.count()
+        return {
+            "count": count,
+            "path": self.path
+        }
+        
+    def add_document(self, content: str, source: str, file_type: str) -> dict:
+        """Add a document to the knowledge base, chunking if necessary
+        
+        Args:
+            content: The document content
+            source: The document source (usually filename)
+            file_type: The type of file
+            
+        Returns:
+            dict: Statistics about the operation
+        """
+        if not content or len(content.strip()) < 50:
+            return {"success": False, "reason": "Document too short"}
+            
+        # For large documents, split into chunks of ~1000 characters with overlap
+        content_length = len(content)
+        chunk_size = 1000
+        overlap = 100
+        chunks_added = 0
+        
+        try:
+            if content_length <= chunk_size:
+                # Small document, add as single entry
+                doc_id = self.add_to_knowledge_base(
+                    content,
+                    metadata={
+                        "source": source,
+                        "type": file_type,
+                        "timestamp": datetime.datetime.now().isoformat()
+                    },
+                    id_prefix=f"doc_{source.replace(' ', '_')}"
+                )
+                if doc_id:
+                    chunks_added = 1
+            else:
+                # Large document, split into chunks
+                chunks = []
+                for i in range(0, content_length, chunk_size - overlap):
+                    chunk = content[i:i + chunk_size]
+                    if len(chunk) > 100:  # Only add substantial chunks
+                        chunks.append(chunk)
+                
+                # Add each chunk to knowledge base
+                for i, chunk in enumerate(chunks):
+                    doc_id = self.add_to_knowledge_base(
+                        chunk,
+                        metadata={
+                            "source": source,
+                            "type": file_type,
+                            "chunk": i + 1,
+                            "total_chunks": len(chunks),
+                            "timestamp": datetime.datetime.now().isoformat()
+                        },
+                        id_prefix=f"doc_{source.replace(' ', '_')}_chunk{i+1}"
+                    )
+                    if doc_id:
+                        chunks_added += 1
+            
+            return {
+                "success": chunks_added > 0,
+                "chunks_added": chunks_added,
+                "total_length": content_length
+            }
+        except Exception as e:
+            return {"success": False, "reason": str(e)}
+
+# Initialize the knowledge base if available
+kb_instance = None
+if VECTOR_DB_AVAILABLE:
+    try:
+        kb_instance = KnowledgeBase()
+    except Exception as e:
+        console.print(f"[yellow]Warning: Could not initialize knowledge base: {str(e)}[/yellow]")
 
 def interactive_chat(model: str, system_prompt: Optional[str] = None, context_files: Optional[list[str]] = None, existing_history: Optional[list] = None):
     """Start an interactive chat session with the specified model"""
@@ -663,6 +841,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
             self.pinned_messages = []  # Store pinned messages
             self.excluded_messages = []  # Store indices of messages to exclude
             self.summary = None  # Store conversation summary
+            self.kb_enabled = VECTOR_DB_AVAILABLE and load_config().get("knowledge_base", {}).get("enabled", True)
             
     chat_state = ChatState()
 
@@ -774,6 +953,15 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                         # Update document context
                         chat_state.document_context += f"\n\nContent from {os.path.basename(cleaned_path)} ({file_type}):\n{content}"
                         
+                        # Check if we should add to knowledge base
+                        add_to_kb = False
+                        if VECTOR_DB_AVAILABLE and kb_instance and chat_state.kb_enabled:
+                            add_to_kb = Prompt.ask(
+                                f"\nAdd [cyan]{os.path.basename(cleaned_path)}[/cyan] to knowledge base?",
+                                choices=["y", "n", "yes", "no"],
+                                default="n"
+                            ).lower() in ['y', 'yes']
+                        
                         # Create a message about the file being shared
                         file_message = f"I've added a {file_type} to our conversation. Please analyze it and provide key insights. The content is:\n\n{content}"
                         
@@ -786,7 +974,25 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                                     chat_history.append({"role": "user", "content": file_message})
                                     chat_history.append({"role": "assistant", "content": assistant_message})
                                     console.print(f"\n[green]Successfully loaded file: {os.path.basename(cleaned_path)}[/green]")
+                                    
+                                    # Add to knowledge base if requested
+                                    if add_to_kb:
+                                        console.print("[cyan]Adding to knowledge base...[/cyan]")
+                                        try:
+                                            result = kb_instance.add_document(
+                                                content=content,
+                                                source=os.path.basename(cleaned_path),
+                                                file_type=file_type
+                                            )
+                                            
+                                            if result["success"]:
+                                                console.print(f"[green]Added document to knowledge base in {result['chunks_added']} chunks[/green]")
+                                            else:
+                                                console.print(f"[yellow]Failed to add to knowledge base: {result.get('reason', 'Unknown error')}[/yellow]")
+                                        except Exception as e:
+                                                   console.print(f"[red]Error adding to knowledge base: {str(e)}[/red]")
                                     console.print("\n[green]Assistant:[/green]")
+                                    console.print(Markdown(assistant_message))
                                     console.print(Markdown(assistant_message))
                                 else:
                                     console.print("[red]Error: Unexpected response format from model[/red]")
@@ -813,8 +1019,14 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                     console.print("[green]/tokens[/green] - Show token usage information")
                     console.print("[green]/help[/green] - Show this help message")
                     
+                    console.print("\n[bold cyan]Knowledge Base Commands:[/bold cyan]")
+                    console.print("[green]/kb status[/green] - Show knowledge base status")
+                    console.print("[green]/kb add [text][/green] - Add text to knowledge base")
+                    console.print("[green]/kb search [query][/green] - Search knowledge base")
+                    console.print("[green]/kb toggle[/green] - Enable/disable knowledge base")
+                    
                     console.print("\n[bold cyan]Other Commands:[/bold cyan]")
-                    console.print("[green]search: [query][/green] - Search the web for information")
+                    console.print("[green]search: [query][/green] - Perform a web search and analyze results")
                     console.print("[green]Ctrl+V[/green] - Toggle drag & drop mode for file sharing")
                     console.print("[green]Ctrl+C[/green] - Copy assistant's response to clipboard")
                     console.print("[green]exit, quit, q[/green] - Exit the chat")
@@ -988,10 +1200,109 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                         console.print(f"[yellow]Summary tokens: {summary_tokens} (saves {total_tokens - summary_tokens} tokens if used)[/yellow]")
                     continue
                 
+                elif command == '/kb' and VECTOR_DB_AVAILABLE:
+                    if not kb_instance:
+                        console.print("[red]Knowledge base is not available. Please check your installation.[/red]")
+                        continue
+                        
+                    kb_args = args.strip().split(' ', 1)
+                    kb_command = kb_args[0].lower() if kb_args else ""
+                    kb_content = kb_args[1] if len(kb_args) > 1 else ""
+                    
+                    if kb_command == "status":
+                        # Show knowledge base status
+                        if not chat_state.kb_enabled:
+                            console.print("[yellow]Knowledge base is currently disabled[/yellow]")
+                            console.print("[yellow]Use /kb toggle to enable it[/yellow]")
+                            continue
+                            
+                        stats = kb_instance.get_stats()
+                        console.print(f"[green]Knowledge base status:[/green]")
+                        console.print(f"[green]• Enabled: {chat_state.kb_enabled}[/green]")
+                        console.print(f"[green]• Documents: {stats['count']}[/green]")
+                        console.print(f"[green]• Path: {stats['path']}[/green]")
+                        console.print(f"[green]• Max results: {kb_instance.max_results}[/green]")
+                        console.print(f"[green]• Similarity threshold: {kb_instance.similarity_threshold}[/green]")
+                        continue
+                    
+                    elif kb_command == "add":
+                        # Add content to knowledge base
+                        if not chat_state.kb_enabled:
+                            console.print("[yellow]Knowledge base is currently disabled[/yellow]")
+                            console.print("[yellow]Use /kb toggle to enable it[/yellow]")
+                            continue
+                            
+                        if not kb_content:
+                            console.print("[red]Please provide text to add to the knowledge base[/red]")
+                            continue
+                            
+                        try:
+                            doc_id = kb_instance.add_to_knowledge_base(kb_content)
+                            if doc_id:
+                                console.print(f"[green]Added to knowledge base with ID: {doc_id}[/green]")
+                            else:
+                                console.print("[yellow]Text was too short to add to knowledge base[/yellow]")
+                        except Exception as e:
+                            console.print(f"[red]Error adding to knowledge base: {str(e)}[/red]")
+                        continue
+                            
+                    elif kb_command == "search":
+                        # Search knowledge base
+                        if not chat_state.kb_enabled:
+                            console.print("[yellow]Knowledge base is currently disabled[/yellow]")
+                            console.print("[yellow]Use /kb toggle to enable it[/yellow]")
+                            continue
+                            
+                        if not kb_content:
+                            console.print("[red]Please provide a search query[/red]")
+                            continue
+                            
+                        try:
+                            results = kb_instance.search_knowledge_base(kb_content)
+                            if results:
+                                console.print(f"[green]Found {len(results)} results:[/green]")
+                                for i, result in enumerate(results):
+                                    similarity_pct = result["similarity"] * 100
+                                    source = result["metadata"].get("source", "unknown")
+                                    timestamp = result["metadata"].get("timestamp", "unknown")
+                                    
+                                    # Format the result
+                                    console.print(f"[cyan]Result {i+1} (Similarity: {similarity_pct:.1f}%)[/cyan]")
+                                    console.print(f"[dim]Source: {source}, Added: {timestamp}[/dim]")
+                                    console.print(Panel(result["text"][:500] + ("..." if len(result["text"]) > 500 else ""), 
+                                                      border_style="green"))
+                            else:
+                                console.print("[yellow]No matching results found in knowledge base[/yellow]")
+                        except Exception as e:
+                            console.print(f"[red]Error searching knowledge base: {str(e)}[/red]")
+                        continue
+                
+                    elif kb_command == "toggle":
+                        # Toggle knowledge base
+                        chat_state.kb_enabled = not chat_state.kb_enabled
+                        status = "enabled" if chat_state.kb_enabled else "disabled"
+                        console.print(f"[green]Knowledge base {status}[/green]")
+                        continue
+                        
+                    else:
+                        # Show help for knowledge base commands
+                        console.print("[cyan]Knowledge Base Commands:[/cyan]")
+                        console.print("[green]/kb status[/green] - Show knowledge base status")
+                        console.print("[green]/kb add [text][/green] - Add text to knowledge base")
+                        console.print("[green]/kb search [query][/green] - Search knowledge base")
+                        console.print("[green]/kb toggle[/green] - Enable/disable knowledge base")
+                        continue
+                
+                elif command == '/kb' and not VECTOR_DB_AVAILABLE:
+                    console.print("[red]Knowledge base feature is not available.[/red]")
+                    console.print("[red]Install required dependencies with: pip install chromadb sentence-transformers[/red]")
+                    continue
+                
                 # If we get here, it's an unrecognized command
                 elif user_input.startswith('/'):
                     console.print("[red]Unrecognized command. Type /help for available commands.[/red]")
                     continue
+            
             # Check for search command
             if user_input.lower().startswith("search:"):
                 search_query = user_input[7:].strip()  # Remove "search:" prefix
@@ -1042,6 +1353,31 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                 # Add the current user message
                 if not context_messages[-1]["role"] == "user" or context_messages[-1]["content"] != user_input:
                     context_messages.append({"role": "user", "content": user_input})
+                
+                # Search knowledge base for relevant information if enabled
+                kb_context = ""
+                if VECTOR_DB_AVAILABLE and kb_instance and chat_state.kb_enabled:
+                    try:
+                        kb_results = kb_instance.search_knowledge_base(user_input)
+                        if kb_results:
+                            kb_context = "\n\nRelevant information from knowledge base:\n"
+                            for i, result in enumerate(kb_results):
+                                similarity_pct = result["similarity"] * 100
+                                kb_context += f"\n--- Result {i+1} (Similarity: {similarity_pct:.1f}%) ---\n"
+                                kb_context += result["text"]
+                            
+                            # Add knowledge base context to the system message
+                            if kb_context:
+                                for i, msg in enumerate(context_messages):
+                                    if msg["role"] == "system":
+                                        context_messages[i]["content"] += kb_context
+                                        break
+                                else:
+                                    # If no system message found, add it as a new system message
+                                    context_messages.insert(0, {"role": "system", "content": kb_context})
+                    except Exception as e:
+                        if config["verbose"]:
+                            console.print(f"[yellow]Knowledge base search error: {str(e)}[/yellow]")
                 
                 # Calculate token count for logging
                 current_tokens = sum(count_tokens(msg["content"], model) for msg in context_messages)
@@ -1148,6 +1484,13 @@ def help():
     console.print("  [green]/context[/green] - Show current context management status")
     console.print("  [green]/tokens[/green] - Show token usage information")
     console.print("  [green]/help[/green] - Show context management help")
+    
+    # Knowledge Base
+    console.print("\n[yellow]Knowledge Base Commands:[/yellow]")
+    console.print("  [green]/kb status[/green] - Show knowledge base status")
+    console.print("  [green]/kb add [text][/green] - Add text to knowledge base")
+    console.print("  [green]/kb search [query][/green] - Search knowledge base")
+    console.print("  [green]/kb toggle[/green] - Enable/disable knowledge base")
     
     # File handling
     console.print("\n[yellow]File Handling:[/yellow]")
@@ -1507,8 +1850,9 @@ def manage_prompts():
             console.print(f"[green]{num}[/green]. {desc}")
         
         choice = Prompt.ask("\nEnter your choice", choices=[str(i) for i in range(1, 6)])
+        choice = int(choice)
         
-        if choice == "1":
+        if choice == 1:
             name = Prompt.ask("\nEnter a name for the prompt (used for selection)")
             if name in config["stored_prompts"]:
                 if not Prompt.ask(f"[yellow]Prompt '{name}' already exists. Overwrite?[/yellow]", choices=["y", "n", "yes", "no"], default="n").lower() in ['y', 'yes']:
@@ -1532,7 +1876,7 @@ def manage_prompts():
             save_config(config)
             console.print("[green]Prompt saved successfully![/green]")
         
-        elif choice == "2":
+        elif choice == 2:
             if not config["stored_prompts"]:
                 console.print("[yellow]No prompts to delete![/yellow]")
                 Prompt.ask("\nPress Enter to continue")
@@ -1556,7 +1900,7 @@ def manage_prompts():
                 save_config(config)
                 console.print("[green]Prompt deleted successfully![/green]")
         
-        elif choice == "3":
+        elif choice == 3:
             if not config["stored_prompts"]:
                 console.print("[yellow]No prompts to view![/yellow]")
                 Prompt.ask("\nPress Enter to continue")
@@ -1568,7 +1912,7 @@ def manage_prompts():
             console.print(Panel(prompt_data["prompt"], border_style="cyan"))
             Prompt.ask("\nPress Enter to continue")
         
-        elif choice == "4":
+        elif choice == 4:
             if not config["stored_prompts"]:
                 console.print("[yellow]No prompts to search![/yellow]")
                 Prompt.ask("\nPress Enter to continue")
@@ -1601,10 +1945,10 @@ def manage_prompts():
             
             Prompt.ask("\nPress Enter to continue")
         
-        elif choice == "5":
+        elif choice == 5:
             break
         
-        if choice != "5":
+        if choice != 5:
             Prompt.ask("\nPress Enter to continue")
 
 def read_file_content(file_path: str) -> tuple[str, str]:
@@ -1780,7 +2124,7 @@ def display_menu():
                 # Handle chat command with model selection
                 models_list = get_available_models()
                 if not models_list:
-                    console.print("[red]No models available. Please install a model first.[/red]")
+                    console.print("[yellow]No models available. Is Ollama running?[/yellow]")
                     continue
                 
                 console.print("\n[cyan]Available models:[/cyan]")
