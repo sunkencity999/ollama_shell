@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 import os
+# Set environment variable to avoid tokenizers parallelism warning
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import json
 import typer
 import requests
@@ -59,12 +62,12 @@ DEFAULT_CONFIG = {
     "history_file": "~/.ollama_shell_history",
     "show_model_details": True,
     "temperature": 0.7,
-    "context_length": 4096,
+    "context_length": 8192,
     "knowledge_base": {
         "enabled": True,
         "path": "~/.ollama_shell_kb",
         "max_results": 5,
-        "similarity_threshold": 0.7
+        "similarity_threshold": 0.05
     },
     "stored_prompts": {
         "code_expert": {
@@ -593,6 +596,15 @@ def export_chat(chat_history: list, format: str = "markdown", output_file: str =
 
 def get_model_context_window(model: str) -> int:
     """Get the context window size for a specific model"""
+    # First check if user has specified a context length in config
+    config = load_config()
+    user_context_length = config.get("context_length")
+    
+    # If user has specified a context length, use that
+    if user_context_length:
+        return user_context_length
+        
+    # Otherwise try to get from Ollama API
     try:
         response = requests.get(f"{OLLAMA_API}/show", params={"name": model})
         if response.status_code == 200:
@@ -628,7 +640,7 @@ class KnowledgeBase:
         # Use provided path or default from config
         self.path = path or os.path.expanduser(kb_config.get("path", "~/.ollama_shell_kb"))
         self.max_results = kb_config.get("max_results", 5)
-        self.similarity_threshold = kb_config.get("similarity_threshold", 0.7)
+        self.similarity_threshold = kb_config.get("similarity_threshold", 0.05)
         
         # Create directory if it doesn't exist
         os.makedirs(self.path, exist_ok=True)
@@ -660,18 +672,29 @@ class KnowledgeBase:
         if metadata is None:
             metadata = {"source": "chat", "timestamp": datetime.datetime.now().isoformat()}
         
-        # Generate embedding using the model
-        embedding = self.embedding_model.encode(text).tolist()
-        
-        # Add to collection
-        self.collection.add(
-            documents=[text],
-            embeddings=[embedding],
-            metadatas=[metadata],
-            ids=[doc_id]
-        )
-        
-        return doc_id
+        try:
+            # Generate embedding using the model
+            embedding = self.embedding_model.encode(text).tolist()
+            
+            # Add to collection
+            self.collection.add(
+                documents=[text],
+                embeddings=[embedding],
+                metadatas=[metadata],
+                ids=[doc_id]
+            )
+            
+            config = load_config()
+            if config.get("verbose", False):
+                print(f"Debug - Added document with ID: {doc_id}")
+                print(f"Debug - Collection count after add: {self.collection.count()}")
+            
+            return doc_id
+        except Exception as e:
+            config = load_config()
+            if config.get("verbose", False):
+                print(f"Debug - Error in add_to_knowledge_base: {str(e)}")
+            return None
     
     def search_knowledge_base(self, query: str, limit: int = None) -> list:
         """Search the knowledge base for relevant information"""
@@ -687,6 +710,18 @@ class KnowledgeBase:
             n_results=limit or self.max_results
         )
         
+        # Debug output only when verbose mode is enabled
+        config = load_config()
+        if config.get("verbose", False):
+            print(f"Debug - Query: '{query}'")
+            print(f"Debug - Collection count: {self.collection.count()}")
+            print(f"Debug - Raw results: {results.keys()}")
+            if "documents" in results:
+                print(f"Debug - Documents found: {len(results['documents'][0]) if results['documents'] else 0}")
+                if results["documents"] and len(results["documents"][0]) > 0:
+                    print(f"Debug - Distances: {results['distances'][0] if 'distances' in results else 'N/A'}")
+                    print(f"Debug - Similarity threshold: {self.similarity_threshold}")
+        
         # Format results
         formatted_results = []
         if results and "documents" in results and results["documents"]:
@@ -697,6 +732,12 @@ class KnowledgeBase:
                 
                 # Only include results above similarity threshold
                 similarity = 1.0 - distance  # Convert distance to similarity
+                
+                # Debug output for each result only when verbose mode is enabled
+                config = load_config()
+                if config.get("verbose", False):
+                    print(f"Debug - Result {i} similarity: {similarity:.4f}")
+                
                 if similarity >= self.similarity_threshold:
                     formatted_results.append({
                         "text": doc,
@@ -742,6 +783,13 @@ class KnowledgeBase:
         overlap = 100
         chunks_added = 0
         
+        # Debug output only when verbose mode is enabled
+        config = load_config()
+        if config.get("verbose", False):
+            print(f"Debug - Adding document: {source}")
+            print(f"Debug - Content length: {content_length}")
+            print(f"Debug - Collection count before: {self.collection.count()}")
+        
         try:
             if content_length <= chunk_size:
                 # Small document, add as single entry
@@ -786,15 +834,26 @@ class KnowledgeBase:
                 "total_length": content_length
             }
         except Exception as e:
+            config = load_config()
+            if config.get("verbose", False):
+                print(f"Debug - Error adding document: {str(e)}")
             return {"success": False, "reason": str(e)}
 
 # Initialize the knowledge base if available
 kb_instance = None
 if VECTOR_DB_AVAILABLE:
     try:
+        config = load_config()
+        if config.get("verbose", False):
+            print("Debug - Initializing knowledge base...")
         kb_instance = KnowledgeBase()
+        if config.get("verbose", False):
+            print(f"Debug - Knowledge base initialized with {kb_instance.collection.count()} documents")
     except Exception as e:
         console.print(f"[yellow]Warning: Could not initialize knowledge base: {str(e)}[/yellow]")
+        config = load_config()
+        if config.get("verbose", False):
+            print(f"Debug - Knowledge base initialization error: {str(e)}")
 
 def interactive_chat(model: str, system_prompt: Optional[str] = None, context_files: Optional[list[str]] = None, existing_history: Optional[list] = None):
     """Start an interactive chat session with the specified model"""
@@ -992,8 +1051,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                                         except Exception as e:
                                                    console.print(f"[red]Error adding to knowledge base: {str(e)}[/red]")
                                     console.print("\n[green]Assistant:[/green]")
-                                    console.print(Markdown(assistant_message))
-                                    console.print(Markdown(assistant_message))
+                                    console.print(Panel(Markdown(assistant_message), border_style="purple"))
                                 else:
                                     console.print("[red]Error: Unexpected response format from model[/red]")
                             except Exception as e:
@@ -1376,7 +1434,8 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                                     # If no system message found, add it as a new system message
                                     context_messages.insert(0, {"role": "system", "content": kb_context})
                     except Exception as e:
-                        if config["verbose"]:
+                        config = load_config()
+                        if config.get("verbose", False):
                             console.print(f"[yellow]Knowledge base search error: {str(e)}[/yellow]")
                 
                 # Calculate token count for logging
@@ -1384,7 +1443,8 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                 token_display = format_token_count(current_tokens, max_tokens)
                 
                 # Log token usage if verbose
-                if config["verbose"]:
+                config = load_config()
+                if config.get("verbose", False):
                     console.print(f"[dim]{token_display}[/dim]")
                 
                 # Stream the response
@@ -1444,7 +1504,8 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
             break
         except Exception as e:
             console.print(f"\n[red]Error: {str(e)}[/red]")
-            if config["verbose"]:
+            config = load_config()
+            if config.get("verbose", False):
                 import traceback
                 console.print(f"\n[red]Traceback: {traceback.format_exc()}[/red]")
             continue
