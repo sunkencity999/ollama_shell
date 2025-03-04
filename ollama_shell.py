@@ -35,6 +35,7 @@ from prompt_toolkit.key_binding import KeyBindings
 import pyperclip
 from bs4 import BeautifulSoup
 import time
+import re
 
 # Import vector database and embedding libraries
 try:
@@ -43,6 +44,9 @@ try:
     VECTOR_DB_AVAILABLE = True
 except ImportError:
     VECTOR_DB_AVAILABLE = False
+
+# Import file creation functions
+from file_creation import create_file, create_text_file, create_csv_file, create_docx_file, create_excel_file, create_pdf_file
 
 app = typer.Typer()
 console = Console(
@@ -124,6 +128,107 @@ Focus on creating APIs that are both powerful and developer-friendly."""
 }
 
 PROMPT_STYLE = None
+
+# File creation helper functions
+def create_text_file(content, filename):
+    """Create a plain text file with the given content"""
+    try:
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(content)
+        return True, f"Created text file: {filename}"
+    except Exception as e:
+        return False, f"Error creating text file: {str(e)}"
+
+def create_csv_file(content, filename):
+    """Create a CSV file with the given content"""
+    try:
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(content)
+        return True, f"Created CSV file: {filename}"
+    except Exception as e:
+        return False, f"Error creating CSV file: {str(e)}"
+
+def create_docx_file(content, filename):
+    """Create a Word document with the given content"""
+    try:
+        import docx
+        doc = docx.Document()
+        
+        # Split content by double newlines to create paragraphs
+        paragraphs = content.split('\n\n')
+        for para in paragraphs:
+            if para.strip():
+                doc.add_paragraph(para)
+                
+        doc.save(filename)
+        return True, f"Created Word document: {filename}"
+    except ImportError:
+        return False, "python-docx library not installed. Install with: pip install python-docx"
+    except Exception as e:
+        return False, f"Error creating Word document: {str(e)}"
+
+def create_excel_file(content, filename):
+    """Create an Excel file with the given content"""
+    try:
+        import pandas as pd
+        import io
+        
+        # Try to parse the content as CSV data
+        csv_data = io.StringIO(content)
+        # Use on_bad_lines instead of error_bad_lines (which is deprecated)
+        df = pd.read_csv(csv_data, sep=',', on_bad_lines='skip')
+        
+        # Save as Excel file
+        if filename.endswith('.xlsx'):
+            df.to_excel(filename, index=False, engine='openpyxl')
+        else:  # .xls
+            df.to_excel(filename, index=False, engine='xlwt')
+            
+        return True, f"Created Excel file: {filename}"
+    except ImportError:
+        return False, "pandas or openpyxl library not installed. Install with: pip install pandas openpyxl xlwt"
+    except Exception as e:
+        return False, f"Error creating Excel file: {str(e)}"
+
+def create_pdf_file(content, filename):
+    """Create a PDF file with the given content"""
+    try:
+        from weasyprint import HTML
+        import tempfile
+        
+        # Convert content to HTML
+        html_content = f"<html><body><pre>{content}</pre></body></html>"
+        
+        # Create PDF using WeasyPrint
+        HTML(string=html_content).write_pdf(filename)
+        return True, f"Created PDF file: {filename}"
+    except ImportError:
+        return False, "weasyprint library not installed. Install with: pip install weasyprint"
+    except Exception as e:
+        return False, f"Error creating PDF file: {str(e)}"
+
+def create_file(content, filename):
+    """Create a file with the given content based on file extension"""
+    # Ensure the filename has an extension
+    if '.' not in filename:
+        return False, "Filename must have an extension (e.g., .txt, .docx, .xlsx, .pdf)"
+    
+    # Get the file extension
+    ext = filename.lower().split('.')[-1]
+    
+    # Create the file based on extension
+    if ext == 'txt':
+        return create_text_file(content, filename)
+    elif ext == 'csv':
+        return create_csv_file(content, filename)
+    elif ext in ['doc', 'docx']:
+        return create_docx_file(content, filename)
+    elif ext in ['xls', 'xlsx']:
+        return create_excel_file(content, filename)
+    elif ext == 'pdf':
+        return create_pdf_file(content, filename)
+    else:
+        return False, f"Unsupported file extension: .{ext}"
 
 def load_config():
     """Load configuration from config file"""
@@ -250,10 +355,45 @@ def send_message(model: str, message: str, system_prompt: Optional[str] = None, 
                 if content:
                     return {"message": {"content": content}}
                 else:
-                    raise Exception(f"Failed to parse response: {str(e)}")
-    
+                    raise Exception(f"Failed to parse response: {e}")
     except requests.exceptions.RequestException as e:
-        raise Exception(f"Error sending message: {str(e)}")
+        raise Exception(f"Request failed: {e}")
+
+def generate_chat_completion(model: str, messages: list) -> str:
+    """Generate a chat completion using the specified model and messages"""
+    config = load_config()
+    url = f"{OLLAMA_API}/chat"
+    
+    payload = {
+        "model": model,
+        "messages": messages,
+        "options": {
+            "temperature": config["temperature"],
+            "num_ctx": config["context_length"]
+        },
+        "stream": False
+    }
+    
+    try:
+        response = requests.post(url, json=payload)
+        response.raise_for_status()
+        
+        # Process response
+        try:
+            result = response.json()
+            if isinstance(result, dict) and "message" in result and "content" in result["message"]:
+                return result["message"]["content"]
+            else:
+                raise Exception("Unexpected response format")
+        except json.JSONDecodeError as e:
+            # If JSON parsing fails, try to extract content from raw response
+            content = response.text.strip()
+            if content:
+                return content
+            else:
+                raise Exception(f"Failed to parse response: {e}")
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Request failed: {e}")
 
 def get_available_models():
     """Get list of available models from Ollama"""
@@ -974,7 +1114,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     chat_history.append({"role": "system", "content": get_current_system_prompt()})
 
     console.print("\n[cyan]Chat started. Type 'exit' to end.[/cyan]")
-    console.print("[cyan]• Press Ctrl+V to toggle drag & drop mode[/cyan]")
+    console.print("[cyan]• Press Ctrl+V to toggle drag & drop mode for file sharing[/cyan]")
     console.print("[cyan]• Press Ctrl+C to copy assistant responses[/cyan]")
     console.print("[cyan]• Type '/help' to see context management commands[/cyan]")
 
@@ -1015,11 +1155,17 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                         # Check if we should add to knowledge base
                         add_to_kb = False
                         if VECTOR_DB_AVAILABLE and kb_instance and chat_state.kb_enabled:
-                            add_to_kb = Prompt.ask(
-                                f"\nAdd [cyan]{os.path.basename(cleaned_path)}[/cyan] to knowledge base?",
-                                choices=["y", "n", "yes", "no"],
-                                default="n"
-                            ).lower() in ['y', 'yes']
+                            # Skip knowledge base prompt for image files
+                            _, ext = os.path.splitext(cleaned_path)
+                            ext = ext.lower()
+                            is_image = ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
+                            
+                            if not is_image:
+                                add_to_kb = Prompt.ask(
+                                    f"\nAdd [cyan]{os.path.basename(cleaned_path)}[/cyan] to knowledge base?",
+                                    choices=["y", "n", "yes", "no"],
+                                    default="n"
+                                ).lower() in ['y', 'yes']
                         
                         # Create a message about the file being shared
                         file_message = f"I've added a {file_type} to our conversation. Please analyze it and provide key insights. The content is:\n\n{content}"
@@ -1085,9 +1231,13 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                     
                     console.print("\n[bold cyan]Other Commands:[/bold cyan]")
                     console.print("[green]search: [query][/green] - Perform a web search and analyze results")
+                    console.print("[green]/create [filename] [content][/green] - Create a file with specified content")
+                    console.print("[green]/create [request] and save to [filename][/green] - Generate and save content")
                     console.print("[green]Ctrl+V[/green] - Toggle drag & drop mode for file sharing")
                     console.print("[green]Ctrl+C[/green] - Copy assistant's response to clipboard")
                     console.print("[green]exit, quit, q[/green] - Exit the chat")
+                    console.print("[green]e number[/green]: Export chat")
+                    
                     continue
                     
                 elif command == '/pin':
@@ -1356,6 +1506,110 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                     console.print("[red]Install required dependencies with: pip install chromadb sentence-transformers[/red]")
                     continue
                 
+                elif command == '/create':
+                    # Handle file creation command
+                    if not args:
+                        console.print("[red]Error: Missing arguments for /create command.[/red]")
+                        console.print("[yellow]Usage: /create [filename] [content][/yellow]")
+                        console.print("[yellow]Example: /create data.csv 'Name,Age,City\\nJohn,30,New York\\nJane,25,Boston'[/yellow]")
+                        console.print("[yellow]Natural language: /create a haiku about nature and save to nature.txt[/yellow]")
+                        continue
+                    
+                    # Check if this is a natural language request
+                    if ' and save to ' in args.lower() or ' and save as ' in args.lower() or ' save to ' in args.lower() or ' save as ' in args.lower() or ' in ' in args.lower() or ' named ' in args.lower() or ' called ' in args.lower() or ' to ' in args.lower():
+                        # Process natural language request
+                        console.print("[yellow]Processing natural language file creation request...[/yellow]")
+                        
+                        # Extract filename from the request using various patterns
+                        filename = None
+                        
+                        # Try different patterns to extract the filename
+                        patterns = [
+                            r'(?:save to|save as) ([a-zA-Z0-9_\-\.~\/]+)',
+                            r'(?:in|to|named|called) ([a-zA-Z0-9_\-\.~\/]+\.(?:txt|csv|docx?|xlsx?|pdf))',
+                            r'([a-zA-Z0-9_\-\.~\/]+\.(?:txt|csv|docx?|xlsx?|pdf))'
+                        ]
+                        
+                        for pattern in patterns:
+                            filename_match = re.search(pattern, args, re.IGNORECASE)
+                            if filename_match:
+                                filename = filename_match.group(1).strip()
+                                break
+                        
+                        if not filename:
+                            console.print("[red]Error: Could not identify filename in request.[/red]")
+                            console.print("[yellow]Please specify a filename, e.g., 'save to myfile.txt'[/yellow]")
+                            continue
+                        
+                        # Remove the filename part from the request
+                        content_request = args
+                        for pattern in [
+                            r'(?:and)?\s*(?:save to|save as) [a-zA-Z0-9_\-\.~\/]+',
+                            r'(?:in|to|named|called) [a-zA-Z0-9_\-\.~\/]+\.(?:txt|csv|docx?|xlsx?|pdf)',
+                            r'(?:in|to|named|called) [a-zA-Z0-9_\-\.~\/]+'
+                        ]:
+                            content_request = re.sub(pattern, '', content_request, flags=re.IGNORECASE).strip()
+                        
+                        # Generate content using the model
+                        console.print(f"[yellow]Generating content for: {content_request}[/yellow]")
+                        console.print(f"[yellow]Creating file: {filename}[/yellow]")
+                        
+                        # Prepare messages for the model
+                        messages = [
+                            {"role": "system", "content": "You are a helpful assistant that generates content based on user requests. Be concise and creative."},
+                            {"role": "user", "content": content_request}
+                        ]
+                        
+                        # Generate content using the model
+                        try:
+                            response = generate_chat_completion(model, messages)
+                            content = response.strip()
+                            
+                            # Expand ~ in filename to user's home directory
+                            filename = os.path.expanduser(filename)
+                            
+                            # Create the file
+                            console.print(f"[yellow]Creating file: {filename}[/yellow]")
+                            console.print(f"[cyan]Generated content:[/cyan]\n{content}\n")
+                            success, message = create_file(content, filename)
+                            
+                            if success:
+                                console.print(f"[green]{message}[/green]")
+                            else:
+                                console.print(f"[red]{message}[/red]")
+                        except Exception as e:
+                            console.print(f"[red]Error generating content: {str(e)}[/red]")
+                    else:
+                        # Traditional format: filename content
+                        try:
+                            # Split only on the first space to get filename and content
+                            parts = args.split(' ', 1)
+                            if len(parts) < 2:
+                                console.print("[red]Error: Invalid format. Please provide both filename and content.[/red]")
+                                console.print("[yellow]Usage: /create [filename] [content][/yellow]")
+                                continue
+                                
+                            filename = parts[0]
+                            content = parts[1]
+                        except ValueError:
+                            console.print("[red]Error: Invalid format. Please provide both filename and content.[/red]")
+                            console.print("[yellow]Usage: /create [filename] [content][/yellow]")
+                            continue
+                        
+                        # Expand ~ in filename to user's home directory
+                        filename = os.path.expanduser(filename)
+                        
+                        # Create the file
+                        console.print(f"[yellow]Creating file: {filename}[/yellow]")
+                        success, message = create_file(content, filename)
+                        
+                        if success:
+                            console.print(f"[green]{message}[/green]")
+                        else:
+                            console.print(f"[red]{message}[/red]")
+                    
+                    continue
+                
                 # If we get here, it's an unrecognized command
                 elif user_input.startswith('/'):
                     console.print("[red]Unrecognized command. Type /help for available commands.[/red]")
@@ -1557,6 +1811,9 @@ def help():
     console.print("\n[yellow]File Handling:[/yellow]")
     console.print("  Drag & drop files into the chat for analysis")
     console.print("  Supported formats: PDF, DOCX, TXT, code files, images (with vision models)")
+    console.print("  [green]/create [filename] [content][/green] - Create a file with specified content")
+    console.print("  [green]/create [request] and save to [filename][/green] - Generate and save content")
+    console.print("  Supported file types: TXT, CSV, DOC/DOCX, XLS/XLSX, PDF")
     
     # Press Enter to continue
     Prompt.ask("\n[cyan]Press Enter to continue[/cyan]")
@@ -2345,16 +2602,64 @@ def process_enhanced_search(query: str, model: str) -> str:
             if response.status_code != 200:
                 return f"Error: Failed to analyze search results. Status code: {response.status_code}"
             
-            analysis = response.json().get("response", "")
-            if not analysis:
+            result = response.json().get("response", "")
+            if not result:
                 return "Error: No analysis was generated. Please try again."
             
-            return analysis
+            return result
             
     except requests.RequestException as e:
         return f"Network error occurred while processing search: {str(e)}"
     except Exception as e:
         return f"An error occurred while processing search: {str(e)}"
+
+@app.command()
+def analyze(
+    image: str = typer.Argument(..., help="Path to the image file to analyze"),
+    prompt: Optional[str] = typer.Option(None, help="Custom prompt for image analysis")
+):
+    """Analyze an image using the vision model"""
+    try:
+        result = analyze_image(image, prompt)
+        console.print("\n[bold cyan]Image Analysis:[/bold cyan]")
+        console.print(Panel(result, border_style="cyan"))
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+
+def analyze_from_menu():
+    """Handle image analysis from the menu"""
+    try:
+        # First check if vision model is available
+        config = load_config()
+        vision_model = config.get("default_vision_model", "llama3.2-vision:latest")
+        models_list = get_available_models()
+        
+        if vision_model not in models_list:
+            console.print(f"[yellow]Warning: Vision model {vision_model} not found.[/yellow]")
+            pull_model = Prompt.ask(f"Would you like to pull {vision_model} now? (y/n)", choices=["y", "n", "yes", "no"], default="y")
+            if pull_model.lower() in ['y', 'yes']:
+                pull(vision_model)
+            else:
+                console.print("[red]Cannot analyze images without a vision model.[/red]")
+                return
+        
+        image_path = Prompt.ask("[cyan]Enter the path to the image file[/cyan]")
+        image_path = os.path.expanduser(image_path)
+        
+        if not os.path.exists(image_path):
+            console.print("[red]Error: File not found[/red]")
+            return
+        
+        use_custom_prompt = Prompt.ask("[cyan]Would you like to use a custom prompt? (y/n)[/cyan]", choices=["y", "n", "yes", "no"], default="n")
+        prompt = None
+        if use_custom_prompt.lower() in ['y', 'yes']:
+            prompt = Prompt.ask("[cyan]Enter your custom prompt[/cyan]")
+        
+        result = analyze_image(image_path, prompt)
+        console.print("\n[bold cyan]Image Analysis:[/bold cyan]")
+        console.print(Panel(result, border_style="cyan"))
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
 
 def encode_image(image_path: str) -> tuple[str, str]:
     """
@@ -2420,62 +2725,27 @@ def analyze_image(image_path: str, prompt: Optional[str] = None) -> str:
             if response.status_code != 200:
                 raise Exception(f"Error from Ollama API: {response.text}")
             
-            result = response.json().get("response", "")
-            if not result:
-                raise Exception("No analysis received from model")
-            
-            return result
+            # Try to parse the response as JSON
+            try:
+                result_json = response.json()
+                if "response" in result_json:
+                    return result_json["response"]
+                else:
+                    # Try alternative response format
+                    if "message" in result_json and "content" in result_json["message"]:
+                        return result_json["message"]["content"]
+                    else:
+                        raise Exception("Unexpected response format from model")
+            except json.JSONDecodeError:
+                # If JSON parsing fails, return the raw text
+                result = response.text.strip()
+                if result:
+                    return result
+                else:
+                    raise Exception("No analysis received from model")
             
     except Exception as e:
         raise Exception(f"Error analyzing image: {str(e)}")
-
-@app.command()
-def analyze(
-    image: str = typer.Argument(..., help="Path to the image file to analyze"),
-    prompt: Optional[str] = typer.Option(None, help="Custom prompt for image analysis")
-):
-    """Analyze an image using the vision model"""
-    try:
-        result = analyze_image(image, prompt)
-        console.print("\n[bold cyan]Image Analysis:[/bold cyan]")
-        console.print(Panel(result, border_style="cyan"))
-    except Exception as e:
-        console.print(f"[red]Error: {str(e)}[/red]")
-
-def analyze_from_menu():
-    """Handle image analysis from the menu"""
-    try:
-        # First check if vision model is available
-        config = load_config()
-        vision_model = config.get("default_vision_model", "llama3.2-vision:latest")
-        models_list = get_available_models()
-        
-        if vision_model not in models_list:
-            console.print(f"[yellow]Warning: Vision model {vision_model} not found.[/yellow]")
-            pull_model = Prompt.ask(f"Would you like to pull {vision_model} now? (y/n)", choices=["y", "n", "yes", "no"], default="y")
-            if pull_model.lower() in ['y', 'yes']:
-                pull(vision_model)
-            else:
-                console.print("[red]Cannot analyze images without a vision model.[/red]")
-                return
-        
-        image_path = Prompt.ask("[cyan]Enter the path to the image file[/cyan]")
-        image_path = os.path.expanduser(image_path)
-        
-        if not os.path.exists(image_path):
-            console.print("[red]Error: File not found[/red]")
-            return
-        
-        use_custom_prompt = Prompt.ask("[cyan]Would you like to use a custom prompt? (y/n)[/cyan]", choices=["y", "n", "yes", "no"], default="n")
-        prompt = None
-        if use_custom_prompt.lower() in ['y', 'yes']:
-            prompt = Prompt.ask("[cyan]Enter your custom prompt[/cyan]")
-        
-        result = analyze_image(image_path, prompt)
-        console.print("\n[bold cyan]Image Analysis:[/bold cyan]")
-        console.print(Panel(result, border_style="cyan"))
-    except Exception as e:
-        console.print(f"[red]Error: {str(e)}[/red]")
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:

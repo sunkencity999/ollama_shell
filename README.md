@@ -131,13 +131,53 @@ Analyze various document types:
    - Word Documents (.docx, .doc)
    - Excel Spreadsheets (.xlsx, .xls)
    - PDF Files (.pdf)
-   - Text Files (.txt, .md, etc.)
-   - Code Files (.py, .js, etc.)
+   - Text Files (.txt, .md)
+   - Code Files (.py, .js, .html, etc.)
 
-2. **Usage**:
-   - Drag & drop documents into chat
-   - Reference documents in prompts
-   - Include multiple documents for context
+2. **Drag & Drop**:
+   - Press Ctrl+V to toggle drag & drop mode
+   - Drag a document into the terminal
+   - The model will analyze the document content
+
+3. **File Creation**:
+   - Create files directly from the chat using the `/create` command
+   - Standard syntax: `/create [filename] [content]`
+   - Natural language syntax: `/create a haiku about nature and save to nature.txt`
+   - Example: `/create data.csv "Name,Age,City\nJohn,30,New York\nJane,25,Boston"`
+   - Supported formats: TXT, CSV, DOC/DOCX, XLS/XLSX, PDF
+
+### Context Management
+The Context Management feature allows you to optimize token usage and maintain important information in long conversations:
+
+1. **Pin Important Messages**:
+   ```
+   /pin 5
+   ```
+   This pins message #5 to ensure it stays in context even as the conversation grows.
+
+2. **Exclude Irrelevant Messages**:
+   ```
+   /exclude 3
+   ```
+   This excludes message #3 from the context, saving tokens for more relevant information.
+
+3. **Summarize Conversations**:
+   ```
+   /summarize
+   ```
+   This creates a concise summary of the conversation to save tokens while maintaining context.
+
+4. **View Context Status**:
+   ```
+   /context
+   ```
+   Shows the current status of your context management, including pinned and excluded messages.
+
+5. **Check Token Usage**:
+   ```
+   /tokens
+   ```
+   Displays detailed token usage information for each message.
 
 ### Knowledge Base
 Store and retrieve information using a local vector database:
