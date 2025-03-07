@@ -48,6 +48,20 @@ except ImportError:
 # Import file creation functions
 from file_creation import create_file, create_text_file, create_csv_file, create_docx_file, create_excel_file, create_pdf_file
 
+# Import fine-tuning module
+try:
+    # Try to import the new modular fine-tuning system
+    from finetune_modules import FineTuningManager, detect_hardware
+    FINETUNE_AVAILABLE = True
+except ImportError:
+    try:
+        # Fall back to the old fine-tuning system for backward compatibility
+        import finetune
+        from finetune import FineTuningManager
+        FINETUNE_AVAILABLE = True
+    except ImportError:
+        FINETUNE_AVAILABLE = False
+
 app = typer.Typer()
 console = Console(
     force_terminal=True,
@@ -1137,7 +1151,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                     )
                     try:
                         output_file = export_chat(chat_history, format=format_choice)
-                        console.print(f"[green]Chat exported to: {output_file}[/green]")
+                        console.print(f"[green]Chat exported to: {output_file}![/green]")
                     except Exception as e:
                         console.print(f"[red]Error exporting chat: {str(e)}[/red]")
                 break
@@ -1178,7 +1192,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                                     assistant_message = response["message"]["content"]
                                     chat_history.append({"role": "user", "content": file_message})
                                     chat_history.append({"role": "assistant", "content": assistant_message})
-                                    console.print(f"\n[green]Successfully loaded file: {os.path.basename(cleaned_path)}[/green]")
+                                    console.print("\n[green]Successfully loaded file: {os.path.basename(cleaned_path)}[/green]")
                                     
                                     # Add to knowledge base if requested
                                     if add_to_kb:
@@ -1228,6 +1242,21 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                     console.print("[green]/kb add [text][/green] - Add text to knowledge base")
                     console.print("[green]/kb search [query][/green] - Search knowledge base")
                     console.print("[green]/kb toggle[/green] - Enable/disable knowledge base")
+                    
+                    if FINETUNE_AVAILABLE:
+                        console.print("\n[bold cyan]Fine-Tuning Commands:[/bold cyan]")
+                        console.print("[green]/finetune status[/green] - Show fine-tuning status and hardware detection")
+                        console.print("[green]/finetune create [name] [base_model][/green] - Create a new fine-tuning job")
+                        console.print("[green]/finetune dataset [path][/green] - Prepare a dataset for fine-tuning")
+                        console.print("[green]/finetune start [name][/green] - Start a fine-tuning job")
+                        console.print("[green]/finetune list[/green] - List all fine-tuning jobs")
+                        console.print("[green]/finetune export [name][/green] - Export model to Ollama")
+                        console.print("[green]/finetune install[/green] - Install fine-tuning dependencies")
+                        console.print("[green]/finetune pause [name][/green] - Pause a running fine-tuning job")
+                        console.print("[green]/finetune resume [name][/green] - Resume a paused fine-tuning job")
+                        console.print("[green]/finetune delete [name][/green] - Delete a fine-tuning job")
+                        console.print("[green]/finetune models[/green] - List available Ollama models for fine-tuning")
+                        console.print("[green]/finetune progress [name][/green] - Show progress of a fine-tuning job")
                     
                     console.print("\n[bold cyan]Other Commands:[/bold cyan]")
                     console.print("[green]search: [query][/green] - Perform a web search and analyze results")
@@ -1466,10 +1495,10 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                             continue
                             
                         try:
-                            results = kb_instance.search_knowledge_base(kb_content)
-                            if results:
-                                console.print(f"[green]Found {len(results)} results:[/green]")
-                                for i, result in enumerate(results):
+                            kb_results = kb_instance.search_knowledge_base(kb_content)
+                            if kb_results:
+                                console.print(f"[green]Found {len(kb_results)} results:[/green]")
+                                for i, result in enumerate(kb_results):
                                     similarity_pct = result["similarity"] * 100
                                     source = result["metadata"].get("source", "unknown")
                                     timestamp = result["metadata"].get("timestamp", "unknown")
@@ -1504,6 +1533,252 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                 elif command == '/kb' and not VECTOR_DB_AVAILABLE:
                     console.print("[red]Knowledge base feature is not available.[/red]")
                     console.print("[red]Install required dependencies with: pip install chromadb sentence-transformers[/red]")
+                    continue
+                
+                elif (command == '/finetune' or command == '/ft') and FINETUNE_AVAILABLE:
+                    # Initialize fine-tuning manager
+                    ft_manager = FineTuningManager()
+                    
+                    if not args:
+                        console.print("[yellow]Fine-tuning Commands:[/yellow]")
+                        console.print("[green]/finetune status[/green] - Show fine-tuning status and hardware detection")
+                        console.print("[green]/finetune create [name] [base_model][/green] - Create a new fine-tuning job")
+                        console.print("[green]/finetune dataset [path][/green] - Prepare a dataset for fine-tuning")
+                        console.print("[green]/finetune start [name][/green] - Start a fine-tuning job")
+                        console.print("[green]/finetune list[/green] - List all fine-tuning jobs")
+                        console.print("[green]/finetune export [name][/green] - Export model to Ollama")
+                        console.print("[green]/finetune install[/green] - Install fine-tuning dependencies")
+                        console.print("[green]/finetune pause [name][/green] - Pause a running fine-tuning job")
+                        console.print("[green]/finetune resume [name][/green] - Resume a paused fine-tuning job")
+                        console.print("[green]/finetune delete [name][/green] - Delete a fine-tuning job")
+                        console.print("[green]/finetune models[/green] - List available Ollama models for fine-tuning")
+                        console.print("[green]/finetune progress [name][/green] - Show progress of a fine-tuning job")
+                        continue
+                    
+                    subcmd = args.split()[0] if " " in args else args
+                    subcmd_args = args[len(subcmd):].strip() if " " in args else ""
+                    
+                    if subcmd == "status":
+                        # Show hardware detection and fine-tuning status
+                        ft_manager.display_status()
+                    
+                    elif subcmd == "install":
+                        # Install dependencies
+                        console.print("[yellow]Installing fine-tuning dependencies...[/yellow]")
+                        if ft_manager.install_dependencies():
+                            console.print("[green]Dependencies installed successfully[/green]")
+                        else:
+                            console.print("[red]Failed to install dependencies[/red]")
+                    
+                    elif subcmd == "create":
+                        # Create a new fine-tuning job
+                        create_args = subcmd_args.split()
+                        if len(create_args) < 2:
+                            console.print("[red]Error: Missing arguments[/red]")
+                            console.print("[yellow]Usage: /finetune create [name] [base_model] [param=value] ...[/yellow]")
+                            console.print("[yellow]Example: /finetune create my_job llama2 batch_size=16[/yellow]")
+                            continue
+                        
+                        name = create_args[0]
+                        base_model = create_args[1]
+                        
+                        # Parse additional parameters
+                        params = {}
+                        for arg in create_args[2:]:
+                            if "=" in arg:
+                                key, value = arg.split("=", 1)
+                                try:
+                                    # Try to convert to appropriate type
+                                    if value.lower() == "true":
+                                        params[key] = True
+                                    elif value.lower() == "false":
+                                        params[key] = False
+                                    elif "." in value:
+                                        params[key] = float(value)
+                                    else:
+                                        params[key] = int(value)
+                                except ValueError:
+                                    params[key] = value
+                        
+                        try:
+                            if ft_manager.create_job(name, base_model, parameters=params):
+                                console.print(f"[green]Created fine-tuning job:[/green] {name}")
+                                console.print(f"[green]Base model:[/green] {base_model}")
+                                job_info = ft_manager.get_job(name)
+                                if job_info:
+                                    console.print(f"[green]Framework:[/green] {job_info.get('framework', 'unknown')}")
+                                    console.print(f"[green]Parameters:[/green]")
+                                    for key, value in job_info.get("parameters", {}).items():
+                                        console.print(f"  [green]{key}:[/green] {value}")
+                            else:
+                                console.print(f"[red]Failed to create job: {name}[/red]")
+                        except Exception as e:
+                            console.print(f"[red]Error creating job: {str(e)}[/red]")
+                    
+                    elif subcmd == "list":
+                        # List all fine-tuning jobs
+                        jobs = ft_manager.get_jobs()
+                        if not jobs:
+                            console.print("[yellow]No fine-tuning jobs found[/yellow]")
+                        else:
+                            console.print("[green]Fine-tuning jobs:[/green]")
+                            for job_name, job_info in jobs.items():
+                                status = job_info.get('status', 'unknown')
+                                base_model = job_info.get('base_model', 'unknown')
+                                
+                                # Get status color
+                                if status == "running":
+                                    status_color = "green"
+                                elif status == "completed":
+                                    status_color = "blue"
+                                elif status == "paused":
+                                    status_color = "yellow"
+                                elif status == "failed":
+                                    status_color = "red"
+                                else:
+                                    status_color = "white"
+                                
+                                console.print(f"  [bold]{job_name}[/bold] - Status: [{status_color}]{status}[/{status_color}] - Model: {base_model}")
+                    
+                    elif subcmd == "export":
+                        # Export model to Ollama
+                        export_args = subcmd_args.split()
+                        if not export_args:
+                            console.print("[red]Error: Missing name argument[/red]")
+                            console.print("[yellow]Usage: /finetune export [name] [--target target_name][/yellow]")
+                            continue
+                        
+                        name = export_args[0]
+                        target_name = None
+                        
+                        # Check for target name
+                        if len(export_args) > 2 and export_args[1] == "--target":
+                            target_name = export_args[2]
+                        
+                        try:
+                            if ft_manager.export_job(name, target_name):
+                                console.print(f"[green]Model exported to Ollama: {target_name or name}[/green]")
+                            else:
+                                console.print(f"[red]Failed to export model to Ollama: {name}[/red]")
+                        except Exception as e:
+                            console.print(f"[red]Error exporting model: {str(e)}[/red]")
+                    
+                    elif subcmd == "models":
+                        # List available Ollama models
+                        console.print("[yellow]Checking available Ollama models...[/yellow]")
+                        models = ft_manager.get_ollama_models()
+                        
+                        if models:
+                            console.print("[green]Available Ollama models for fine-tuning:[/green]")
+                            for model in models:
+                                console.print(f"  - {model.get('name', 'unknown')} ({model.get('size', 'unknown')})")
+                            console.print("\n[yellow]Use one of these models with the create command:[/yellow]")
+                            console.print("[yellow]Example: /finetune create my_job llama3[/yellow]")
+                        else:
+                            console.print("[yellow]No Ollama models found. Make sure you've pulled at least one model with 'ollama pull <model>'.[/yellow]")
+                            console.print("[yellow]Example: ollama pull llama3[/yellow]")
+                    
+                    elif subcmd == "pause":
+                        # Pause a fine-tuning job
+                        if not subcmd_args:
+                            console.print("[red]Error: Missing name argument[/red]")
+                            console.print("[yellow]Usage: /finetune pause [name][/yellow]")
+                            continue
+                        
+                        name = subcmd_args
+                        if ft_manager.pause_job(name):
+                            console.print(f"[green]Paused fine-tuning job: {name}[/green]")
+                        else:
+                            console.print(f"[red]Failed to pause fine-tuning job: {name}[/red]")
+                    
+                    elif subcmd == "resume":
+                        # Resume a fine-tuning job
+                        if not subcmd_args:
+                            console.print("[red]Error: Missing name argument[/red]")
+                            console.print("[yellow]Usage: /finetune resume [name][/yellow]")
+                            continue
+                        
+                        name = subcmd_args
+                        if ft_manager.resume_job(name):
+                            console.print(f"[green]Resumed fine-tuning job: {name}[/green]")
+                        else:
+                            console.print(f"[red]Failed to resume fine-tuning job: {name}[/red]")
+                    
+                    elif subcmd == "delete":
+                        # Delete a fine-tuning job
+                        if not subcmd_args:
+                            console.print("[red]Error: Missing name argument[/red]")
+                            console.print("[yellow]Usage: /finetune delete [name][/yellow]")
+                            continue
+                        
+                        name = subcmd_args
+                        if ft_manager.delete_job(name):
+                            console.print(f"[green]Deleted fine-tuning job: {name}[/green]")
+                        else:
+                            console.print(f"[red]Failed to delete fine-tuning job: {name}[/red]")
+                    
+                    elif subcmd == "start":
+                        if not subcmd_args:
+                            console.print("[red]Error: Missing name argument[/red]")
+                            console.print("[yellow]Usage: /finetune start [name][/yellow]")
+                            console.print("[yellow]Example: /finetune start my_job[/yellow]")
+                            continue
+                        
+                        # Start a fine-tuning job
+                        name = subcmd_args
+                        try:
+                            console.print(f"[yellow]Starting fine-tuning job: {name}[/yellow]")
+                            if ft_manager.start_job(name):
+                                console.print(f"[green]Fine-tuning job started: {name}[/green]")
+                                console.print("[yellow]Use /finetune progress to check the status of the job[/yellow]")
+                            else:
+                                console.print(f"[red]Failed to start fine-tuning job: {name}[/red]")
+                        except Exception as e:
+                            console.print(f"[red]Error starting job: {str(e)}[/red]")
+                    
+                    elif subcmd == "progress":
+                        # Show progress of a fine-tuning job
+                        if not subcmd_args:
+                            console.print("[red]Error: Missing name argument[/red]")
+                            console.print("[yellow]Usage: /finetune progress [name][/yellow]")
+                            continue
+                        
+                        name = subcmd_args
+                        ft_manager.display_job_progress(name)
+                    
+                    elif subcmd == "dataset":
+                        if not subcmd_args:
+                            console.print("[red]Error: Missing path argument[/red]")
+                            console.print("[yellow]Usage: /finetune dataset [path][/yellow]")
+                            console.print("[yellow]Example: /finetune dataset ./my_dataset.json[/yellow]")
+                            console.print("[yellow]You can also drag and drop a file into the terminal.[/yellow]")
+                            continue
+                            
+                        # Prepare a dataset for fine-tuning
+                        path = subcmd_args.strip()
+                        
+                        # Handle paths with quotes (from drag and drop)
+                        if (path.startswith('"') and path.endswith('"')) or (path.startswith("'") and path.endswith("'")):
+                            path = path[1:-1]
+                        
+                        try:
+                            dataset_id = ft_manager.prepare_dataset(path)
+                            if dataset_id:
+                                console.print(f"[green]Dataset prepared: {dataset_id}[/green]")
+                            else:
+                                console.print(f"[red]Failed to prepare dataset from: {path}[/red]")
+                        except Exception as e:
+                            console.print(f"[red]Error preparing dataset: {str(e)}[/red]")
+                    
+                    else:
+                        console.print("[red]Invalid fine-tuning command[/red]")
+                        console.print("[yellow]Try /finetune without arguments to see available commands[/yellow]")
+                    
+                    continue
+                
+                elif (command == '/finetune' or command == '/ft') and not FINETUNE_AVAILABLE:
+                    console.print("[red]Fine-tuning feature is not available.[/red]")
+                    console.print("[red]Make sure the finetune.py and hardware_detection.py files exist in the same directory.[/red]")
                     continue
                 
                 elif command == '/create':
@@ -1675,18 +1950,17 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                             kb_context = "\n\nRelevant information from knowledge base:\n"
                             for i, result in enumerate(kb_results):
                                 similarity_pct = result["similarity"] * 100
-                                kb_context += f"\n--- Result {i+1} (Similarity: {similarity_pct:.1f}%) ---\n"
-                                kb_context += result["text"]
-                            
-                            # Add knowledge base context to the system message
-                            if kb_context:
-                                for i, msg in enumerate(context_messages):
-                                    if msg["role"] == "system":
-                                        context_messages[i]["content"] += kb_context
-                                        break
-                                else:
-                                    # If no system message found, add it as a new system message
-                                    context_messages.insert(0, {"role": "system", "content": kb_context})
+                                source = result["metadata"].get("source", "unknown")
+                                timestamp = result["metadata"].get("timestamp", "unknown")
+                                
+                                # Format the result
+                                console.print(f"[cyan]Result {i+1} (Similarity: {similarity_pct:.1f}%)[/cyan]")
+                                console.print(f"[dim]Source: {source}, Added: {timestamp}[/dim]")
+                                console.print(Panel(result["text"][:500] + ("..." if len(result["text"]) > 500 else ""), 
+                                                  border_style="green"))
+                            kb_context += "\n".join([result["text"] for result in kb_results])
+                        else:
+                            console.print("[yellow]No matching results found in knowledge base[/yellow]")
                     except Exception as e:
                         config = load_config()
                         if config.get("verbose", False):
@@ -1806,6 +2080,21 @@ def help():
     console.print("  [green]/kb add [text][/green] - Add text to knowledge base")
     console.print("  [green]/kb search [query][/green] - Search knowledge base")
     console.print("  [green]/kb toggle[/green] - Enable/disable knowledge base")
+    
+    if FINETUNE_AVAILABLE:
+        console.print("\n[bold cyan]Fine-Tuning Commands:[/bold cyan]")
+        console.print("[green]/finetune status[/green] - Show fine-tuning status and hardware detection")
+        console.print("[green]/finetune create [name] [base_model][/green] - Create a new fine-tuning job")
+        console.print("[green]/finetune dataset [path][/green] - Prepare a dataset for fine-tuning")
+        console.print("[green]/finetune start [name][/green] - Start a fine-tuning job")
+        console.print("[green]/finetune list[/green] - List all fine-tuning jobs")
+        console.print("[green]/finetune export [name][/green] - Export model to Ollama")
+        console.print("[green]/finetune install[/green] - Install fine-tuning dependencies")
+        console.print("[green]/finetune pause [name][/green] - Pause a running fine-tuning job")
+        console.print("[green]/finetune resume [name][/green] - Resume a paused fine-tuning job")
+        console.print("[green]/finetune delete [name][/green] - Delete a fine-tuning job")
+        console.print("[green]/finetune models[/green] - List available Ollama models for fine-tuning")
+        console.print("[green]/finetune progress [name][/green] - Show progress of a fine-tuning job")
     
     # File handling
     console.print("\n[yellow]File Handling:[/yellow]")
@@ -2082,7 +2371,7 @@ def interactive_config():
         console.print("[green]s[/green]: Save and exit")
         console.print("[green]x[/green]: Exit without saving")
         
-        choice = Prompt.ask("\n[yellow]Enter your choice[/yellow]")
+        choice = Prompt.ask("\nEnter your choice")
         
         if choice.lower() == 'x':
             break
@@ -2099,8 +2388,8 @@ def interactive_config():
                 if response.status_code == 200:
                     models = [model["name"] for model in response.json()["models"]]
                     console.print("\nAvailable models:")
-                    for i, model in enumerate(models, 1):
-                        console.print(f"[green]{i}[/green]. {model}")
+                    for i, model in enumerate(models):
+                        console.print(f"[green]{i+1}[/green]. {model}")
                     model_choice = Prompt.ask("\nSelect model number", default="1")
                     if model_choice.isdigit() and 1 <= int(model_choice) <= len(models):
                         current_config[key] = models[int(model_choice) - 1]
@@ -2128,6 +2417,7 @@ def interactive_config():
                 current_config[key] = new_value
             
             Prompt.ask("\n[yellow]Press Enter to continue[/yellow]")
+        Prompt.ask("\n[yellow]Press Enter to continue[/yellow]")
 
 def manage_prompts():
     """Manage stored system prompts"""
@@ -2392,8 +2682,13 @@ def display_menu():
         "exit": None
     }
     
+    # Add fine-tuning command if available
+    if FINETUNE_AVAILABLE:
+        commands["finetune"] = lambda: interactive_chat(load_config().get("default_model", "llama2"), 
+                                                      system_prompt="/finetune status")
+    
     # Menu items with numbers
-    menu_items = [
+    base_menu_items = [
         ("1", "chat", "Start an interactive chat session with a model"),
         ("2", "models", "List all available models"),
         ("3", "pull", "Download a new model"),
@@ -2402,9 +2697,17 @@ def display_menu():
         ("6", "settings", "View or modify configuration settings"),
         ("7", "prompts", "Manage stored system prompts"),
         ("8", "analyze", "Analyze an image using vision model"),
-        ("9", "help", "Show help information"),
-        ("10", "exit", "Exit the application")
     ]
+    
+    # Add fine-tuning option if available
+    menu_items = base_menu_items.copy()
+    if FINETUNE_AVAILABLE:
+        menu_items.append(("9", "finetune", "Fine-tune models with Unsloth or MLX"))
+        menu_items.append(("10", "help", "Show help information"))
+        menu_items.append(("11", "exit", "Exit the application"))
+    else:
+        menu_items.append(("9", "help", "Show help information"))
+        menu_items.append(("10", "exit", "Exit the application"))
     
     while True:
         console.clear()

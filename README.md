@@ -27,6 +27,7 @@ Contact: contact@christopherdanielbradford.com
 - ⚡ **Drag & Drop**: Easy file sharing in chat
 - 🧠 **Context Management**: Intelligent management of conversation context
 - 📚 **Knowledge Base**: Local vector database for persistent information storage
+- 🔧 **Fine-Tuning**: Fine-tune models with Unsloth (NVIDIA) or MLX (Apple Silicon)
 
 ## Quick Start
 
@@ -205,6 +206,86 @@ Store and retrieve information using a local vector database:
    - Choose to add them to the knowledge base when prompted
    - Documents are automatically chunked for optimal storage
    - Search across all documents with `/kb search [query]`
+
+### Fine-Tuning
+Fine-tune models using a modular system that supports Unsloth (for NVIDIA GPUs) or MLX (for Apple Silicon):
+
+1. **Features**:
+   - Modular architecture for better maintainability and extensibility
+   - Automatic hardware detection for optimal framework selection
+   - Support for Unsloth on NVIDIA GPUs
+   - Support for MLX on Apple Silicon
+   - Direct integration with Ollama models
+   - CPU fallback for other systems
+   - Dataset preparation from various formats
+   - Detailed progress tracking with ETA estimation
+   - Job control (pause, resume, delete)
+   - Easy export to Ollama
+
+2. **Prerequisites**:
+   - For macOS users: 
+     - Homebrew (`brew`) is required
+     - `cmake` is needed (will be installed automatically if missing)
+   - For NVIDIA GPU users:
+     - CUDA drivers must be installed
+     - `nvidia-smi` should be available in your path
+
+3. **Fine-Tuning Workflow**:
+   ```
+   # Install required dependencies based on your hardware
+   /finetune install
+   
+   # Check system status and hardware detection
+   /finetune status
+   
+   # Prepare a dataset for fine-tuning
+   /finetune dataset /path/to/your/dataset.json
+   
+   # Create a fine-tuning job
+   /finetune create my_job_name llama3.2:latest
+   
+   # Start the fine-tuning process
+   /finetune start my_job_name
+   
+   # Monitor progress
+   /finetune list
+   
+   # Export the fine-tuned model to Ollama
+   /finetune export my_job_name
+   ```
+
+4. **Supported Dataset Formats**:
+   - JSON: List of objects with "text" field or "prompt"/"completion" fields
+   - JSONL: One JSON object per line
+   - CSV: With header row and text column
+   - TXT: Plain text files (one sample per line)
+
+5. **Framework-Specific Notes**:
+   - **MLX (Apple Silicon)**:
+     - Uses MLX-LM for efficient fine-tuning on Apple Silicon
+     - Automatically installed from source to ensure compatibility
+     - Directly integrates with Ollama models via the API
+     - Optimized for M1/M2/M3 chips
+   - **Unsloth (NVIDIA)**:
+     - Uses Unsloth for 2-3x faster fine-tuning on NVIDIA GPUs
+     - Supports QLoRA for memory-efficient training
+     - Compatible with most Hugging Face models
+
+6. **Testing Your Fine-Tuned Model**:
+   ```
+   # Switch to your fine-tuned model
+   /model my_job_name
+   
+   # Test with different prompts to see how it performs
+   What is the capital of France?
+   
+   # Compare with the original model
+   /model llama3.2:latest
+   What is the capital of France?
+   
+   # You can also use the /compare command to test both models side by side
+   /compare my_job_name llama3.2:latest "What is the capital of France?"
+   ```
 
 ## Supported File Formats
 
