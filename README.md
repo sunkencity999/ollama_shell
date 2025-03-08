@@ -322,6 +322,32 @@ Fine-tune models using a modular system that supports Unsloth (for NVIDIA GPUs) 
 - Ollama with compatible models
 - See `requirements.txt` for full list
 
+## Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/ollama_shell.git
+   cd ollama_shell
+   ```
+
+2. Run the installation script:
+
+   **On macOS/Linux:**
+   ```bash
+   ./install.sh
+   ```
+
+   **On Windows:**
+   ```bash
+   install.bat
+   ```
+   
+   This will:
+   - Create the `Created Files` directory for storing user data
+   - Set up a virtual environment (if not already present)
+   - Install all required dependencies
+   - Configure the application for first use
+
 ## Configuration
 Configuration is stored in `config.json` and includes:
 - Default model settings
@@ -339,6 +365,17 @@ Configuration is stored in `config.json` and includes:
 - Use `/summarize` to condense long conversations while maintaining context
 - Use the knowledge base to store and retrieve important information across sessions
 - Add documents to your knowledge base via drag & drop for persistent access to their content
+
+## User Data and Files
+
+Ollama Shell stores user-specific data in the `Created Files` directory, which is excluded from Git to protect your privacy and prevent accidental sharing of personal data. This includes:
+
+- **Fine-tuning jobs**: All fine-tuning job data, including models and logs
+- **Datasets**: Prepared datasets for fine-tuning
+- **Configuration**: User-specific configuration files
+- **Generated models**: Model files created during fine-tuning
+
+This separation ensures that your personal models, datasets, and configurations remain private and are not accidentally committed to version control.
 
 ## Context Management Commands
 - `/pin [message_number]` - Pin a message to keep it in context

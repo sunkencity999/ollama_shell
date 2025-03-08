@@ -23,8 +23,17 @@ def fix_job_status(job_name):
     # Check if the job has output files
     job_dir = job.get("job_dir")
     if not job_dir or not os.path.exists(job_dir):
-        print(f"Job directory not found for {job_name}")
-        return False
+        # Try to find the job directory in the new location
+        created_files_dir = ft_manager.get_created_files_dir()
+        jobs_dir = os.path.join(created_files_dir, "jobs")
+        potential_job_dir = os.path.join(jobs_dir, job_name)
+        
+        if os.path.exists(potential_job_dir):
+            job_dir = potential_job_dir
+            print(f"Found job directory at new location: {job_dir}")
+        else:
+            print(f"Job directory not found for {job_name}")
+            return False
         
     output_dir = os.path.join(job_dir, "output")
     log_file = os.path.join(job_dir, "finetune.log")

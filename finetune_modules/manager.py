@@ -35,15 +35,36 @@ except ImportError:
 class FineTuningManager:
     """Manager for fine-tuning language models."""
     
-    def __init__(self, config_path: str = "finetune_config.json"):
+    def get_created_files_dir(self):
+        """
+        Get the path to the Created Files directory.
+        
+        Returns:
+            Path to the Created Files directory
+        """
+        created_files_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Created Files")
+        os.makedirs(created_files_dir, exist_ok=True)
+        return created_files_dir
+    
+    def __init__(self, config_path: str = None):
         """
         Initialize the fine-tuning manager.
         
         Args:
-            config_path: Path to the configuration file
+            config_path: Path to the configuration file (optional)
         """
+        # Create the Created Files directory if it doesn't exist
+        created_files_dir = self.get_created_files_dir()
+        
+        # Use the provided config path or default to one in the Created Files directory
+        if config_path is None:
+            config_path = os.path.join(created_files_dir, "finetune_config.json")
+            
         self.config_path = config_path
         self.config = self._load_config()
+        
+        # Scan for jobs and datasets in the Created Files directory
+        self._scan_created_files_directory()
         
         # Ensure virtual environment exists
         self.venv_path = ensure_venv_exists()
@@ -74,6 +95,103 @@ class FineTuningManager:
         """Save the configuration to the config file."""
         with open(self.config_path, "w") as f:
             json.dump(self.config, f, indent=2)
+            
+    def _scan_created_files_directory(self):
+        """Scan the Created Files directory for jobs and datasets that aren't in the config."""
+        created_files_dir = self.get_created_files_dir()
+        
+        # Scan for jobs
+        jobs_dir = os.path.join(created_files_dir, "jobs")
+        if os.path.exists(jobs_dir) and os.path.isdir(jobs_dir):
+            for job_name in os.listdir(jobs_dir):
+                job_dir = os.path.join(jobs_dir, job_name)
+                if os.path.isdir(job_dir) and job_name not in self.config.get("jobs", {}):
+                    # Found a job directory that's not in the config
+                    model_dir = os.path.join(job_dir, "model")
+                    model_name_file = os.path.join(model_dir, "model_name.txt")
+                    base_model = "unknown"
+                    
+                    if os.path.exists(model_name_file):
+                        try:
+                            with open(model_name_file, "r") as f:
+                                base_model = f.read().strip()
+                        except:
+                            pass
+                    
+                    # Determine job status
+                    status = "unknown"
+                    if os.path.exists(os.path.join(job_dir, "completed")):
+                        status = "completed"
+                    elif os.path.exists(os.path.join(job_dir, "process.pid")):
+                        # Check if process is still running
+                        try:
+                            with open(os.path.join(job_dir, "process.pid"), "r") as f:
+                                pid = int(f.read().strip())
+                            
+                            # Try to check if process exists
+                            try:
+                                os.kill(pid, 0)  # Signal 0 doesn't kill the process, just checks if it exists
+                                status = "running"
+                            except ProcessLookupError:
+                                status = "failed"
+                        except:
+                            status = "failed"
+                    
+                    # Add the job to the config
+                    if "jobs" not in self.config:
+                        self.config["jobs"] = {}
+                    
+                    self.config["jobs"][job_name] = {
+                        "name": job_name,
+                        "base_model": base_model,
+                        "directory": job_dir,
+                        "job_dir": job_dir,
+                        "status": status,
+                        "created_at": time.time()
+                    }
+        
+        # Scan for datasets
+        datasets_dir = os.path.join(created_files_dir, "datasets")
+        if os.path.exists(datasets_dir) and os.path.isdir(datasets_dir):
+            for dataset_name in os.listdir(datasets_dir):
+                dataset_path = os.path.join(datasets_dir, dataset_name)
+                
+                # Skip if already in config
+                if dataset_name in self.config.get("datasets", {}):
+                    continue
+                
+                # Check if this is a directory or a file
+                if os.path.isdir(dataset_path):
+                    # Look for jsonl files in the directory
+                    jsonl_files = [f for f in os.listdir(dataset_path) if f.endswith('.jsonl')]
+                    
+                    if jsonl_files:
+                        # Add dataset to config
+                        if "datasets" not in self.config:
+                            self.config["datasets"] = {}
+                            
+                        self.config["datasets"][dataset_name] = {
+                            "name": dataset_name,
+                            "path": os.path.join(dataset_path, jsonl_files[0]),
+                            "original_path": dataset_path,
+                            "created_at": time.time()
+                        }
+                elif dataset_name.endswith('.jsonl') or dataset_name.endswith('.json'):
+                    # This is a dataset file
+                    dataset_id = os.path.splitext(dataset_name)[0]
+                    
+                    # Add dataset to config
+                    if "datasets" not in self.config:
+                        self.config["datasets"] = {}
+                        
+                    self.config["datasets"][dataset_id] = {
+                        "path": dataset_path,
+                        "original_path": dataset_path,
+                        "created_at": time.time()
+                    }
+        
+        # Save the updated config
+        self._save_config()
     
     def check_dependencies(self) -> bool:
         """
@@ -136,8 +254,13 @@ class FineTuningManager:
         # Generate a dataset ID if not provided
         dataset_id = name or f"dataset_{int(time.time())}"
         
-        # Create a directory for the dataset
-        dataset_dir = os.path.join(os.path.dirname(self.config_path), "datasets", dataset_id)
+        # Create a directory for the dataset in the "Created Files" directory
+        created_files_dir = self.get_created_files_dir()
+        
+        datasets_dir = os.path.join(created_files_dir, "datasets")
+        os.makedirs(datasets_dir, exist_ok=True)
+        
+        dataset_dir = os.path.join(datasets_dir, dataset_id)
         os.makedirs(dataset_dir, exist_ok=True)
         
         # Prepare the dataset
@@ -217,8 +340,13 @@ class FineTuningManager:
             console.print(f"[red]Dataset {dataset_id} not found.[/red]")
             return False
         
-        # Create a directory for the job
-        job_dir = os.path.join(os.path.dirname(self.config_path), "jobs", name)
+        # Create a directory for the job in the "Created Files" directory
+        created_files_dir = self.get_created_files_dir()
+        
+        jobs_dir = os.path.join(created_files_dir, "jobs")
+        os.makedirs(jobs_dir, exist_ok=True)
+        
+        job_dir = os.path.join(jobs_dir, name)
         os.makedirs(job_dir, exist_ok=True)
         
         # Set default parameters based on the framework

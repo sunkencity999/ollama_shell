@@ -43,6 +43,16 @@ if ! command -v ollama &> /dev/null; then
     fi
 fi
 
+# Create necessary directories for user data
+echo -e "${GREEN}Creating user data directories...${NC}"
+
+# Create the Created Files directory and its subdirectories using both methods
+# 1. Using mkdir (for bash environments)
+mkdir -p "Created Files/jobs" "Created Files/datasets" "Created Files/models" "Created Files/exports"
+
+# 2. Using Python script (for cross-platform compatibility)
+python3 create_directories.py
+
 # Make ollama_shell.py executable
 chmod +x ollama_shell.py
 

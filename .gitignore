@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+.venv/
+ENV/
+env/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+log/
+
+# User-specific data
+/jobs/
+/datasets/
+/models/
+/Created Files/
+/output/
+/temp/
+/tmp/
+/cache/
+/data/
+
+# Ollama model files
+*.bin
+*.safetensors
+*.gguf
+*.ggml
+weights.safetensors
+tokenizer.json
+tokenizer.model
+
+# Fine-tuning specific files
+Modelfile
+finetune.log
+*.json
+!requirements.json
+!package.json
+!package-lock.json
+
+# Configuration files with potential secrets
+.env
+*.key
+*_key
+*_secret
+*_token

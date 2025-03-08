@@ -1,6 +1,25 @@
+import os
+
+def get_created_files_dir():
+    """Get the path to the Created Files directory."""
+    # Get the absolute path to the project root directory
+    # The file_creation.py is in the project root, so we just need the directory of this file
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    created_files_dir = os.path.join(project_root, "Created Files")
+    os.makedirs(created_files_dir, exist_ok=True)
+    return created_files_dir
+
 def create_text_file(content, filename):
     """Create a plain text file with the given content"""
     try:
+        # If filename is not an absolute path, place it in the Created Files directory
+        if not os.path.isabs(filename):
+            created_files_dir = get_created_files_dir()
+            filename = os.path.join(created_files_dir, filename)
+        
+        # Create parent directories if they don't exist
+        os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+        
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(content)
         return True, f"Created text file: {filename}"
@@ -10,6 +29,14 @@ def create_text_file(content, filename):
 def create_csv_file(content, filename):
     """Create a CSV file with the given content"""
     try:
+        # If filename is not an absolute path, place it in the Created Files directory
+        if not os.path.isabs(filename):
+            created_files_dir = get_created_files_dir()
+            filename = os.path.join(created_files_dir, filename)
+        
+        # Create parent directories if they don't exist
+        os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+        
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(content)
         return True, f"Created CSV file: {filename}"
@@ -19,6 +46,14 @@ def create_csv_file(content, filename):
 def create_docx_file(content, filename):
     """Create a Word document with the given content"""
     try:
+        # If filename is not an absolute path, place it in the Created Files directory
+        if not os.path.isabs(filename):
+            created_files_dir = get_created_files_dir()
+            filename = os.path.join(created_files_dir, filename)
+        
+        # Create parent directories if they don't exist
+        os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+        
         import docx
         doc = docx.Document()
         
@@ -38,6 +73,14 @@ def create_docx_file(content, filename):
 def create_excel_file(content, filename):
     """Create an Excel file with the given content"""
     try:
+        # If filename is not an absolute path, place it in the Created Files directory
+        if not os.path.isabs(filename):
+            created_files_dir = get_created_files_dir()
+            filename = os.path.join(created_files_dir, filename)
+        
+        # Create parent directories if they don't exist
+        os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+        
         import pandas as pd
         import io
         
@@ -61,6 +104,14 @@ def create_excel_file(content, filename):
 def create_pdf_file(content, filename):
     """Create a PDF file with the given content"""
     try:
+        # If filename is not an absolute path, place it in the Created Files directory
+        if not os.path.isabs(filename):
+            created_files_dir = get_created_files_dir()
+            filename = os.path.join(created_files_dir, filename)
+        
+        # Create parent directories if they don't exist
+        os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+        
         from weasyprint import HTML
         import tempfile
         
