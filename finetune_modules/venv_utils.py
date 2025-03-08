@@ -187,26 +187,36 @@ def install_dependencies(hardware_config: Dict[str, str]) -> bool:
                 mlx_cmd = pip_cmd + ["install", "mlx"]
                 subprocess.run(mlx_cmd, check=False)
                 
-                # Install mlx-lm separately
-                mlx_lm_cmd = pip_cmd + ["install", "mlx-lm"]
-                mlx_lm_result = subprocess.run(mlx_lm_cmd, capture_output=True, text=True)
-                
-                if mlx_lm_result.returncode != 0:
-                    console.print("[yellow]Failed to install mlx-lm via pip, trying from source...[/yellow]")
-                    # Try installing from source if pip install fails
-                    try:
+                # Always install MLX-LM from source for better reliability
+                console.print("[yellow]Installing MLX-LM from source for better compatibility...[/yellow]")
+                try:
+                    # Check if the repository already exists
+                    if os.path.exists("/tmp/mlx-examples"):
+                        # Update the existing repository
+                        console.print("[yellow]Updating existing MLX-LM repository...[/yellow]")
+                        update_cmd = ["git", "-C", "/tmp/mlx-examples", "pull"]
+                        subprocess.run(update_cmd, check=True)
+                    else:
                         # Clone the repository
+                        console.print("[yellow]Cloning MLX-LM repository...[/yellow]")
                         clone_cmd = ["git", "clone", "https://github.com/ml-explore/mlx-examples.git", "/tmp/mlx-examples"]
                         subprocess.run(clone_cmd, check=True)
-                        
-                        # Install mlx-lm from the cloned repository
-                        install_cmd = pip_cmd + ["install", "-e", "/tmp/mlx-examples/llms"]
-                        subprocess.run(install_cmd, check=True)
-                        
-                        console.print("[green]Successfully installed mlx-lm from source[/green]")
-                    except Exception as e:
-                        console.print(f"[red]Error installing mlx-lm from source: {str(e)}[/red]")
-                        return False
+                    
+                    # Install MLX-LM from the cloned repository in development mode
+                    console.print("[yellow]Installing MLX-LM from source in development mode...[/yellow]")
+                    install_cmd = pip_cmd + ["install", "-e", "/tmp/mlx-examples/llms"]
+                    subprocess.run(install_cmd, check=True)
+                    
+                    # Add the directory to Python path in a file that will be loaded by the virtual environment
+                    site_packages_dir = subprocess.check_output(pip_cmd + ["-c", "import site; print(site.getsitepackages()[0])"]).decode().strip()
+                    path_file = os.path.join(site_packages_dir, "mlx_lm_path.pth")
+                    with open(path_file, "w") as f:
+                        f.write("/tmp/mlx-examples/llms")
+                    
+                    console.print("[green]Successfully installed MLX-LM from source[/green]")
+                except Exception as e:
+                    console.print(f"[red]Error installing MLX-LM from source: {str(e)}[/red]")
+                    return False
                 
                 # Install transformers with minimal dependencies first
                 transformers_cmd = pip_cmd + ["install", "transformers", "datasets", "huggingface_hub"]

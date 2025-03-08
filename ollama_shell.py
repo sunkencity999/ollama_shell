@@ -1257,6 +1257,10 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                         console.print("[green]/finetune delete [name][/green] - Delete a fine-tuning job")
                         console.print("[green]/finetune models[/green] - List available Ollama models for fine-tuning")
                         console.print("[green]/finetune progress [name][/green] - Show progress of a fine-tuning job")
+                        console.print("[green]/finetune datasets[/green] - List available datasets")
+                        console.print("[green]/finetune dataset-set [job_name] [dataset_id][/green] - Update dataset for a job")
+                        console.print("[green]/finetune dataset-remove [dataset_id] [--force][/green] - Remove a dataset")
+                        console.print("[green]/finetune reset [name][/green] - Reset a job to created state")
                     
                     console.print("\n[bold cyan]Other Commands:[/bold cyan]")
                     console.print("[green]search: [query][/green] - Perform a web search and analyze results")
@@ -1553,6 +1557,10 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                         console.print("[green]/finetune delete [name][/green] - Delete a fine-tuning job")
                         console.print("[green]/finetune models[/green] - List available Ollama models for fine-tuning")
                         console.print("[green]/finetune progress [name][/green] - Show progress of a fine-tuning job")
+                        console.print("[green]/finetune datasets[/green] - List available datasets")
+                        console.print("[green]/finetune dataset-set [job_name] [dataset_id][/green] - Update dataset for a job")
+                        console.print("[green]/finetune dataset-remove [dataset_id] [--force][/green] - Remove a dataset")
+                        console.print("[green]/finetune reset [name][/green] - Reset a job to created state")
                         continue
                     
                     subcmd = args.split()[0] if " " in args else args
@@ -1769,6 +1777,87 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                                 console.print(f"[red]Failed to prepare dataset from: {path}[/red]")
                         except Exception as e:
                             console.print(f"[red]Error preparing dataset: {str(e)}[/red]")
+                    
+                    elif subcmd == "datasets":
+                        # List available datasets
+                        datasets = ft_manager.get_datasets()
+                        if not datasets:
+                            console.print("[yellow]No datasets available. Use /finetune dataset to prepare a dataset.[/yellow]")
+                            continue
+                        
+                        console.print("[yellow]Available datasets:[/yellow]")
+                        from rich.table import Table
+                        table = Table(show_header=True)
+                        table.add_column("ID", style="green")
+                        table.add_column("Original Path", style="blue")
+                        table.add_column("Created", style="yellow")
+                        
+                        for dataset_id, dataset_info in datasets.items():
+                            # Handle the case where created_at might be a string or not present
+                            created_at_value = dataset_info.get("created_at", 0)
+                            try:
+                                # Convert to float first to handle both int and string representations
+                                created_at = datetime.datetime.fromtimestamp(float(created_at_value)).strftime("%Y-%m-%d %H:%M:%S")
+                            except (ValueError, TypeError):
+                                created_at = "Unknown"
+                            table.add_row(
+                                dataset_id,
+                                dataset_info.get("original_path", "Unknown"),
+                                created_at
+                            )
+                        
+                        console.print(table)
+                    
+                    elif subcmd == "dataset-set":
+                        # Update dataset for a job
+                        args_parts = subcmd_args.split()
+                        if len(args_parts) < 2:
+                            console.print("[red]Error: Missing arguments[/red]")
+                            console.print("[yellow]Usage: /finetune dataset-set [job_name] [dataset_id][/yellow]")
+                            console.print("[yellow]Example: /finetune dataset-set my_job dataset_123[/yellow]")
+                            console.print("[yellow]Use /finetune datasets to see available datasets[/yellow]")
+                            continue
+                        
+                        job_name = args_parts[0]
+                        dataset_id = args_parts[1]
+                        
+                        if ft_manager.update_job_dataset(job_name, dataset_id):
+                            console.print(f"[green]Dataset for job {job_name} updated to {dataset_id}[/green]")
+                        else:
+                            console.print(f"[red]Failed to update dataset for job {job_name}[/red]")
+                    
+                    elif subcmd == "dataset-remove":
+                        # Remove a dataset
+                        args_parts = subcmd_args.split()
+                        if not args_parts:
+                            console.print("[red]Error: Missing dataset ID[/red]")
+                            console.print("[yellow]Usage: /finetune dataset-remove [dataset_id] [--force][/yellow]")
+                            console.print("[yellow]Example: /finetune dataset-remove dataset_123[/yellow]")
+                            console.print("[yellow]Use --force to remove even if used by jobs[/yellow]")
+                            continue
+                        
+                        dataset_id = args_parts[0]
+                        force = "--force" in args_parts
+                        
+                        if ft_manager.remove_dataset(dataset_id, force):
+                            console.print(f"[green]Dataset {dataset_id} removed successfully[/green]")
+                        else:
+                            console.print(f"[red]Failed to remove dataset {dataset_id}[/red]")
+                    
+                    elif subcmd == "reset":
+                        # Reset a job to created state
+                        if not subcmd_args:
+                            console.print("[red]Error: Missing job name[/red]")
+                            console.print("[yellow]Usage: /finetune reset [name][/yellow]")
+                            console.print("[yellow]Example: /finetune reset my_job[/yellow]")
+                            continue
+                        
+                        job_name = subcmd_args
+                        if ft_manager.reset_job(job_name):
+                            console.print(f"[green]Successfully reset job {job_name} to 'created' state[/green]")
+                            console.print(f"[green]You can now start the job again with /finetune start {job_name}[/green]")
+                        else:
+                            console.print(f"[red]Failed to reset job {job_name}[/red]")
                     
                     else:
                         console.print("[red]Invalid fine-tuning command[/red]")

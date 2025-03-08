@@ -1,0 +1,9 @@
+FROM deepseek-coder-v2:16b
+
+# Fine-tuned model from job stemSeekCoder3
+# Base model: deepseek-coder-v2:16b
+# Created at: 2025-03-07 16:04:10
+
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER top_k 40

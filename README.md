@@ -241,8 +241,14 @@ Fine-tune models using a modular system that supports Unsloth (for NVIDIA GPUs) 
    # Prepare a dataset for fine-tuning
    /finetune dataset /path/to/your/dataset.json
    
+   # List available datasets
+   /finetune datasets
+   
    # Create a fine-tuning job
    /finetune create my_job_name llama3.2:latest
+   
+   # Change dataset for the job (optional)
+   /finetune dataset-set my_job_name another_dataset_id
    
    # Start the fine-tuning process
    /finetune start my_job_name
@@ -252,6 +258,9 @@ Fine-tune models using a modular system that supports Unsloth (for NVIDIA GPUs) 
    
    # Export the fine-tuned model to Ollama
    /finetune export my_job_name
+   
+   # Remove unused datasets (optional)
+   /finetune dataset-remove dataset_id
    ```
 
 4. **Supported Dataset Formats**:

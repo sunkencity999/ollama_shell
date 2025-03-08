@@ -493,6 +493,71 @@ class FineTuningManager:
             console.print(f"[red]Error resuming job {name}: {str(e)}[/red]")
             return False
     
+    def reset_job(self, name: str) -> bool:
+        """
+        Reset a fine-tuning job to the 'created' state so it can be restarted.
+        
+        Args:
+            name: Name of the job
+            
+        Returns:
+            True if the job was reset successfully, False otherwise
+        """
+        import signal
+        # Check if the job exists
+        job = self.get_job(name)
+        if not job:
+            console.print(f"[red]Job {name} not found.[/red]")
+            return False
+        
+        # Check if the job is running and try to stop it
+        if job.get("status") == "running":
+            try:
+                pid = job.get("pid")
+                if pid:
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                        console.print(f"[yellow]Terminated running process for job {name}.[/yellow]")
+                    except ProcessLookupError:
+                        console.print(f"[yellow]Process for job {name} not found, continuing with reset.[/yellow]")
+                    except Exception as e:
+                        console.print(f"[yellow]Error terminating process for job {name}: {str(e)}[/yellow]")
+            except Exception as e:
+                console.print(f"[yellow]Error stopping job {name}: {str(e)}[/yellow]")
+        
+        # Reset the job status and related fields
+        job["status"] = "created"
+        job.pop("pid", None)
+        job.pop("start_time", None)
+        job.pop("end_time", None)
+        job.pop("paused_at", None)
+        job.pop("resumed_at", None)
+        job.pop("progress", None)
+        
+        # Clean up job directory if it exists
+        job_dir = job.get("job_dir")
+        if job_dir and os.path.exists(job_dir):
+            try:
+                # Remove output directory but keep the job directory itself
+                output_dir = os.path.join(job_dir, "output")
+                if os.path.exists(output_dir):
+                    shutil.rmtree(output_dir)
+                    console.print(f"[yellow]Removed output directory for job {name}.[/yellow]")
+                
+                # Remove any progress or completion files
+                for filename in ["progress.json", "completed", "error.txt", "process.pid", "finetune.log"]:
+                    file_path = os.path.join(job_dir, filename)
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+            except Exception as e:
+                console.print(f"[yellow]Error cleaning up job directory: {str(e)}[/yellow]")
+        
+        # Save the updated configuration
+        self._save_config()
+        
+        console.print(f"[green]Reset fine-tuning job {name} to 'created' state.[/green]")
+        return True
+        
     def delete_job(self, name: str) -> bool:
         """
         Delete a fine-tuning job.
@@ -529,6 +594,105 @@ class FineTuningManager:
             self._save_config()
         
         console.print(f"[green]Deleted fine-tuning job {name}[/green]")
+        return True
+    
+    def update_job_dataset(self, job_name: str, dataset_id: str) -> bool:
+        """
+        Update the dataset for a fine-tuning job.
+        
+        Args:
+            job_name: Name of the job
+            dataset_id: ID of the dataset to use
+            
+        Returns:
+            True if the job was updated successfully, False otherwise
+        """
+        # Check if the job exists
+        job = self.get_job(job_name)
+        if not job:
+            console.print(f"[red]Job {job_name} not found.[/red]")
+            return False
+        
+        # Check if the job is in a state where the dataset can be changed
+        valid_states = ["created", "failed", "completed"]
+        if job.get("status") not in valid_states:
+            console.print(f"[yellow]Cannot change dataset for job in status: {job.get('status')}[/yellow]")
+            console.print(f"[yellow]Job must be in one of these states: {', '.join(valid_states)}[/yellow]")
+            return False
+        
+        # Check if the dataset exists
+        datasets = self.get_datasets()
+        if dataset_id not in datasets:
+            console.print(f"[red]Dataset {dataset_id} not found.[/red]")
+            console.print("[yellow]Use /finetune datasets to see available datasets.[/yellow]")
+            return False
+        
+        # Update the job with the new dataset
+        job["dataset_id"] = dataset_id
+        job["dataset_path"] = datasets[dataset_id]["path"]
+        
+        # Save the configuration
+        self._save_config()
+        
+        console.print(f"[green]Updated dataset for job {job_name} to {dataset_id}[/green]")
+        return True
+    
+    def remove_dataset(self, dataset_id: str, force: bool = False) -> bool:
+        """
+        Remove a dataset.
+        
+        Args:
+            dataset_id: ID of the dataset to remove
+            force: If True, remove the dataset even if it's used by jobs
+            
+        Returns:
+            True if the dataset was removed successfully, False otherwise
+        """
+        # Check if the dataset exists
+        datasets = self.get_datasets()
+        if dataset_id not in datasets:
+            console.print(f"[red]Dataset {dataset_id} not found.[/red]")
+            console.print("[yellow]Use /finetune datasets to see available datasets.[/yellow]")
+            return False
+        
+        # Check if any jobs are using this dataset
+        jobs_using_dataset = []
+        for job_name, job in self.config.get("jobs", {}).items():
+            if job.get("dataset_id") == dataset_id:
+                jobs_using_dataset.append(job_name)
+        
+        if jobs_using_dataset and not force:
+            console.print(f"[yellow]Dataset {dataset_id} is used by the following jobs:[/yellow]")
+            for job_name in jobs_using_dataset:
+                console.print(f"  - {job_name}")
+            console.print("[yellow]Use --force to remove the dataset anyway.[/yellow]")
+            return False
+        
+        # Remove the dataset file
+        dataset_path = datasets[dataset_id].get("path")
+        if dataset_path and os.path.exists(dataset_path):
+            try:
+                os.remove(dataset_path)
+                # Remove parent directory if empty
+                parent_dir = os.path.dirname(dataset_path)
+                if os.path.exists(parent_dir) and not os.listdir(parent_dir):
+                    os.rmdir(parent_dir)
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not remove dataset file: {str(e)}[/yellow]")
+        
+        # If force is True, update any jobs using this dataset
+        if force and jobs_using_dataset:
+            console.print(f"[yellow]Updating jobs that were using dataset {dataset_id}:[/yellow]")
+            for job_name in jobs_using_dataset:
+                self.config["jobs"][job_name].pop("dataset_id", None)
+                self.config["jobs"][job_name].pop("dataset_path", None)
+                console.print(f"  - {job_name} (dataset reference removed)")
+        
+        # Remove the dataset from the configuration
+        del self.config["datasets"][dataset_id]
+        self._save_config()
+        
+        console.print(f"[green]Dataset {dataset_id} removed successfully[/green]")
         return True
     
     def export_job(self, name: str, target_name: Optional[str] = None) -> bool:

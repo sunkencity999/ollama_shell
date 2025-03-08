@@ -17,6 +17,25 @@
       "pid": 10103,
       "start_time": 1741375794.181163,
       "log_file": "jobs/stemllama/finetune.log"
+    },
+    "stemSeekCoder3": {
+      "name": "stemSeekCoder3",
+      "base_model": "deepseek-coder-v2:16b",
+      "dataset_id": "Open-Platypus",
+      "dataset_path": "./datasets/Open-Platypus.json",
+      "parameters": {
+        "learning_rate": 0.0002,
+        "per_device_train_batch_size": 2,
+        "max_steps": 100,
+        "weight_decay": 0.01
+      },
+      "status": "completed",
+      "created_at": 1741391782.099935,
+      "job_dir": "jobs/stemSeekCoder3",
+      "pid": 85243,
+      "start_time": 1741391800.4773078,
+      "log_file": "jobs/stemSeekCoder3/finetune.log",
+      "progress": 100.0
     }
   },
   "datasets": {
