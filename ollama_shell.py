@@ -2671,6 +2671,7 @@ def display_menu():
         "settings": interactive_config,
         "prompts": manage_prompts,
         "analyze": lambda: analyze_from_menu(),
+        "terminal": terminal_mode,
         "help": help,
         "exit": None
     }
@@ -2690,17 +2691,18 @@ def display_menu():
         ("6", "settings", "View or modify configuration settings"),
         ("7", "prompts", "Manage stored system prompts"),
         ("8", "analyze", "Analyze an image using vision model"),
+        ("9", "terminal", "Execute system commands in a terminal"),
     ]
     
     # Add fine-tuning option if available
     menu_items = base_menu_items.copy()
     if FINETUNE_AVAILABLE:
-        menu_items.append(("9", "finetune", "Fine-tune models with Unsloth or MLX"))
+        menu_items.append(("10", "finetune", "Fine-tune models with Unsloth or MLX"))
+        menu_items.append(("11", "help", "Show help information"))
+        menu_items.append(("12", "exit", "Exit the application"))
+    else:
         menu_items.append(("10", "help", "Show help information"))
         menu_items.append(("11", "exit", "Exit the application"))
-    else:
-        menu_items.append(("9", "help", "Show help information"))
-        menu_items.append(("10", "exit", "Exit the application"))
     
     while True:
         console.clear()
@@ -3042,6 +3044,148 @@ def analyze_image(image_path: str, prompt: Optional[str] = None) -> str:
             
     except Exception as e:
         raise Exception(f"Error analyzing image: {str(e)}")
+
+
+def terminal_mode():
+    """
+    Enter a terminal mode where users can execute system commands.
+    This provides a simple shell interface within Ollama Shell.
+    """
+    import subprocess
+    import shlex
+    import threading
+    import select
+    import time
+    import signal
+    
+    console.print("\n[bold cyan]Terminal Mode[/bold cyan]")
+    console.print("[yellow]Type commands to execute them. Type 'exit' to return to the main menu.[/yellow]")
+    console.print("[yellow]Press Ctrl+C to interrupt a running command.[/yellow]")
+    console.print("[yellow]Current directory: [green]{0}[/green][/yellow]".format(os.getcwd()))
+    
+    # Track the current process for handling interrupts
+    current_process = None
+    
+    def interrupt_handler(sig, frame):
+        if current_process:
+            try:
+                # On Unix systems, send SIGINT to the process group
+                if os.name != 'nt':  # Not Windows
+                    os.killpg(os.getpgid(current_process.pid), signal.SIGINT)
+                else:
+                    current_process.terminate()
+                console.print("\n[yellow]Command interrupted[/yellow]")
+            except Exception as e:
+                console.print(f"\n[red]Error interrupting process: {str(e)}[/red]")
+    
+    # Set up signal handler
+    original_handler = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, interrupt_handler)
+    
+    try:
+        while True:
+            try:
+                # Get command from user
+                cmd = Prompt.ask("\n[bold green]$[/bold green]")
+                
+                # Exit terminal mode
+                if cmd.lower() in ['exit', 'quit', 'q']:
+                    break
+                    
+                # Handle cd command specially since it affects the Python process
+                if cmd.startswith('cd '):
+                    try:
+                        # Extract the directory path
+                        directory = cmd[3:].strip()
+                        # Expand user directory if needed (e.g., ~/Documents)
+                        directory = os.path.expanduser(directory)
+                        # Change directory
+                        os.chdir(directory)
+                        console.print("[yellow]Changed directory to: [green]{0}[/green][/yellow]".format(os.getcwd()))
+                    except Exception as e:
+                        console.print(f"[red]Error: {str(e)}[/red]")
+                    continue
+                    
+                # Handle clear command
+                if cmd.lower() in ['clear', 'cls']:
+                    console.clear()
+                    console.print("[bold cyan]Terminal Mode[/bold cyan]")
+                    console.print("[yellow]Type commands to execute them. Type 'exit' to return to the main menu.[/yellow]")
+                    console.print("[yellow]Press Ctrl+C to interrupt a running command.[/yellow]")
+                    console.print("[yellow]Current directory: [green]{0}[/green][/yellow]".format(os.getcwd()))
+                    continue
+                
+                # Execute the command with real-time output
+                try:
+                    # Use shell=False for security and proper argument splitting
+                    # Create a new process group on Unix systems
+                    if os.name != 'nt':  # Not Windows
+                        current_process = subprocess.Popen(
+                            shlex.split(cmd),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            shell=False,
+                            bufsize=1,  # Line buffered
+                            preexec_fn=os.setsid  # Create new process group
+                        )
+                    else:  # Windows
+                        current_process = subprocess.Popen(
+                            shlex.split(cmd),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            shell=False,
+                            bufsize=1  # Line buffered
+                        )
+                    
+                    # Function to read from a pipe and print output in real-time
+                    def read_pipe(pipe, is_error=False):
+                        while True:
+                            line = pipe.readline()
+                            if not line:
+                                break
+                            if is_error:
+                                console.print(f"[red]{line}[/red]", end="")
+                            else:
+                                console.print(line, end="")
+                    
+                    # Create threads to read stdout and stderr
+                    stdout_thread = threading.Thread(target=read_pipe, args=(current_process.stdout, False))
+                    stderr_thread = threading.Thread(target=read_pipe, args=(current_process.stderr, True))
+                    
+                    # Start threads
+                    stdout_thread.daemon = True
+                    stderr_thread.daemon = True
+                    stdout_thread.start()
+                    stderr_thread.start()
+                    
+                    # Wait for the process to complete
+                    return_code = current_process.wait()
+                    
+                    # Wait for output threads to finish
+                    stdout_thread.join()
+                    stderr_thread.join()
+                    
+                    # Print return code if non-zero
+                    if return_code != 0:
+                        console.print(f"[yellow]Command exited with code: {return_code}[/yellow]")
+                    
+                    # Reset current process
+                    current_process = None
+                        
+                except Exception as e:
+                    console.print(f"[red]Error executing command: {str(e)}[/red]")
+                    current_process = None
+                    
+            except KeyboardInterrupt:
+                # This should be handled by our signal handler
+                pass
+            except EOFError:
+                break
+    finally:
+        # Restore original signal handler
+        signal.signal(signal.SIGINT, original_handler)
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
