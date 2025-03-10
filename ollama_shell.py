@@ -15,13 +15,16 @@ import datetime
 import markdown2
 from weasyprint import HTML, CSS
 from weasyprint.text.fonts import FontConfiguration
-from rich.console import Console
+from rich.console import Console, Group
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.syntax import Syntax
 from rich.table import Table
 from rich.box import ASCII as ASCII_BOX
+from rich.align import Align
+from rich.live import Live
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 from pyfiglet import Figlet
 from termcolor import colored
 from typing import Optional, Union
@@ -935,6 +938,21 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     display_banner()
     console.print(f"\n[green]Starting chat with model: [bold]{model}[/bold][/green]")
     
+    # Prepare spinner for loading model
+    with Progress(
+        SpinnerColumn(spinner_name="dots"),
+        TextColumn("[bold green]Loading model..."),
+        BarColumn(bar_width=40, complete_style="green", finished_style="green"),
+        TimeElapsedColumn(),
+        transient=True,
+    ) as progress:
+        task = progress.add_task("load", total=100)
+        
+        # Simulate progress updates while waiting for model to load
+        for i in range(0, 101, 5):
+            progress.update(task, completed=i)
+            time.sleep(0.05)
+    
     # Display existing chat history if present
     if existing_history:
         console.print("\n[yellow]Resuming previous chat...[/yellow]")
@@ -1029,10 +1047,9 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
     chat_history = existing_history if existing_history else []
     chat_history.append({"role": "system", "content": get_current_system_prompt()})
 
-    console.print("\n[cyan]Chat started. Type 'exit' to end.[/cyan]")
-    console.print("[cyan]• Press Ctrl+V to toggle drag & drop mode for file sharing[/cyan]")
-    console.print("[cyan]• Press Ctrl+C to copy assistant responses[/cyan]")
-    console.print("[cyan]• Type '/help' to see context management commands[/cyan]")
+    # Display chat instructions in a styled panel
+    instructions = "Type 'exit' to end.\n• Press Ctrl+V to toggle drag & drop mode for file sharing\n• Press Ctrl+C to copy assistant responses\n• Type '/help' to see context management commands"
+    console.print(Panel(instructions, title="[bold cyan]Chat Session Started[/bold cyan]", border_style="cyan", padding=(1, 2)))
 
     last_response = ""
 
@@ -1897,13 +1914,42 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                     chat_history.append({"role": "assistant", "content": search_results})
                     
                     # Display results
-                    console.print(Panel(Markdown(search_results), title="Search Results & Analysis", border_style="blue"))
+                    # Create thread line for search results
+                    if len(chat_history) > 2:  # More than system message + 1 message
+                        thread_line = "[dim]│[/dim]"
+                        console.print(thread_line)
+                    
+                    console.print(Panel(
+                        Markdown(search_results), 
+                        title="[bold green]Search Results & Analysis[/bold green]", 
+                        border_style="green",
+                        padding=(1, 2)
+                    ))
                     continue
                 except Exception as e:
                     console.print(f"[red]Error during search: {str(e)}[/red]")
                     continue
 
+            # Add user message to chat history
             chat_history.append({"role": "user", "content": user_input})
+
+            # Display user message in a bubble
+            user_panel = Panel(
+                Markdown(user_input),
+                border_style="blue",
+                title="[bold blue]You[/bold blue]",
+                padding=(1, 2),
+                width=min(len(user_input) + 10, console.width - 20),
+                expand=True  # Allow panel to expand with content
+            )
+
+            # Create thread line if this isn't the first message
+            if len(chat_history) > 2:  # More than system message + 1 user message
+                thread_line = "[dim]│[/dim]"
+                console.print(thread_line)
+
+            # Print user message right-aligned
+            console.print(Align.right(user_panel))
             
             # Regular chat - use streaming response with current context
             try:
@@ -1946,11 +1992,20 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                                 source = result["metadata"].get("source", "unknown")
                                 timestamp = result["metadata"].get("timestamp", "unknown")
                                 
-                                # Format the result
-                                console.print(f"[cyan]Result {i+1} (Similarity: {similarity_pct:.1f}%)[/cyan]")
-                                console.print(f"[dim]Source: {source}, Added: {timestamp}[/dim]")
-                                console.print(Panel(result["text"][:500] + ("..." if len(result["text"]) > 500 else ""), 
-                                                  border_style="green"))
+                                # Format the result with thread line and improved styling
+                                thread_line = "[dim]│[/dim]"
+                                console.print(thread_line)
+                                
+                                # Create header with similarity info
+                                header = f"[bold cyan]Result {i+1} (Similarity: {similarity_pct:.1f}%)[/bold cyan]\n[dim]Source: {source}, Added: {timestamp}[/dim]"
+                                
+                                # Create panel with result text
+                                console.print(Panel(
+                                    Markdown(result["text"][:500] + ("..." if len(result["text"]) > 500 else "")),
+                                    title=header,
+                                    border_style="cyan",
+                                    padding=(1, 2)
+                                ))
                             kb_context += "\n".join([result["text"] for result in kb_results])
                         else:
                             console.print("[yellow]No matching results found in knowledge base[/yellow]")
@@ -1970,30 +2025,60 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                 
                 # Stream the response
                 console.print(assistant_separator)
+                
+                # Create thread line if this isn't the first message
+                if len(chat_history) > 2:  # More than system message + 1 user message
+                    thread_line = "[dim]│[/dim]"
+                    console.print(thread_line)
+                
                 console.print("\n[green]Assistant:[/green]")
+                
+                # Create an assistant panel that will be displayed after collecting the full response
+                assistant_panel = None
                 
                 # Use the context_messages instead of just the user input
                 # Create a temporary copy of the messages without the last user message
                 temp_context = context_messages[:-1]
                 
                 # Send the message with the prepared context
-                with console.status("[cyan]Thinking...[/cyan]"):
+                with console.status("[cyan]Thinking...[/cyan]", spinner="dots"):
                     response = send_message(model, "", None, True, context_messages)
                 
                 full_response = ""
-                for line in response.iter_lines():
-                    if line:
-                        try:
-                            chunk = json.loads(line)
-                            if "message" in chunk and "content" in chunk["message"]:
-                                content = chunk["message"]["content"]
-                                full_response += content
-                                console.print(content, end="")
-                        except json.JSONDecodeError:
-                            pass
+                buffer = ""
+                code_block = False
+                code_lang = ""
+                code_content = ""
                 
-                # Add a newline after the response
-                console.print()
+                # Collect the entire response without displaying it yet
+                full_response = ""
+                
+                # Show a "Thinking..." status while collecting the response
+                with console.status("[cyan]Generating response...[/cyan]", spinner="dots"):
+                    for line in response.iter_lines():
+                        if line:
+                            try:
+                                chunk = json.loads(line)
+                                if "message" in chunk and "content" in chunk["message"]:
+                                    content = chunk["message"]["content"]
+                                    full_response += content
+                            except json.JSONDecodeError:
+                                pass
+                
+                # Once we have the complete response, display it in a formatted panel
+                console.print("\n[green]Assistant:[/green]")
+                
+                # Create a panel for the properly formatted response with code blocks
+                assistant_panel = Panel(
+                    Markdown(full_response),
+                    border_style="green", 
+                    padding=(1, 2),
+                    width=None,
+                    expand=True
+                )
+                
+                # Print the formatted response in a panel
+                console.print(assistant_panel)
                 
                 # Store the response for copying
                 last_response = full_response
@@ -2004,6 +2089,11 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                 # Display token usage
                 response_tokens = count_tokens(full_response, model)
                 total_tokens = current_tokens + response_tokens
+                
+                # Create thread line for token info
+                thread_line = "[dim]│[/dim]"
+                console.print(thread_line)
+                
                 console.print(Panel(
                     format_token_count(total_tokens, max_tokens),
                     title="[blue]Context Window[/blue]",
