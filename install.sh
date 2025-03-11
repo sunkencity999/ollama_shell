@@ -60,6 +60,52 @@ python3 create_directories.py
 # Make ollama_shell.py executable
 chmod +x ollama_shell.py
 
+# Guide users through optional Confluence integration setup
+echo -e "\n${GREEN}Setting up optional integrations...${NC}"
+echo -e "${YELLOW}Would you like to set up the Confluence integration? (y/n)${NC}"
+read -r setup_confluence
+
+if [ "$setup_confluence" = "y" ]; then
+    echo -e "${GREEN}Setting up Confluence integration...${NC}"
+    
+    # Check if the template file exists
+    template_file="Created Files/config/confluence_config_template.env"
+    config_file="Created Files/confluence_config.env"
+    
+    if [ -f "$template_file" ]; then
+        # Copy the template to the actual config file if it doesn't exist
+        if [ ! -f "$config_file" ]; then
+            cp "$template_file" "$config_file"
+            echo -e "${GREEN}Created Confluence configuration file: $config_file${NC}"
+        fi
+        
+        echo -e "${YELLOW}Please edit the configuration file at $config_file with your Confluence details.${NC}"
+        echo -e "${YELLOW}You will need to provide:${NC}"
+        echo -e "  - Confluence URL"
+        echo -e "  - Your email/username"
+        echo -e "  - Your Personal Access Token (PAT) or API token"
+        
+        # Ask if they want to open the file now
+        echo -e "${YELLOW}Would you like to open the configuration file now? (y/n)${NC}"
+        read -r open_config
+        
+        if [ "$open_config" = "y" ]; then
+            # Try to open with the default editor
+            if [ -n "$EDITOR" ]; then
+                $EDITOR "$config_file"
+            elif command -v nano &> /dev/null; then
+                nano "$config_file"
+            elif command -v vim &> /dev/null; then
+                vim "$config_file"
+            else
+                echo -e "${YELLOW}No text editor found. Please open $config_file manually.${NC}"
+            fi
+        fi
+    else
+        echo -e "${YELLOW}Confluence configuration template not found. Please run the setup script again.${NC}"
+    fi
+fi
+
 echo -e "\n${GREEN}Installation complete!${NC}"
 echo -e "${GREEN}To start Ollama Shell:${NC}"
 echo -e "1. Start Ollama: ${YELLOW}ollama serve${NC}"

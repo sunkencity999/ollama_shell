@@ -79,6 +79,13 @@ try:
 except ImportError:
     FILESYSTEM_MCP_AVAILABLE = False
 
+# Import Confluence MCP integration
+try:
+    from ollama_shell_confluence_mcp import get_ollama_shell_confluence_mcp, handle_confluence_nl_command, check_confluence_configuration, save_confluence_config, display_confluence_result
+    CONFLUENCE_MCP_AVAILABLE = True
+except ImportError:
+    CONFLUENCE_MCP_AVAILABLE = False
+
 app = typer.Typer()
 console = Console(
     force_terminal=True,
@@ -1195,6 +1202,11 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                         console.print("[green]/finetune dataset-remove [dataset_id] [--force][/green] - Remove a dataset")
                         console.print("[green]/finetune reset [name][/green] - Reset a job to created state")
                     
+                    if CONFLUENCE_MCP_AVAILABLE:
+                        console.print("\n[bold cyan]Confluence Commands:[/bold cyan]")
+                        console.print("[green]/confluence [command][/green] - Execute Confluence operations using natural language")
+                        console.print("[green]/confluence mode[/green] - Enter interactive Confluence mode")
+                    
                     console.print("\n[bold cyan]Other Commands:[/bold cyan]")
                     console.print("[green]search: [query][/green] - Perform a web search and analyze results")
                     console.print("[green]/fsnl [command][/green] - Execute filesystem operations using natural language")
@@ -1950,6 +1962,61 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                     console.print(Markdown(response))
                     continue
                 
+                # Confluence commands
+                elif command == '/confluence':
+                    if not CONFLUENCE_MCP_AVAILABLE:
+                        console.print("[red]Confluence MCP Protocol integration not available. Install the Confluence MCP Protocol integration first.[/red]")
+                        continue
+                    
+                    # Check if the command is to enter Confluence mode
+                    if args.strip().lower() == 'mode':
+                        # Enter Confluence mode
+                        confluence_mode()
+                        continue
+                    
+                    # Check if Confluence is configured
+                    is_configured, message = check_confluence_configuration()
+                    if not is_configured:
+                        console.print(f"[red]Confluence is not configured: {message}[/red]")
+                        setup_now = Prompt.ask("Would you like to set up Confluence integration now?", choices=["y", "n"], default="y")
+                        if setup_now.lower() == "y":
+                            # Get Confluence configuration
+                            console.print("\n[cyan]Confluence Configuration[/cyan]")
+                            console.print("You'll need your Confluence Cloud URL and API token to proceed.")
+                            console.print("You can generate an API token at https://id.atlassian.com/manage-profile/security/api-tokens")
+                            
+                            confluence_url = Prompt.ask("Enter your Confluence Cloud URL (e.g., https://your-domain.atlassian.net)")
+                            confluence_email = Prompt.ask("Enter your Confluence email address")
+                            confluence_token = Prompt.ask("Enter your Confluence API token", password=True)
+                            
+                            # Save configuration
+                            if save_confluence_config(confluence_url, confluence_token, confluence_email):
+                                console.print("[green]Confluence configuration saved successfully![/green]")
+                                is_configured = True
+                            else:
+                                console.print("[red]Failed to save Confluence configuration.[/red]")
+                                continue
+                        else:
+                            continue
+                    
+                    # Get the natural language command
+                    nl_command = args if args else Prompt.ask("[cyan]Enter your natural language Confluence command[/cyan]")
+                    
+                    # Show a spinner while processing
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn("[cyan]Processing Confluence command...[/cyan]"),
+                        transient=True
+                    ) as progress:
+                        progress.add_task("Processing", total=None)
+                        
+                        # Handle natural language Confluence command
+                        result = handle_confluence_nl_command(nl_command, model=current_model)
+                    
+                    # Display the result
+                    display_confluence_result(result)
+                    continue
+                
                 # If we get here, it's an unrecognized command
                 elif user_input.startswith('/'):
                     console.print("[red]Unrecognized command. Type /help for available commands.[/red]")
@@ -2218,6 +2285,12 @@ def help():
     console.print("  [green]/kb add [text][/green] - Add text to knowledge base")
     console.print("  [green]/kb search [query][/green] - Search knowledge base")
     console.print("  [green]/kb toggle[/green] - Enable/disable knowledge base")
+    
+    # Confluence Integration
+    if CONFLUENCE_MCP_AVAILABLE:
+        console.print("\n[yellow]Confluence Commands:[/yellow]")
+        console.print("  [green]/confluence [command][/green] - Execute Confluence operations using natural language")
+        console.print("  [green]/confluence mode[/green] - Enter interactive Confluence mode")
     
     if FINETUNE_AVAILABLE:
         console.print("\n[bold cyan]Fine-Tuning Commands:[/bold cyan]")
@@ -2524,9 +2597,17 @@ def interactive_config():
         for i, (key, value) in enumerate(config_items, 1):
             table.add_row(f"[green]{i}[/green]", key, str(value))
         
+        # Add Confluence configuration option if available
+        if CONFLUENCE_MCP_AVAILABLE:
+            is_configured, _ = check_confluence_configuration()
+            status = "[green]Configured[/green]" if is_configured else "[red]Not configured[/red]"
+            table.add_row(f"[green]{len(config_items) + 1}[/green]", "confluence_settings", status)
+        
         console.print(table)
         console.print("\n[cyan]Options:[/cyan]")
-        console.print("[green]1-7[/green]: Edit setting")
+        console.print(f"[green]1-{len(config_items)}[/green]: Edit setting")
+        if CONFLUENCE_MCP_AVAILABLE:
+            console.print(f"[green]{len(config_items) + 1}[/green]: Configure Confluence")
         console.print("[green]s[/green]: Save and exit")
         console.print("[green]x[/green]: Exit without saving")
         
@@ -2537,21 +2618,38 @@ def interactive_config():
         elif choice.lower() == 's':
             save_config(current_config)
             break
-        elif choice.isdigit() and 1 <= int(choice) <= len(config_items):
-            index = int(choice) - 1
-            key, current_value = config_items[index]
-            
-            if key == "default_model":
-                # Show available models for selection
-                response = requests.get(f"{OLLAMA_API}/tags")
-                if response.status_code == 200:
-                    models = [model["name"] for model in response.json()["models"]]
-                    console.print("\nAvailable models:")
-                    for i, model in enumerate(models):
-                        console.print(f"[green]{i+1}[/green]. {model}")
-                    model_choice = Prompt.ask("\nSelect model number", default="1")
-                    if model_choice.isdigit() and 1 <= int(model_choice) <= len(models):
-                        current_config[key] = models[int(model_choice) - 1]
+        elif choice.isdigit():
+            choice_num = int(choice)
+            if 1 <= choice_num <= len(config_items):
+                index = choice_num - 1
+                key, current_value = config_items[index]
+                
+                if key == "default_model":
+                    # Show available models for selection
+                    response = requests.get(f"{OLLAMA_API}/tags")
+                    if response.status_code == 200:
+                        models = [model["name"] for model in response.json()["models"]]
+                        console.print("\nAvailable models:")
+                        for i, model in enumerate(models):
+                            console.print(f"[green]{i+1}[/green]. {model}")
+                        model_choice = Prompt.ask("\nSelect model number", default="1")
+                        if model_choice.isdigit() and 1 <= int(model_choice) <= len(models):
+                            current_config[key] = models[int(model_choice) - 1]
+            elif CONFLUENCE_MCP_AVAILABLE and choice_num == len(config_items) + 1:
+                # Configure Confluence settings
+                console.print("\n[cyan]Confluence Configuration[/cyan]")
+                console.print("You'll need your Confluence Cloud URL and API token to proceed.")
+                console.print("You can generate an API token at https://id.atlassian.com/manage-profile/security/api-tokens")
+                
+                confluence_url = Prompt.ask("Enter your Confluence Cloud URL (e.g., https://your-domain.atlassian.net)")
+                confluence_email = Prompt.ask("Enter your Confluence email address")
+                confluence_token = Prompt.ask("Enter your Confluence API token", password=True)
+                
+                # Save configuration
+                if save_confluence_config(confluence_url, confluence_token, confluence_email):
+                    console.print("[green]Confluence configuration saved successfully![/green]")
+                else:
+                    console.print("[red]Failed to save Confluence configuration.[/red]")
             
             elif isinstance(current_value, bool):
                 current_config[key] = not current_value
@@ -2846,6 +2944,10 @@ def display_menu():
     if FILESYSTEM_AVAILABLE:
         commands["filesystem"] = filesystem_mode
     
+    # Add Confluence mode if available
+    if CONFLUENCE_MCP_AVAILABLE:
+        commands["confluence"] = confluence_mode
+    
     # Add fine-tuning command if available
     if FINETUNE_AVAILABLE:
         commands["finetune"] = lambda: interactive_chat(load_config().get("default_model", "llama2"), 
@@ -2864,30 +2966,29 @@ def display_menu():
         ("9", "terminal", "Execute system commands in a terminal"),
     ]
     
-    # Add filesystem and fine-tuning options if available
+    # Add filesystem, confluence, and fine-tuning options if available
     menu_items = base_menu_items.copy()
+    menu_option_number = 10
     
     # Add filesystem option if available
     if FILESYSTEM_AVAILABLE:
-        menu_items.append(("10", "filesystem", "Access filesystem operations"))
-        
-        # Adjust numbering based on available options
-        if FINETUNE_AVAILABLE:
-            menu_items.append(("11", "finetune", "Fine-tune models with Unsloth or MLX"))
-            menu_items.append(("12", "help", "Show help information"))
-            menu_items.append(("13", "exit", "Exit the application"))
-        else:
-            menu_items.append(("11", "help", "Show help information"))
-            menu_items.append(("12", "exit", "Exit the application"))
-    else:
-        # Original numbering without filesystem
-        if FINETUNE_AVAILABLE:
-            menu_items.append(("10", "finetune", "Fine-tune models with Unsloth or MLX"))
-            menu_items.append(("11", "help", "Show help information"))
-            menu_items.append(("12", "exit", "Exit the application"))
-        else:
-            menu_items.append(("10", "help", "Show help information"))
-            menu_items.append(("11", "exit", "Exit the application"))
+        menu_items.append((str(menu_option_number), "filesystem", "Access filesystem operations"))
+        menu_option_number += 1
+    
+    # Add Confluence option if available
+    if CONFLUENCE_MCP_AVAILABLE:
+        menu_items.append((str(menu_option_number), "confluence", "Access Confluence knowledge base"))
+        menu_option_number += 1
+    
+    # Add fine-tuning option if available
+    if FINETUNE_AVAILABLE:
+        menu_items.append((str(menu_option_number), "finetune", "Fine-tune models with Unsloth or MLX"))
+        menu_option_number += 1
+    
+    # Add help and exit options
+    menu_items.append((str(menu_option_number), "help", "Show help information"))
+    menu_option_number += 1
+    menu_items.append((str(menu_option_number), "exit", "Exit the application"))
     
     while True:
         console.clear()
@@ -3109,6 +3210,75 @@ def analyze(
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")
 
+@app.command()
+def confluence(
+    command: str = typer.Argument(None, help="Natural language command for Confluence operations"),
+    mode: bool = typer.Option(False, "--mode", "-m", help="Enter interactive Confluence mode")
+):
+    """Execute Confluence operations using natural language or enter Confluence mode"""
+    try:
+        if not CONFLUENCE_MCP_AVAILABLE:
+            console.print("[red]Confluence MCP Protocol integration not available.[/red]")
+            console.print("[yellow]Please ensure the required dependencies are installed.[/yellow]")
+            return
+        
+        # Check if mode flag is set
+        if mode:
+            confluence_mode()
+            return
+        
+        # Check if Confluence is configured
+        is_configured, message = check_confluence_configuration()
+        if not is_configured:
+            console.print(f"[red]Confluence is not configured: {message}[/red]")
+            
+            # Offer to configure Confluence
+            setup_now = Prompt.ask("Would you like to set up Confluence integration now?", choices=["y", "n"], default="y")
+            if setup_now.lower() == "y":
+                # Get Confluence configuration
+                console.print("\n[cyan]Confluence Configuration[/cyan]")
+                console.print("You'll need your Confluence Cloud URL and API token to proceed.")
+                console.print("You can generate an API token at https://id.atlassian.com/manage-profile/security/api-tokens")
+                
+                confluence_url = Prompt.ask("Enter your Confluence Cloud URL (e.g., https://your-domain.atlassian.net)")
+                confluence_email = Prompt.ask("Enter your Confluence email address")
+                confluence_token = Prompt.ask("Enter your Confluence API token", password=True)
+                
+                # Save configuration
+                if save_confluence_config(confluence_url, confluence_token, confluence_email):
+                    console.print("[green]Confluence configuration saved successfully![/green]")
+                    is_configured = True
+                else:
+                    console.print("[red]Failed to save Confluence configuration.[/red]")
+                    return
+            else:
+                return
+        
+        # Get the command if not provided
+        if not command:
+            command = Prompt.ask("[cyan]Enter your natural language Confluence command[/cyan]")
+        
+        # Get config for model
+        config = load_config()
+        current_model = config.get("default_model", "llama3")
+        
+        # Show a spinner while processing
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[cyan]Processing Confluence command...[/cyan]"),
+            transient=True
+        ) as progress:
+            progress.add_task("Processing", total=None)
+            
+            # Handle natural language Confluence command
+            result = handle_confluence_nl_command(command, model=current_model)
+        
+        # Display the result
+        display_confluence_result(result)
+        
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+
 def analyze_from_menu():
     """Handle image analysis from the menu"""
     try:
@@ -3230,6 +3400,114 @@ def analyze_image(image_path: str, prompt: Optional[str] = None) -> str:
     except Exception as e:
         raise Exception(f"Error analyzing image: {str(e)}")
 
+
+# display_confluence_result function is imported from ollama_shell_confluence_mcp
+
+def confluence_mode():
+    """
+    Enter a Confluence mode where users can interact with Confluence Cloud using natural language.
+    This provides a simple interface to access Confluence content within Ollama Shell.
+    """
+    if not CONFLUENCE_MCP_AVAILABLE:
+        console.print("[red]Confluence MCP integration is not available.[/red]")
+        console.print("[yellow]Please ensure the required dependencies are installed.[/yellow]")
+        return
+    
+    # Check if Confluence is configured
+    is_configured, message = check_confluence_configuration()
+    if not is_configured:
+        console.print(f"[red]{message}[/red]")
+        
+        # Offer to configure Confluence
+        setup_now = Prompt.ask("Would you like to set up Confluence integration now?", choices=["y", "n"], default="y")
+        if setup_now.lower() == "y":
+            # Get Confluence configuration
+            console.print("\n[cyan]Confluence Configuration[/cyan]")
+            console.print("You'll need your Confluence Cloud URL and API token to proceed.")
+            console.print("You can generate an API token at https://id.atlassian.com/manage-profile/security/api-tokens")
+            
+            confluence_url = Prompt.ask("Enter your Confluence Cloud URL (e.g., https://your-domain.atlassian.net)")
+            confluence_email = Prompt.ask("Enter your Confluence email address")
+            confluence_token = Prompt.ask("Enter your Confluence API token", password=True)
+            
+            # Save configuration
+            if save_confluence_config(confluence_url, confluence_token, confluence_email):
+                console.print("[green]Confluence configuration saved successfully![/green]")
+                is_configured = True
+            else:
+                console.print("[red]Failed to save Confluence configuration.[/red]")
+                return
+        else:
+            return
+    
+    # Main Confluence interaction loop
+    console.clear()
+    display_banner()
+    
+    # Get default model
+    config = load_config()
+    default_model = config.get("default_model", "llama3")
+    
+    # Create a table with available commands
+    table = Table(title="Confluence Commands")
+    table.add_column("Command", style="cyan")
+    table.add_column("Description", style="white")
+    
+    table.add_row("/help", "Show this help message")
+    table.add_row("/model <model_name>", "Change the model used for Confluence queries")
+    table.add_row("/exit", "Exit Confluence mode")
+    table.add_row("Any other text", "Will be interpreted as a natural language query to Confluence")
+    
+    console.print(table)
+    console.print(f"\n[green]Using model:[/green] {default_model}")
+    console.print("[cyan]Enter your Confluence queries below. Type /exit to return to the main menu.[/cyan]")
+    
+    # Set up prompt session with key bindings
+    kb = KeyBindings()
+    session = PromptSession(key_bindings=kb)
+    
+    current_model = default_model
+    
+    while True:
+        try:
+            # Get user input
+            user_input = session.prompt("\n[Confluence] > ")
+            
+            # Handle commands
+            if user_input.lower() == "/exit":
+                break
+            elif user_input.lower() == "/help":
+                console.print(table)
+                continue
+            elif user_input.lower().startswith("/model "):
+                # Change model
+                model_name = user_input[7:].strip()
+                is_valid, error_message = validate_model(model_name)
+                if is_valid:
+                    current_model = model_name
+                    console.print(f"[green]Model changed to {current_model}[/green]")
+                else:
+                    console.print(f"[red]Error: {error_message}[/red]")
+                continue
+            
+            # Process natural language query to Confluence
+            if user_input.strip():
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[bold blue]Processing Confluence query..."),
+                    transient=True
+                ) as progress:
+                    progress.add_task("Processing", total=None)
+                    result = handle_confluence_nl_command(user_input, model=current_model)
+                
+                # Display result
+                display_confluence_result(result)
+        
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Operation cancelled.[/yellow]")
+            continue
+        except Exception as e:
+            console.print(f"\n[red]Error: {str(e)}[/red]")
 
 def terminal_mode():
     """

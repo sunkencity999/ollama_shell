@@ -23,7 +23,6 @@ Contact: [contact@christopherdanielbradford.com](mailto:contact@christopherdanie
 - 🖼️ **Image Analysis**: Support for analyzing images using vision models
 - 📄 **Document Analysis**: Support for various document formats
 - 🌐 **Real-time Information**: Combine search results with model analysis
-- 🏢 **Confluence Integration**: Search and analyze Confluence content with LLM-powered insights
 - 💾 **Export Capabilities**: Export chats in multiple formats
 - ⚡ **Drag & Drop**: Easy file sharing in chat
 - 🧠 **Context Management**: Intelligent management of conversation context
@@ -33,27 +32,22 @@ Contact: [contact@christopherdanielbradford.com](mailto:contact@christopherdanie
 ## Quick Start
 
 ### Windows Installation
-
 1. Run `install_windows.bat` to set up the virtual environment and install dependencies
 2. Run `run_ollama_shell.bat` to start the application
 
 ### Unix/Mac Installation
-
 1. Create and activate a virtual environment:
-
 ```bash
 python -m venv venv
 source venv/bin/activate  # Unix/Mac
 ```
 
 2. Install dependencies:
-
 ```bash
 pip install -r requirements.txt
 ```
 
 3. Run the application:
-
 ```bash
 python ollama_shell.py
 ```
@@ -93,31 +87,26 @@ The Context Management feature allows you to optimize token usage and maintain i
    ```
    Displays detailed token usage information for each message.
 
-
 ### Enhanced Search Queries
 The Enhanced Search feature allows you to combine real-time web information with model analysis:
 
 1. **Basic Search**:
-
-   ```bash
+   ```
    search: What are the latest developments in AI?
    ```
    This will search the web and provide an analyzed summary.
 
 2. **Focused Questions**:
-
-   ```bash
+   ```
    search: Who won the latest Super Bowl and what was the score?
    ```
    Gets real-time information and provides accurate, up-to-date answers.
 
 3. **Technical Queries**:
-
-   ```bash
+   ```
    search: How to implement rate limiting in Python?
    ```
    Combines web search results with model expertise for comprehensive answers.
-
 
 ### Image Analysis
 Analyze images using vision models:
@@ -308,40 +297,11 @@ Interact with your Confluence instance (both Cloud and Server) using natural lan
      update the "Weekly Status" page in the Project space with new content
      ```
    - **Search Content**: Search for content using Confluence Query Language (CQL)
-
-     ```text
+     ```
      search for pages containing "budget proposal"
      ```
-     
-     For more targeted searches, use specific query formats:
-
-     ```text
-     search Confluence for information about Polarion
-     ```
-
-     ```text
-     find all Confluence pages containing "API documentation"
-     ```
-
-     ```text
-     search Confluence for "release planning"
-     ```
-
-   - **Content Analysis**: Get AI-powered analysis of search results
-
-     ```text
-     analyze Confluence content about "deployment procedures"
-     ```
-
-     ```text
-     explain the information in Confluence about SSL certificates
-     ```
-
-     The LLM will automatically analyze search results to provide direct answers to your queries, extracting relevant information from multiple pages.
-
    - **Manage Labels**: Add or remove labels from pages
-
-     ```text
+     ```
      add labels "important,review" to the "Quarterly Report" page
      ```
 
