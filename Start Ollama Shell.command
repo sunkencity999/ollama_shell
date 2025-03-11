@@ -137,6 +137,11 @@ clear
 echo -e "${GREEN}Starting Ollama Shell...${NC}\n"
 show_notification "Ollama Shell" "Starting Ollama Shell..."
 
+# Ensure Filesystem MCP Protocol server is available
+echo -e "${YELLOW}Initializing Filesystem MCP Protocol server...${NC}"
+# Start the server and wait for it to initialize (with a timeout)
+python -c "from filesystem_mcp_integration import get_filesystem_mcp_integration; integration = get_filesystem_mcp_integration(); print('Filesystem MCP Protocol server ' + ('initialized successfully' if integration.available else 'failed to initialize'))"
+
 # Launch the application
 ./ollama_shell.py
 

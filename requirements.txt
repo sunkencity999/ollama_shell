@@ -28,6 +28,13 @@ pyarrow>=14.0.0  # Parquet file support
 chromadb>=0.4.18  # Vector database
 sentence-transformers>=2.2.2  # For generating embeddings
 
+# Filesystem MCP dependencies
+requests>=2.31.0  # HTTP client for MCP API
+rich>=13.6.0  # Rich text formatting
+fastapi>=0.100.0  # FastAPI for MCP server
+uvicorn>=0.22.0  # ASGI server for FastAPI
+mcp>=0.1.0  # Model Context Protocol SDK
+
 # Fine-tuning dependencies (installed on-demand based on hardware)
 # These are not installed by default but are installed by the /finetune install command
 # For NVIDIA GPUs (Unsloth)

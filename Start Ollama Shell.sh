@@ -58,6 +58,11 @@ if ! curl -s http://localhost:11434/api/tags &> /dev/null; then
     fi
 fi
 
+# Ensure Filesystem MCP Protocol server is available
+echo "Initializing Filesystem MCP Protocol server..."
+# Start the server and wait for it to initialize (with a timeout)
+python -c "from filesystem_mcp_integration import get_filesystem_mcp_integration; integration = get_filesystem_mcp_integration(); print('Filesystem MCP Protocol server ' + ('initialized successfully' if integration.available else 'failed to initialize'))"
+
 # Start the application
 python ollama_shell.py
 

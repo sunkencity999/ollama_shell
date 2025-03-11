@@ -147,6 +147,59 @@ Analyze various document types:
    - Example: `/create data.csv "Name,Age,City\nJohn,30,New York\nJane,25,Boston"`
    - Supported formats: TXT, CSV, DOC/DOCX, XLS/XLSX, PDF
 
+### Natural Language Filesystem Operations
+Interact with your filesystem using natural language commands through the Filesystem MCP Protocol integration:
+
+1. **Basic Usage**:
+   ```
+   /fsnl list files in my Documents folder
+   ```
+   This will list all files and directories in your Documents folder.
+
+2. **Supported Operations**:
+   - **List Directories**: View contents of directories
+     ```
+     /fsnl show me what's in my Downloads folder
+     ```
+   - **Create Directories**: Create new folders
+     ```
+     /fsnl create a new folder called 'ProjectData' in my Documents
+     ```
+   - **Read Files**: View the contents of text files
+     ```
+     /fsnl show me the contents of config.json
+     ```
+   - **Write Files**: Create or modify text files
+     ```
+     /fsnl create a file called notes.txt in Documents with the text "Meeting notes for today"
+     ```
+   - **Find Files**: Search for files matching patterns
+     ```
+     /fsnl find all PDF files in my Documents folder
+     ```
+   - **Delete Files**: Remove files (use with caution)
+     ```
+     /fsnl delete the temporary file temp.txt
+     ```
+
+3. **Path Handling**:
+   - Supports absolute paths: `/Users/username/Documents`
+   - Supports relative paths: `Documents/ProjectData`
+   - Supports user home shortcuts: `~/Documents` or just `Documents`
+   - Handles special paths like `/Documents` (automatically maps to user's Documents folder)
+
+4. **Best Practices**:
+   - Be specific about file and directory names to avoid ambiguity
+   - Use full paths when working with files outside common directories
+   - Verify operations before deleting files or overwriting important data
+   - For complex operations, break them down into multiple commands
+   - Use the model's capabilities to explain file contents or summarize directory listings
+
+5. **Security Features**:
+   - Operations are limited to user-accessible directories
+   - Sensitive system directories are protected
+   - All operations are executed with user permissions
+
 ### Context Management
 The Context Management feature allows you to optimize token usage and maintain important information in long conversations:
 

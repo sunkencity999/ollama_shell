@@ -1,7 +1,7 @@
 {
     "default_model": "llama3.2:latest",
     "default_vision_model": "llama3.2-vision:latest",
-    "verbose": false,
+    "verbose": true,
     "save_history": true,
     "history_file": "~/.ollama_shell_history",
     "show_model_details": true,

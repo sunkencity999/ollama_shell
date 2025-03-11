@@ -65,6 +65,20 @@ except ImportError:
     except ImportError:
         FINETUNE_AVAILABLE = False
 
+# Import filesystem MCP integration
+try:
+    from filesystem_integration import FilesystemIntegration, handle_fs_command, filesystem_mode
+    FILESYSTEM_AVAILABLE = True
+except ImportError:
+    FILESYSTEM_AVAILABLE = False
+
+# Import filesystem MCP Protocol integration (for natural language commands)
+try:
+    from ollama_shell_filesystem_mcp import get_ollama_shell_filesystem_mcp, handle_filesystem_nl_command
+    FILESYSTEM_MCP_AVAILABLE = True
+except ImportError:
+    FILESYSTEM_MCP_AVAILABLE = False
+
 app = typer.Typer()
 console = Console(
     force_terminal=True,
@@ -1183,6 +1197,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                     
                     console.print("\n[bold cyan]Other Commands:[/bold cyan]")
                     console.print("[green]search: [query][/green] - Perform a web search and analyze results")
+                    console.print("[green]/fsnl [command][/green] - Execute filesystem operations using natural language")
                     console.print("[green]/create [filename] [content][/green] - Create a file with specified content")
                     console.print("[green]/create [request] and save to [filename][/green] - Generate and save content")
                     console.print("[green]Ctrl+V[/green] - Toggle drag & drop mode for file sharing")
@@ -1895,6 +1910,46 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                     
                     continue
                 
+                # Filesystem commands
+                elif command == 'fs':
+                    if not FILESYSTEM_AVAILABLE:
+                        console.print("[red]Filesystem functionality not available. Install the filesystem integration module first.[/red]")
+                        console.print("[yellow]Run: python install_filesystem_mcp.py[/yellow]")
+                        continue
+                    
+                    # Handle filesystem commands
+                    response = handle_fs_command(args.split())
+                    console.print(response)
+                    continue
+                
+                # Natural language filesystem commands
+                elif command == '/fsnl':
+                    if not FILESYSTEM_MCP_AVAILABLE:
+                        console.print("[red]Filesystem MCP Protocol integration not available. Install the Filesystem MCP Protocol integration first.[/red]")
+                        console.print("[yellow]Run: python install_filesystem_mcp_protocol.py[/yellow]")
+                        continue
+                    
+                    # Use the current model from the chat session
+                    current_model = model
+                    
+                    # Get the natural language command
+                    nl_command = args if args else Prompt.ask("[cyan]Enter your natural language filesystem command[/cyan]")
+                    
+                    # Show a spinner while processing
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn("[cyan]Processing natural language command...[/cyan]"),
+                        transient=True
+                    ) as progress:
+                        progress.add_task("Processing", total=None)
+                        
+                        # Handle natural language filesystem command
+                        response = handle_filesystem_nl_command(nl_command, current_model)
+                    
+                    # Display the response as markdown
+                    console.print(Markdown(response))
+                    continue
+                
                 # If we get here, it's an unrecognized command
                 elif user_input.startswith('/'):
                     console.print("[red]Unrecognized command. Type /help for available commands.[/red]")
@@ -2182,6 +2237,27 @@ def help():
     # File handling
     console.print("\n[yellow]File Handling:[/yellow]")
     console.print("  Drag & drop files into the chat for analysis")
+    
+    # Filesystem commands
+    if FILESYSTEM_AVAILABLE:
+        console.print("\n[bold cyan]Filesystem Commands:[/bold cyan]")
+        console.print("  [green]/fs help[/green] - Show filesystem commands help")
+        console.print("  [green]/fs ls [path][/green] - List directory contents")
+        console.print("  [green]/fs read <path>[/green] - Read file content")
+        console.print("  [green]/fs write <path> <content>[/green] - Write content to a file")
+        console.print("  [green]/fs mkdir <path>[/green] - Create a directory")
+        console.print("  [green]/fs analyze <path>[/green] - Analyze text file properties")
+        console.print("  [green]/fs zip <output> <sources...>[/green] - Create a ZIP archive")
+        console.print("  [green]/fs unzip <zip> <output>[/green] - Extract a ZIP archive")
+    # Natural language filesystem commands
+    if FILESYSTEM_MCP_AVAILABLE:
+        console.print("\n[bold cyan]Natural Language Filesystem Commands:[/bold cyan]")
+        console.print("  [green]/fsnl [command][/green] - Execute filesystem operations using natural language")
+        console.print("  [yellow]Examples:[/yellow]")
+        console.print("    [green]/fsnl list all files in my documents folder[/green]")
+        console.print("    [green]/fsnl create a text file named notes.txt with my meeting agenda[/green]")
+        console.print("    [green]/fsnl find all images in my downloads folder[/green]")
+    
     console.print("  Supported formats: PDF, DOCX, TXT, code files, images (with vision models)")
     console.print("  [green]/create [filename] [content][/green] - Create a file with specified content")
     console.print("  [green]/create [request] and save to [filename][/green] - Generate and save content")
@@ -2766,6 +2842,10 @@ def display_menu():
         "exit": None
     }
     
+    # Add filesystem mode if available
+    if FILESYSTEM_AVAILABLE:
+        commands["filesystem"] = filesystem_mode
+    
     # Add fine-tuning command if available
     if FINETUNE_AVAILABLE:
         commands["finetune"] = lambda: interactive_chat(load_config().get("default_model", "llama2"), 
@@ -2784,15 +2864,30 @@ def display_menu():
         ("9", "terminal", "Execute system commands in a terminal"),
     ]
     
-    # Add fine-tuning option if available
+    # Add filesystem and fine-tuning options if available
     menu_items = base_menu_items.copy()
-    if FINETUNE_AVAILABLE:
-        menu_items.append(("10", "finetune", "Fine-tune models with Unsloth or MLX"))
-        menu_items.append(("11", "help", "Show help information"))
-        menu_items.append(("12", "exit", "Exit the application"))
+    
+    # Add filesystem option if available
+    if FILESYSTEM_AVAILABLE:
+        menu_items.append(("10", "filesystem", "Access filesystem operations"))
+        
+        # Adjust numbering based on available options
+        if FINETUNE_AVAILABLE:
+            menu_items.append(("11", "finetune", "Fine-tune models with Unsloth or MLX"))
+            menu_items.append(("12", "help", "Show help information"))
+            menu_items.append(("13", "exit", "Exit the application"))
+        else:
+            menu_items.append(("11", "help", "Show help information"))
+            menu_items.append(("12", "exit", "Exit the application"))
     else:
-        menu_items.append(("10", "help", "Show help information"))
-        menu_items.append(("11", "exit", "Exit the application"))
+        # Original numbering without filesystem
+        if FINETUNE_AVAILABLE:
+            menu_items.append(("10", "finetune", "Fine-tune models with Unsloth or MLX"))
+            menu_items.append(("11", "help", "Show help information"))
+            menu_items.append(("12", "exit", "Exit the application"))
+        else:
+            menu_items.append(("10", "help", "Show help information"))
+            menu_items.append(("11", "exit", "Exit the application"))
     
     while True:
         console.clear()

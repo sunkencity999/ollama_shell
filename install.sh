@@ -50,6 +50,10 @@ echo -e "${GREEN}Creating user data directories...${NC}"
 # 1. Using mkdir (for bash environments)
 mkdir -p "Created Files/jobs" "Created Files/datasets" "Created Files/models" "Created Files/exports"
 
+# Install Filesystem MCP Protocol dependencies
+echo -e "${GREEN}Installing Filesystem MCP Protocol dependencies...${NC}"
+python install_filesystem_mcp_protocol.py
+
 # 2. Using Python script (for cross-platform compatibility)
 python3 create_directories.py
 
