@@ -86,6 +86,13 @@ try:
 except ImportError:
     CONFLUENCE_MCP_AVAILABLE = False
 
+# Import Jira MCP integration
+try:
+    from ollama_shell_jira_mcp import get_ollama_shell_jira_mcp, handle_jira_nl_command, check_jira_configuration, save_jira_config, display_jira_result
+    JIRA_MCP_AVAILABLE = True
+except ImportError:
+    JIRA_MCP_AVAILABLE = False
+
 app = typer.Typer()
 console = Console(
     force_terminal=True,
@@ -2602,12 +2609,26 @@ def interactive_config():
             is_configured, _ = check_confluence_configuration()
             status = "[green]Configured[/green]" if is_configured else "[red]Not configured[/red]"
             table.add_row(f"[green]{len(config_items) + 1}[/green]", "confluence_settings", status)
+            
+        # Add Jira configuration option if available
+        if JIRA_MCP_AVAILABLE:
+            is_configured, _ = check_jira_configuration()
+            status = "[green]Configured[/green]" if is_configured else "[red]Not configured[/red]"
+            jira_option_number = len(config_items) + 1
+            if CONFLUENCE_MCP_AVAILABLE:
+                jira_option_number += 1
+            table.add_row(f"[green]{jira_option_number}[/green]", "jira_settings", status)
         
         console.print(table)
         console.print("\n[cyan]Options:[/cyan]")
         console.print(f"[green]1-{len(config_items)}[/green]: Edit setting")
         if CONFLUENCE_MCP_AVAILABLE:
             console.print(f"[green]{len(config_items) + 1}[/green]: Configure Confluence")
+        if JIRA_MCP_AVAILABLE:
+            jira_option_number = len(config_items) + 1
+            if CONFLUENCE_MCP_AVAILABLE:
+                jira_option_number += 1
+            console.print(f"[green]{jira_option_number}[/green]: Configure Jira")
         console.print("[green]s[/green]: Save and exit")
         console.print("[green]x[/green]: Exit without saving")
         
@@ -2650,6 +2671,22 @@ def interactive_config():
                     console.print("[green]Confluence configuration saved successfully![/green]")
                 else:
                     console.print("[red]Failed to save Confluence configuration.[/red]")
+            
+            elif JIRA_MCP_AVAILABLE and choice_num == (len(config_items) + 1 + (1 if CONFLUENCE_MCP_AVAILABLE else 0)):
+                # Configure Jira settings
+                console.print("\n[cyan]Jira Configuration[/cyan]")
+                console.print("You'll need your Jira URL and API token to proceed.")
+                console.print("You can generate an API token at https://id.atlassian.com/manage-profile/security/api-tokens")
+                
+                jira_url = Prompt.ask("Enter your Jira URL (e.g., https://your-domain.atlassian.net)")
+                jira_email = Prompt.ask("Enter your Jira email address")
+                jira_token = Prompt.ask("Enter your Jira API token", password=True)
+                
+                # Save configuration
+                if save_jira_config(jira_url, jira_token, jira_email):
+                    console.print("[green]Jira configuration saved successfully![/green]")
+                else:
+                    console.print("[red]Failed to save Jira configuration.[/red]")
             
             elif isinstance(current_value, bool):
                 current_config[key] = not current_value
@@ -2947,6 +2984,10 @@ def display_menu():
     # Add Confluence mode if available
     if CONFLUENCE_MCP_AVAILABLE:
         commands["confluence"] = confluence_mode
+        
+    # Add Jira mode if available
+    if JIRA_MCP_AVAILABLE:
+        commands["jira"] = jira_mode
     
     # Add fine-tuning command if available
     if FINETUNE_AVAILABLE:
@@ -2978,6 +3019,11 @@ def display_menu():
     # Add Confluence option if available
     if CONFLUENCE_MCP_AVAILABLE:
         menu_items.append((str(menu_option_number), "confluence", "Access Confluence knowledge base"))
+        menu_option_number += 1
+        
+    # Add Jira option if available
+    if JIRA_MCP_AVAILABLE:
+        menu_items.append((str(menu_option_number), "jira", "Access Jira issue tracking"))
         menu_option_number += 1
     
     # Add fine-tuning option if available
@@ -3172,13 +3218,16 @@ def process_enhanced_search(query: str, model: str) -> str:
         {context}
         """
         
-        # Send to Ollama using the correct format for vision models
+        # Send to Ollama using the /chat endpoint for consistency with Jira integration
         with console.status("[cyan]Analyzing search results...[/cyan]"):
             response = requests.post(
-                f"{OLLAMA_API}/generate",
+                f"{OLLAMA_API}/chat",
                 json={
                     "model": model,
-                    "prompt": prompt,
+                    "messages": [
+                        {"role": "system", "content": "You are a helpful assistant that analyzes web search results."},
+                        {"role": "user", "content": prompt}
+                    ],
                     "stream": False
                 }
             )
@@ -3279,6 +3328,75 @@ def confluence(
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")
 
+@app.command()
+def jira(
+    command: str = typer.Argument(None, help="Natural language command for Jira operations"),
+    mode: bool = typer.Option(False, "--mode", "-m", help="Enter interactive Jira mode")
+):
+    """Execute Jira operations using natural language or enter Jira mode"""
+    try:
+        if not JIRA_MCP_AVAILABLE:
+            console.print("[red]Jira MCP Protocol integration not available.[/red]")
+            console.print("[yellow]Please ensure the required dependencies are installed.[/yellow]")
+            return
+        
+        # Check if mode flag is set
+        if mode:
+            jira_mode()
+            return
+        
+        # Check if Jira is configured
+        is_configured, message = check_jira_configuration()
+        if not is_configured:
+            console.print(f"[red]Jira is not configured: {message}[/red]")
+            
+            # Offer to configure Jira
+            setup_now = Prompt.ask("Would you like to set up Jira integration now?", choices=["y", "n"], default="y")
+            if setup_now.lower() == "y":
+                # Get Jira configuration
+                console.print("\n[cyan]Jira Configuration[/cyan]")
+                console.print("You'll need your Jira URL and API token to proceed.")
+                console.print("You can generate an API token at https://id.atlassian.com/manage-profile/security/api-tokens")
+                
+                jira_url = Prompt.ask("Enter your Jira URL (e.g., https://your-domain.atlassian.net)")
+                jira_email = Prompt.ask("Enter your Jira email address")
+                jira_token = Prompt.ask("Enter your Jira API token", password=True)
+                
+                # Save configuration
+                if save_jira_config(jira_url, jira_token, jira_email):
+                    console.print("[green]Jira configuration saved successfully![/green]")
+                    is_configured = True
+                else:
+                    console.print("[red]Failed to save Jira configuration.[/red]")
+                    return
+            else:
+                return
+        
+        # Get the command if not provided
+        if not command:
+            command = Prompt.ask("[cyan]Enter your natural language Jira command[/cyan]")
+        
+        # Get config for model
+        config = load_config()
+        current_model = config.get("default_model", "llama3")
+        
+        # Show a spinner while processing
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[cyan]Processing Jira command...[/cyan]"),
+            transient=True
+        ) as progress:
+            progress.add_task("Processing", total=None)
+            
+            # Handle natural language Jira command
+            result = handle_jira_nl_command(command, model=current_model)
+        
+        # Display the result
+        display_jira_result(result)
+        
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+
 def analyze_from_menu():
     """Handle image analysis from the menu"""
     try:
@@ -3363,14 +3481,16 @@ def analyze_image(image_path: str, prompt: Optional[str] = None) -> str:
         default_prompt = "Please analyze this image and describe what you see in detail."
         user_prompt = prompt or default_prompt
         
-        # Send to Ollama using the correct format for vision models
+        # Send to Ollama using the /chat endpoint for consistency with Jira integration
         with console.status(f"[cyan]Analyzing image with {model}...[/cyan]"):
             response = requests.post(
-                f"{OLLAMA_API}/generate",
+                f"{OLLAMA_API}/chat",
                 json={
                     "model": model,
-                    "prompt": user_prompt,
-                    "images": [base64_image],  # Use the images field for vision models
+                    "messages": [
+                        {"role": "system", "content": "You are a helpful assistant that analyzes images."},
+                        {"role": "user", "content": user_prompt, "images": [base64_image]}
+                    ],
                     "stream": False
                 }
             )
@@ -3502,6 +3622,116 @@ def confluence_mode():
                 
                 # Display result
                 display_confluence_result(result)
+        
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Operation cancelled.[/yellow]")
+            continue
+        except Exception as e:
+            console.print(f"\n[red]Error: {str(e)}[/red]")
+
+def jira_mode():
+    """
+    Enter a Jira mode where users can interact with Jira using natural language.
+    This provides a simple interface to access Jira issues within Ollama Shell.
+    """
+    if not JIRA_MCP_AVAILABLE:
+        console.print("[red]Jira MCP integration is not available.[/red]")
+        console.print("[yellow]Please ensure the required dependencies are installed.[/yellow]")
+        return
+    
+    # Check if Jira is configured
+    is_configured, message = check_jira_configuration()
+    if not is_configured:
+        console.print(f"[red]{message}[/red]")
+        
+        # Offer to configure Jira
+        setup_now = Prompt.ask("Would you like to set up Jira integration now?", choices=["y", "n"], default="y")
+        if setup_now.lower() == "y":
+            # Get Jira configuration
+            console.print("\n[cyan]Jira Configuration[/cyan]")
+            console.print("You'll need your Jira URL and API token to proceed.")
+            console.print("You can generate an API token at https://id.atlassian.com/manage-profile/security/api-tokens")
+            
+            jira_url = Prompt.ask("Enter your Jira URL (e.g., https://your-domain.atlassian.net)")
+            jira_email = Prompt.ask("Enter your Jira email address")
+            jira_token = Prompt.ask("Enter your Jira API token", password=True)
+            
+            # Save configuration
+            if save_jira_config(jira_url, jira_token, jira_email):
+                console.print("[green]Jira configuration saved successfully![/green]")
+                is_configured = True
+            else:
+                console.print("[red]Failed to save Jira configuration.[/red]")
+                return
+        else:
+            return
+    
+    # Main Jira interaction loop
+    console.clear()
+    display_banner()
+    
+    # Get default model
+    config = load_config()
+    default_model = config.get("default_model", "llama3")
+    
+    # Create a table with available commands
+    table = Table(title="Jira Commands")
+    table.add_column("Command", style="cyan")
+    table.add_column("Description", style="white")
+    
+    table.add_row("/help", "Show this help message")
+    table.add_row("/model <model_name>", "Change the model used for Jira queries")
+    table.add_row("/exit", "Exit Jira mode")
+    table.add_row("/search <query>", "Search for issues using JQL or natural language")
+    table.add_row("/get <issue-key>", "Get details of a specific issue")
+    table.add_row("/comment <issue-key> <comment>", "Add a comment to an issue")
+    table.add_row("/update <issue-key> <field> <value>", "Update an issue field")
+    table.add_row("Any other text", "Will be interpreted as a natural language query to Jira")
+    
+    console.print(table)
+    console.print(f"\n[green]Using model:[/green] {default_model}")
+    console.print("[cyan]Enter your Jira queries below. Type /exit to return to the main menu.[/cyan]")
+    
+    # Set up prompt session with key bindings
+    kb = KeyBindings()
+    session = PromptSession(key_bindings=kb)
+    
+    current_model = default_model
+    
+    while True:
+        try:
+            # Get user input
+            user_input = session.prompt("\n[Jira] > ")
+            
+            # Handle commands
+            if user_input.lower() == "/exit":
+                break
+            elif user_input.lower() == "/help":
+                console.print(table)
+                continue
+            elif user_input.lower().startswith("/model "):
+                # Change model
+                model_name = user_input[7:].strip()
+                is_valid, error_message = validate_model(model_name)
+                if is_valid:
+                    current_model = model_name
+                    console.print(f"[green]Model changed to {current_model}[/green]")
+                else:
+                    console.print(f"[red]Error: {error_message}[/red]")
+                continue
+            
+            # Process natural language query to Jira
+            if user_input.strip():
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[bold blue]Processing Jira query..."),
+                    transient=True
+                ) as progress:
+                    progress.add_task("Processing", total=None)
+                    result = handle_jira_nl_command(user_input, model=current_model)
+                
+                # Display result
+                display_jira_result(result)
         
         except KeyboardInterrupt:
             console.print("\n[yellow]Operation cancelled.[/yellow]")

@@ -4,7 +4,7 @@
 
 A powerful interactive shell for Ollama, featuring enhanced chat capabilities, document analysis, image analysis, and real-time web search integration.
 
-Created by Christopher Bradford  
+Created by Christopher Bradford
 Contact: [contact@christopherdanielbradford.com](mailto:contact@christopherdanielbradford.com)
 
 ## Features
@@ -46,13 +46,13 @@ python -m venv venv
 source venv/bin/activate  # Unix/Mac
 ```
 
-2. Install dependencies:
+1. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Run the application:
+1. Run the application:
 
 ```bash
 python ollama_shell.py
@@ -61,40 +61,51 @@ python ollama_shell.py
 ## Tutorial
 
 ### Context Management
+
 The Context Management feature allows you to optimize token usage and maintain important information in long conversations:
 
 1. **Pin Important Messages**:
-   ```
+
+   ```bash
    /pin 5
    ```
+
    This pins message #5 to ensure it stays in context even as the conversation grows.
 
 2. **Exclude Irrelevant Messages**:
-   ```
+
+   ```bash
    /exclude 3
    ```
+
    This excludes message #3 from the context, saving tokens for more relevant information.
 
 3. **Summarize Conversations**:
-   ```
+
+   ```bash
    /summarize
    ```
+
    This creates a concise summary of the conversation to save tokens while maintaining context.
 
 4. **View Context Status**:
-   ```
+
+   ```bash
    /context
    ```
+
    Shows the current status of your context management, including pinned and excluded messages.
 
 5. **Check Token Usage**:
-   ```
+
+   ```bash
    /tokens
    ```
+
    Displays detailed token usage information for each message.
 
-
 ### Enhanced Search Queries
+
 The Enhanced Search feature allows you to combine real-time web information with model analysis:
 
 1. **Basic Search**:
@@ -102,6 +113,7 @@ The Enhanced Search feature allows you to combine real-time web information with
    ```bash
    search: What are the latest developments in AI?
    ```
+
    This will search the web and provide an analyzed summary.
 
 2. **Focused Questions**:
@@ -109,6 +121,7 @@ The Enhanced Search feature allows you to combine real-time web information with
    ```bash
    search: Who won the latest Super Bowl and what was the score?
    ```
+
    Gets real-time information and provides accurate, up-to-date answers.
 
 3. **Technical Queries**:
@@ -116,10 +129,11 @@ The Enhanced Search feature allows you to combine real-time web information with
    ```bash
    search: How to implement rate limiting in Python?
    ```
+
    Combines web search results with model expertise for comprehensive answers.
 
-
 ### Image Analysis
+
 Analyze images using vision models:
 
 1. **From Menu**:
@@ -137,6 +151,7 @@ Analyze images using vision models:
    - Supported formats: JPG, PNG, GIF, BMP, WebP
 
 ### Document Analysis
+
 Analyze various document types:
 
 1. **Supported Formats**:
@@ -159,37 +174,51 @@ Analyze various document types:
    - Supported formats: TXT, CSV, DOC/DOCX, XLS/XLSX, PDF
 
 ### Natural Language Filesystem Operations
+
 Interact with your filesystem using natural language commands through the Filesystem MCP Protocol integration:
 
 1. **Basic Usage**:
-   ```
+
+   ```bash
    /fsnl list files in my Documents folder
    ```
+
    This will list all files and directories in your Documents folder.
 
-6. **Supported Operations**:
+2. **Supported Operations**:
    - **List Directories**: View contents of directories
-     ```
+
+     ```bash
      /fsnl show me what's in my Downloads folder
      ```
+
    - **Create Directories**: Create new folders
-     ```
+
+     ```bash
      /fsnl create a new folder called 'ProjectData' in my Documents
      ```
+
    - **Read Files**: View the contents of text files
-     ```
+
+     ```bash
      /fsnl show me the contents of config.json
      ```
+
    - **Write Files**: Create or modify text files
-     ```
+
+     ```bash
      /fsnl create a file called notes.txt in Documents with the text "Meeting notes for today"
      ```
+
    - **Find Files**: Search for files matching patterns
-     ```
+
+     ```bash
      /fsnl find all PDF files in my Documents folder
      ```
+
    - **Delete Files**: Remove files (use with caution)
-     ```
+
+     ```bash
      /fsnl delete the temporary file temp.txt
      ```
 
@@ -224,6 +253,7 @@ Interact with your Confluence instance (both Cloud and Server) using natural lan
    - Copy the template file from `Created Files/config/confluence_config_template.env` to `Created Files/confluence_config.env`
    - Edit the file to provide your Confluence details:
    - For detailed instructions, see the [Comprehensive Setup Guide](docs/confluence_setup_guide.md)
+
      ```env
      # Confluence Configuration
      
@@ -243,10 +273,11 @@ Interact with your Confluence instance (both Cloud and Server) using natural lan
      CONFLUENCE_IS_CLOUD=false
      ```
 
+
 3. **Authentication Methods**:
    - **Confluence Server**: Use a Personal Access Token (PAT) with the `pat` authentication method
    - **Confluence Cloud**: Use an API token with the `basic` authentication method
-   
+
 4. **Using the Integration**:
    - Run the `/confluence` command to activate the integration
    - Use natural language to interact with your Confluence instance, for example:
@@ -267,6 +298,7 @@ Interact with your Confluence instance (both Cloud and Server) using natural lan
      python test_confluence_setup.py
      ```
 
+
    - The script will check your configuration file, validate settings, and test the connection to your Confluence instance
 
 7. **Troubleshooting**:
@@ -284,27 +316,33 @@ Interact with your Confluence instance (both Cloud and Server) using natural lan
 
 9. **Supported Operations**:
    - **List Spaces**: View all accessible spaces in your Confluence instance
-     ```
+
+     ```bash
      list all spaces
      ```
    - **Get Space Details**: View details about a specific space
-     ```
+
+     ```bash
      show me details about the Engineering space
      ```
    - **List Pages**: View pages in a specific space
-     ```
+
+     ```bash
      list all pages in the Marketing space
      ```
    - **Get Page Content**: View the content of a specific page
-     ```
+
+     ```bash
      show me the content of the "Project Roadmap" page
      ```
    - **Create Pages**: Create new pages in a space
-     ```
+
+     ```bash
      create a new page titled "Meeting Notes" in the Team space with content "Notes from today's meeting"
      ```
    - **Update Pages**: Update existing pages
-     ```
+
+     ```bash
      update the "Weekly Status" page in the Project space with new content
      ```
    - **Search Content**: Search for content using Confluence Query Language (CQL)
@@ -312,7 +350,7 @@ Interact with your Confluence instance (both Cloud and Server) using natural lan
      ```text
      search for pages containing "budget proposal"
      ```
-     
+
      For more targeted searches, use specific query formats:
 
      ```text
@@ -349,39 +387,121 @@ Interact with your Confluence instance (both Cloud and Server) using natural lan
    - Be specific about space and page names to avoid ambiguity
    - For complex operations, break them down into multiple commands
    - Use the model's capabilities to summarize or explain page content
+
+### Jira Integration
+
+Ollama Shell includes a powerful Jira integration that allows you to interact with Jira through natural language commands.
+
+1. **Setup**:
+   - Run the `/jira setup` command to configure the integration
+   - You'll be prompted to enter your Jira URL, user email, and API token
+   - For detailed setup instructions, see the [Jira Setup Guide](docs/jira_setup_guide.md)
+
+2. **Authentication**:
+   - Generate an API token at [https://id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
+   - Use your Atlassian account email address
+   - Configuration will be saved securely as environment variables
+
+3. **Testing Your Configuration**:
+   - After setup, test your configuration with:
+
+     ```bash
+     /jira status
+     ```
+
+4. **Troubleshooting**:
+   - If you encounter issues with the Jira integration, refer to the [Jira Troubleshooting Guide](docs/jira_troubleshooting.md)
+   - The guide covers common problems with connection, authentication, and JQL queries
+
+5. **Example Script**:
+   - An example script is provided to demonstrate how to use the Jira integration programmatically
+   - Located at `examples/jira_example.py`
+   - Run the script to see how to search for issues, get issue details, add comments, and update issues:
+
+     ```bash
+     python examples/jira_example.py
+     ```
+
+6. **Supported Operations**:
+   - **Search for Issues**: Find issues using JQL or natural language
+
+     ```text
+     /jira search highest priority bugs
+     ```
+
+     ```text
+     /jira find issues assigned to me and status = "In Progress"
+     ```
+
+   - **Get Issue Details**: View detailed information about a specific issue
+
+     ```text
+     /jira get PROJECT-123
+     ```
+
+   - **Add Comments**: Add comments to issues
+
+     ```text
+     /jira comment PROJECT-123 This is a comment added via Ollama Shell
+     ```
+
+   - **Update Issues**: Update issue fields such as status, priority, or assignee
+
+     ```text
+     /jira update PROJECT-123 status "In Progress"
+     ```
+
+   - **Issue Analysis**: Get AI-powered analysis of issues
+
+     ```text
+     /jira analyze PROJECT-123
+     ```
+
+     The LLM will automatically analyze the issue details to provide insights, identify key points from the description, current status, next steps, and recommendations for resolution.
    - When creating or updating pages, you can use Markdown formatting
 
 ### Context Management
+
 The Context Management feature allows you to optimize token usage and maintain important information in long conversations:
 
 1. **Pin Important Messages**:
-   ```
+
+   ```bash
    /pin 5
    ```
+
    This pins message #5 to ensure it stays in context even as the conversation grows.
 
 2. **Exclude Irrelevant Messages**:
-   ```
+
+   ```bash
    /exclude 3
    ```
+
    This excludes message #3 from the context, saving tokens for more relevant information.
 
 3. **Summarize Conversations**:
-   ```
+
+   ```bash
    /summarize
    ```
+
    This creates a concise summary of the conversation to save tokens while maintaining context.
 
 4. **View Context Status**:
-   ```
+
+   ```bash
    /context
    ```
+
    Shows the current status of your context management, including pinned and excluded messages.
 
 5. **Check Token Usage**:
-   ```
+
+   ```bash
    /tokens
    ```
+
    Displays detailed token usage information for each message.
 
 ### Knowledge Base
@@ -427,7 +547,7 @@ Fine-tune models using a modular system that supports Unsloth (for NVIDIA GPUs) 
    - Easy export to Ollama
 
 2. **Prerequisites**:
-   - For macOS users: 
+   - For macOS users:
      - Homebrew (`brew`) is required
      - `cmake` is needed (will be installed automatically if missing)
    - For NVIDIA GPU users:
