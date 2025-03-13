@@ -63,6 +63,7 @@ def handle_jira_nl_command(command: str, model: str = "llama3") -> Dict[str, Any
         - formatted_query: The formatted JQL query if applicable
         - total: The total number of results if applicable
         - analysis: A string analysis of the results if applicable
+        - message: A success message if applicable (for comment operations)
     """
     try:
         if not JIRA_MCP_AVAILABLE:
@@ -148,7 +149,45 @@ def handle_jira_nl_command(command: str, model: str = "llama3") -> Dict[str, Any
                 "analysis": ""
             }
         
-        # Process the command based on keywords
+        # Check for specific command patterns
+        # First check for /comment command pattern
+        comment_pattern = r'^/comment\s+([A-Za-z0-9]+-\d+)\s+(.+)$'
+        comment_match = re.match(comment_pattern, command, re.IGNORECASE | re.DOTALL)
+        
+        if comment_match:
+            issue_key = comment_match.group(1).strip()
+            comment_text = comment_match.group(2).strip()
+            
+            logger.info(f"Adding comment to issue {issue_key}")
+            
+            try:
+                # Call the add_comment method
+                result = jira_mcp.add_comment(issue_key, comment_text)
+                
+                # Return the result
+                return {
+                    "success": result.get("success", False),
+                    "message": result.get("message", ""),
+                    "error": result.get("error", ""),
+                    "query": command,
+                    "formatted_query": "",
+                    "total": 0,
+                    "results": [],
+                    "analysis": ""
+                }
+            except Exception as e:
+                logger.error(f"Error adding comment to issue {issue_key}: {e}")
+                return {
+                    "success": False,
+                    "error": f"Error adding comment to issue {issue_key}: {str(e)}",
+                    "query": command,
+                    "formatted_query": "",
+                    "total": 0,
+                    "results": [],
+                    "analysis": ""
+                }
+        
+        # Process other commands based on keywords
         command_lower = command.strip().lower()
         
         # Search for issues
@@ -400,6 +439,14 @@ def display_jira_result(result: Dict[str, Any]) -> None:
         console.print(Panel(f"[bold red]Error:[/bold red] {result.get('error', 'Unknown error')}", 
                            title="Jira Error", 
                            border_style="red"))
+        return
+        
+    # Handle comment results
+    if result.get("message", "") and not result.get("results"):
+        # Display success message for comment operations
+        console.print(Panel(f"[bold green]Success:[/bold green] {result.get('message')}", 
+                           title="Jira Comment", 
+                           border_style="green"))
         return
     
     # Check if this is a search result
