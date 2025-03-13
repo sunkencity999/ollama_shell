@@ -2201,42 +2201,73 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                 
                 console.print("\n[green]Assistant:[/green]")
                 
-                # Create an assistant panel that will be displayed after collecting the full response
-                assistant_panel = None
-                
                 # Use the context_messages instead of just the user input
-                # Create a temporary copy of the messages without the last user message
-                temp_context = context_messages[:-1]
-                
                 # Send the message with the prepared context
                 with console.status("[cyan]Thinking...[/cyan]", spinner="dots"):
                     response = send_message(model, "", None, True, context_messages)
                 
+                # Initialize variables for streaming
                 full_response = ""
                 buffer = ""
                 code_block = False
                 code_lang = ""
                 code_content = ""
+                in_code_block = False
+                markdown_buffer = ""
                 
-                # Collect the entire response without displaying it yet
-                full_response = ""
+                # Create a Live display for updating the markdown content
+                from rich.live import Live
                 
-                # Show a "Thinking..." status while collecting the response
-                with console.status("[cyan]Generating response...[/cyan]", spinner="dots"):
+                # Process the streaming response in real-time
+                with Live("", refresh_per_second=10, transient=True) as live:
                     for line in response.iter_lines():
                         if line:
                             try:
                                 chunk = json.loads(line)
                                 if "message" in chunk and "content" in chunk["message"]:
                                     content = chunk["message"]["content"]
+                                    
+                                    # Add to the full response
                                     full_response += content
+                                    
+                                    # Check for code block markers
+                                    if "```" in content:
+                                        # Handle code block boundaries
+                                        parts = content.split("```")
+                                        for i, part in enumerate(parts):
+                                            if i % 2 == 0:  # Outside code block
+                                                if in_code_block:
+                                                    code_content += part
+                                                else:
+                                                    markdown_buffer += part
+                                            else:  # Inside code block or language specifier
+                                                if not in_code_block:
+                                                    in_code_block = True
+                                                    # Check if this contains a language specifier
+                                                    if part.strip() and not part.strip()[0].isspace():
+                                                        code_lang = part.strip().split()[0]
+                                                        code_content = part[len(code_lang):].lstrip()
+                                                    else:
+                                                        code_lang = ""
+                                                        code_content = part
+                                                else:
+                                                    code_content += part
+                                                    markdown_buffer += f"```{code_lang}\n{code_content}```"
+                                                    code_content = ""
+                                                    in_code_block = False
+                                    else:
+                                        # Regular content (not a code block boundary)
+                                        if in_code_block:
+                                            code_content += content
+                                        else:
+                                            markdown_buffer += content
+                                    
+                                    # Update the live display with the current markdown content
+                                    live.update(Markdown(full_response))
                             except json.JSONDecodeError:
                                 pass
                 
-                # Once we have the complete response, display it in a formatted panel
-                console.print("\n[green]Assistant:[/green]")
-                
-                # Create a panel for the properly formatted response with code blocks
+                # Create a panel for the final formatted response
                 assistant_panel = Panel(
                     Markdown(full_response),
                     border_style="green", 
@@ -2245,7 +2276,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                     expand=True
                 )
                 
-                # Print the formatted response in a panel
+                # Print the final formatted response in a panel
                 console.print(assistant_panel)
                 
                 # Store the response for copying
