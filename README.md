@@ -32,11 +32,6 @@ Contact: [contact@christopherdanielbradford.com](mailto:contact@christopherdanie
 
 ## Quick Start
 
-### Windows Installation
-
-1. Run `install_windows.bat` to set up the virtual environment and install dependencies
-2. Run `run_ollama_shell.bat` to start the application
-
 ### Unix/Mac Installation
 
 1. Create and activate a virtual environment:
@@ -423,7 +418,7 @@ Ollama Shell includes a powerful Jira integration that allows you to interact wi
      ```
 
 6. **Supported Operations**:
-   - **Search for Issues**: Find issues using JQL or natural language
+   - **Natural Language Search**: Find issues using intuitive natural language queries
 
      ```text
      /jira search highest priority bugs
@@ -432,6 +427,26 @@ Ollama Shell includes a powerful Jira integration that allows you to interact wi
      ```text
      /jira find issues assigned to me and status = "In Progress"
      ```
+
+     The natural language query processor supports a wide range of query patterns:
+     
+     ```text
+     /jira show high priority issues assigned to me
+     ```
+     
+     ```text
+     /jira display issues assigned to John Smith except for closed items
+     ```
+     
+     ```text
+     /jira find open bugs with high priority in the PROJECT project
+     ```
+     
+     ```text
+     /jira list all unresolved issues created this week
+     ```
+     
+     The system intelligently handles various priority formats (P2, High Priority), resolution statuses, and assignee specifications to generate the correct JQL query.
 
    - **Get Issue Details**: View detailed information about a specific issue
 
@@ -458,7 +473,6 @@ Ollama Shell includes a powerful Jira integration that allows you to interact wi
      ```
 
      The LLM will automatically analyze the issue details to provide insights, identify key points from the description, current status, next steps, and recommendations for resolution.
-   - When creating or updating pages, you can use Markdown formatting
 
 ### Context Management
 
