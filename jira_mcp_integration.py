@@ -15,6 +15,7 @@ import subprocess
 import threading
 import time
 import requests
+import re
 from typing import Dict, List, Any, Optional, Union
 from pathlib import Path
 from dotenv import load_dotenv
@@ -236,11 +237,58 @@ class JiraMCPIntegration:
             The formatted JQL query
         """
         # If the query is already in JQL format, return it as is
-        if "=" in jql or "~" in jql or ">" in jql or "<" in jql:
+        if "=" in jql or "~" in jql or ">" in jql or "<" in jql or "AND" in jql.upper() or "OR" in jql.upper():
             return jql
+            
+        # Check for specific patterns in natural language queries
+        query_lower = jql.lower()
         
-        # Simple text search if no JQL operators are found
-        return f'text ~ "{jql}"'
+        # Check for "open issues" pattern
+        is_open_query = False
+        if any(term in query_lower for term in ["open", "active", "unresolved", "not closed", "not resolved"]):
+            is_open_query = True
+            
+        # Extract key terms for search
+        terms = []
+        # Reserved JQL words that need special handling
+        reserved_words = ["and", "or", "not", "empty", "null", "order", "by", "asc", "desc", 
+                         "for", "in", "is", "cf", "issue", "issues", "was", "changed", "from", "to", 
+                         "on", "during", "before", "after", "current"]
+                         
+        # Common words to filter out
+        common_words = ["the", "a", "an", "are", "any", "all", "with", "related", "what", 
+                      "which", "where", "when", "who", "how", "why", "please", "can", "could", 
+                      "would", "should", "list", "show", "find", "get", "query"]
+        
+        for word in jql.split():
+            # Remove punctuation
+            cleaned_word = re.sub(r'[^\w\s]', '', word).strip().lower()
+            if (len(cleaned_word) > 2 and 
+                cleaned_word not in common_words and
+                cleaned_word not in reserved_words):
+                terms.append(cleaned_word)
+        
+        if not terms:
+            # If no meaningful terms found, return a default query
+            return "resolution = Unresolved" if is_open_query else "created >= -30d"
+        
+        # Build a structured JQL query
+        conditions = []
+        
+        # Add text search conditions for each term
+        if len(terms) == 1:
+            conditions.append(f'text ~ "{terms[0]}"')
+        else:
+            # Group terms with OR
+            term_conditions = [f'text ~ "{term}"' for term in terms]
+            conditions.append(f"({' OR '.join(term_conditions)})")
+        
+        # Add resolution condition for open issues
+        if is_open_query:
+            conditions.append("resolution = Unresolved")
+            
+        # Combine all conditions with AND
+        return " AND ".join(conditions)
     
     def jql_search(self, jql: str, max_results: int = 50, fields: List[str] = None) -> Dict[str, Any]:
         """
