@@ -850,6 +850,21 @@ class KnowledgeBase:
             "path": self.path
         }
         
+    def reset_knowledge_base(self) -> bool:
+        """Delete all documents from the knowledge base"""
+        try:
+            # Get all document IDs
+            all_ids = self.collection.get()['ids']
+            
+            if all_ids:
+                # Delete all documents
+                self.collection.delete(ids=all_ids)
+                
+            return True
+        except Exception as e:
+            print(f"Error resetting knowledge base: {str(e)}")
+            return False
+        
     def add_document(self, content: str, source: str, file_type: str) -> dict:
         """Add a document to the knowledge base, chunking if necessary
         
@@ -1478,6 +1493,29 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                         console.print(f"[green]Knowledge base {status}[/green]")
                         continue
                         
+                    elif kb_command == "delete":
+                        # Delete all documents from knowledge base
+                        if not chat_state.kb_enabled:
+                            console.print("[yellow]Knowledge base is currently disabled[/yellow]")
+                            console.print("[yellow]Use /kb toggle to enable it[/yellow]")
+                            continue
+                            
+                        # Confirm deletion
+                        confirmation = input("Are you sure you want to delete ALL documents from the knowledge base? This cannot be undone. (y/n): ")
+                        if confirmation.lower() != "y":
+                            console.print("[yellow]Operation cancelled[/yellow]")
+                            continue
+                            
+                        try:
+                            success = kb_instance.reset_knowledge_base()
+                            if success:
+                                console.print("[green]Knowledge base has been reset. All documents have been deleted.[/green]")
+                            else:
+                                console.print("[red]Error resetting knowledge base[/red]")
+                        except Exception as e:
+                            console.print(f"[red]Error resetting knowledge base: {str(e)}[/red]")
+                        continue
+                    
                     else:
                         # Show help for knowledge base commands
                         console.print("[cyan]Knowledge Base Commands:[/cyan]")
@@ -1485,6 +1523,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                         console.print("[green]/kb add [text][/green] - Add text to knowledge base")
                         console.print("[green]/kb search [query][/green] - Search knowledge base")
                         console.print("[green]/kb toggle[/green] - Enable/disable knowledge base")
+                        console.print("[green]/kb delete[/green] - Delete ALL documents from knowledge base")
                         continue
                 
                 elif command == '/kb' and not VECTOR_DB_AVAILABLE:
