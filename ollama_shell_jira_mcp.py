@@ -95,41 +95,100 @@ def handle_jira_nl_command(command: str, model: str = "llama3") -> Dict[str, Any
             try:
                 # Simple pattern matching for common queries
                 query_lower = query.lower().strip()
+                jql_parts = []
                 
-                # Check for 'my' pattern (assigned to me)
-                if re.search(r'\bmy\b', query_lower):
-                    if 'open' in query_lower or 'active' in query_lower or 'unresolved' in query_lower:
-                        return 'assignee = currentUser() AND resolution = Unresolved'
-                    elif 'closed' in query_lower or 'resolved' in query_lower:
-                        return 'assignee = currentUser() AND resolution != Unresolved'
-                    else:
-                        return 'assignee = currentUser()'
+                # Check for assignee patterns
+                # First check for 'assigned to me' or 'my' pattern
+                if re.search(r'\b(assigned to me|my)\b', query_lower):
+                    jql_parts.append('assignee = currentUser()')
+                else:
+                    # Check for named assignees
+                    assignee_patterns = [
+                        r'assigned to ([A-Za-z]+ [A-Za-z]+)',  # Full name: "assigned to John Doe"
+                        r'assignee:? ([A-Za-z]+ [A-Za-z]+)',   # "assignee: John Doe"
+                        r'assigned to ([A-Za-z]+)',            # First name only: "assigned to John"
+                        r'assignee:? ([A-Za-z]+)'              # "assignee: John"
+                    ]
+                    
+                    for pattern in assignee_patterns:
+                        assignee_match = re.search(pattern, query_lower)
+                        if assignee_match:
+                            assignee_name = assignee_match.group(1).strip()
+                            # Use = for assignee as the ~ operator is not supported for this field
+                            jql_parts.append(f'assignee = "{assignee_name}"')
+                            break
+                
+                # Check for resolution status
+                if 'open' in query_lower or 'active' in query_lower or 'unresolved' in query_lower:
+                    jql_parts.append('resolution = Unresolved')
+                elif 'closed' in query_lower or 'resolved' in query_lower:
+                    jql_parts.append('resolution != Unresolved')
+                elif re.search(r'except for (closed|resolved)', query_lower) or re.search(r'not (closed|resolved)', query_lower):
+                    jql_parts.append('resolution = Unresolved')
+                
+                # Check for priority
+                # Map common priority terms to their possible Jira equivalents
+                priority_map = {
+                    'highest': ['"Highest Priority"', '"P0"', '"P1"'],
+                    'high': ['"High Priority"', '"P2"'],
+                    'medium': ['"Medium Priority"', '"P3"'],
+                    'low': ['"Low Priority"', '"P4"'],
+                    'lowest': ['"Lowest Priority"', '"P5"']
+                }
+                
+                for priority_key, priority_values in priority_map.items():
+                    if priority_key in query_lower:
+                        # Create an OR condition for all possible priority values
+                        priority_condition = ' OR '.join([f'priority = {val}' for val in priority_values])
+                        if len(priority_values) > 1:
+                            jql_parts.append(f'({priority_condition})')
+                        else:
+                            jql_parts.append(priority_condition)
+                        break
                 
                 # Check for specific project
                 project_match = re.search(r'project\s+["\']([^"\']*)["\'"\']', query_lower) or \
                                re.search(r'project\s+([^\s,\.]+)', query_lower)
                 if project_match:
                     project_name = project_match.group(1).strip()
-                    return f'project = "{project_name}"'
+                    jql_parts.append(f'project = "{project_name}"')
                 
                 # Check for specific status
                 status_match = re.search(r'status\s+["\']([^"\']*)["\'"\']', query_lower) or \
                              re.search(r'status\s+([^\s,\.]+)', query_lower)
                 if status_match:
                     status_name = status_match.group(1).strip()
-                    return f'status = "{status_name}"'
+                    jql_parts.append(f'status = "{status_name}"')
                 
                 # Check for specific issue type
                 type_match = re.search(r'type\s+["\']([^"\']*)["\'"\']', query_lower) or \
                            re.search(r'type\s+([^\s,\.]+)', query_lower)
                 if type_match:
                     type_name = type_match.group(1).strip()
-                    return f'issuetype = "{type_name}"'
+                    jql_parts.append(f'issuetype = "{type_name}"')
                 
-                # Default to a text search if no specific patterns match
+                # If we have JQL parts, combine them with AND
+                if jql_parts:
+                    jql_query = ' AND '.join(jql_parts)
+                    logger.info(f"Generated JQL query from patterns: {jql_query}")
+                    return jql_query
+                
+                # If no patterns matched, try to use the LLM to generate a JQL query
+                # For now, fall back to a simple text search
                 search_terms = query_lower.split()
-                search_terms = [term for term in search_terms if term not in ['search', 'find', 'list', 'query', 'provide', 'issues', 'jira']]
-                search_query = ' '.join(search_terms)
+                search_terms = [term for term in search_terms if term not in ['search', 'find', 'list', 'query', 'provide', 'issues', 'jira', 'show', 'get', 'display']]
+                
+                # If we still have search terms, use them for a text search
+                if search_terms:
+                    # If the terms look like they might be a JQL fragment, use them directly
+                    if any(op in ' '.join(search_terms) for op in ['=', '!=', '<', '>', '~']):
+                        search_query = ' '.join(search_terms)
+                    else:
+                        # Otherwise, use a text search
+                        search_query = f'text ~ "{" ".join(search_terms)}"'
+                else:
+                    # Default query if we couldn't extract anything useful
+                    search_query = 'order by created DESC'
                 
                 logger.info(f"Generated JQL query for general search: {search_query}")
                 return search_query
