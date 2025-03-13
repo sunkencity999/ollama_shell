@@ -149,12 +149,50 @@ def handle_jira_nl_command(command: str, model: str = "llama3") -> Dict[str, Any
                 "analysis": ""
             }
         
+        # Clean up the command by removing any [Jira] > prefix
+        command = re.sub(r'^\s*\[Jira\]\s*>\s*', '', command, flags=re.IGNORECASE)
+        
         # Check for specific command patterns
         # First check for /comment command pattern
         comment_pattern = r'^/comment\s+([A-Za-z0-9]+-\d+)\s+(.+)$'
         comment_match = re.match(comment_pattern, command, re.IGNORECASE | re.DOTALL)
         
-        if comment_match:
+        # Check for /get command pattern
+        get_pattern = r'^/get\s+([A-Za-z0-9]+-\d+)\s*$'
+        get_match = re.match(get_pattern, command, re.IGNORECASE)
+        
+        if get_match:
+            issue_key = get_match.group(1).strip()
+            
+            logger.info(f"Getting issue details for {issue_key}")
+            
+            try:
+                # Call the get_issue method
+                result = jira_mcp.get_issue(issue_key)
+                
+                # Return the result
+                return {
+                    "success": result.get("success", False),
+                    "error": result.get("error", ""),
+                    "query": command,
+                    "formatted_query": "",
+                    "total": 1 if result.get("success", False) else 0,
+                    "results": [result] if result.get("success", False) else [],
+                    "analysis": ""
+                }
+            except Exception as e:
+                logger.error(f"Error getting issue {issue_key}: {e}")
+                return {
+                    "success": False,
+                    "error": f"Error getting issue {issue_key}: {str(e)}",
+                    "query": command,
+                    "formatted_query": "",
+                    "total": 0,
+                    "results": [],
+                    "analysis": ""
+                }
+                
+        elif comment_match:
             issue_key = comment_match.group(1).strip()
             comment_text = comment_match.group(2).strip()
             
