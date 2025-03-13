@@ -94,7 +94,24 @@ class JiraMCPIntegration:
         
         # Set up the Ollama API URL for LLM analysis
         self.ollama_api_url = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api")
-        self.analysis_model = os.getenv("JIRA_ANALYSIS_MODEL", "llama3")
+        # Try to get the model from system configuration first
+        try:
+            # Get the path to the config.json file
+            config_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+            if os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                    self.analysis_model = config.get("default_model", "")
+                    logger.info(f"Using default model from config: {self.analysis_model}")
+            else:
+                logger.warning("Config file not found, falling back to environment variable")
+                self.analysis_model = os.getenv("JIRA_ANALYSIS_MODEL", "")
+        except Exception as e:
+            logger.warning(f"Error loading config file: {e}, falling back to environment variable")
+            self.analysis_model = os.getenv("JIRA_ANALYSIS_MODEL", "")
+            
+        logger.info(f"Initial model selection: {self.analysis_model or 'Not set (will use first available)'}")
+        # The actual model will be determined at runtime based on available models
         
         # Initialize the session with appropriate authentication
         self.session = requests.Session()
@@ -225,7 +242,7 @@ class JiraMCPIntegration:
         # Simple text search if no JQL operators are found
         return f'text ~ "{jql}"'
     
-    def jql_search(self, jql: str, max_results: int = 10, fields: List[str] = None) -> Dict[str, Any]:
+    def jql_search(self, jql: str, max_results: int = 50, fields: List[str] = None) -> Dict[str, Any]:
         """
         Search for issues in Jira using JQL.
         
@@ -722,255 +739,186 @@ class JiraMCPIntegration:
         if len(results) <= 2:
             return f"Found {len(results)} issues matching your query."
         
-        # Prepare the prompt for the LLM
-        prompt = f"""
-        Analyze the following Jira issues based on the query: "{query}"
-        
-        Issues:
-        """
-        
-        # Add the issues to the prompt
-        for i, issue in enumerate(results[:5]):  # Limit to first 5 issues to avoid token limits
-            prompt += f"""
-            Issue {i+1}: {issue['key']} - {issue['summary']}
-            Status: {issue['status']}
-            Type: {issue['type']}
-            Priority: {issue['priority']}
-            Assignee: {issue['assignee']}
-            Description: {issue['description'][:200]}...
-            """
-        
-        prompt += """
-        Please provide a concise summary of these issues, including:
-        1. Common themes or patterns
-        2. Status distribution
-        3. Priority distribution
-        4. Any actionable insights
-        
-        Keep your response under 200 words.
-        """
-        
-        # Call the Ollama API
         try:
-            # Log the API call for debugging
-            logger.info(f"Calling Ollama API at: {self.ollama_api_url}/chat with model: {self.analysis_model}")
+            # Prepare content for the LLM to analyze
+            context = ""
+            for i, issue in enumerate(results[:5]):  # Limit to first 5 issues to avoid token limits
+                issue_key = issue.get('key', 'Unknown')
+                summary = issue.get('summary', 'No summary')
+                status = issue.get('status', 'Unknown')
+                issue_type = issue.get('type', 'Unknown')
+                priority = issue.get('priority', 'Unknown')
+                assignee = issue.get('assignee', 'Unassigned')
+                description = issue.get('description', 'No description')
+                
+                # Truncate description to avoid token limits
+                if description and len(description) > 200:
+                    description = description[:200] + "..."
+                
+                # Add this issue to the context
+                context += f"\n\nIssue {i+1}: {issue_key} - {summary}\n"
+                context += f"Status: {status}\n"
+                context += f"Type: {issue_type}\n"
+                context += f"Priority: {priority}\n"
+                context += f"Assignee: {assignee}\n"
+                context += f"Description: {description}\n"
             
-            # First check if Ollama service is available
+            # Prepare the system message for the LLM
+            system_message = {
+                "role": "system",
+                "content": (
+                    "You are a helpful assistant that analyzes Jira issues and provides concise summaries. "
+                    "Based on the issues provided, answer the user's query as accurately as possible. "
+                    "Identify common themes, status distribution, priority distribution, and provide actionable insights. "
+                    "Keep your response under 200 words and focus on the most relevant information."
+                )
+            }
+            
+            # Prepare the user message with the query and context
+            user_message = {
+                "role": "user",
+                "content": f"Query: {query}\n\nJira issues:\n{context}\n\nPlease analyze these issues and provide a concise summary."
+            }
+            
+            # Prepare the request payload
+            payload = {
+                "model": self.analysis_model,
+                "messages": [system_message, user_message],
+                "stream": False
+                # Remove options to fix HTTP 400 error
+                # Some Ollama models may not support options in this format
+            }
+            
+            # Log the API call for debugging
+            logger.info(f"Calling Ollama API at: {self.ollama_api_url}/generate with model: {self.analysis_model}")
+            
+            # Check if Ollama service is available and properly configured
             try:
-                # Use a simple HEAD request to check if the service is running
-                logger.debug(f"Checking if Ollama service is available at: {self.ollama_api_url.split('/api')[0]}")
-                check_response = requests.head(f"{self.ollama_api_url.split('/api')[0]}", timeout=1)
+                # First, normalize the Ollama API URL to ensure it's correctly formatted
+                base_url = self.ollama_api_url
+                
+                # Remove trailing '/api' if present to get the base URL
+                if base_url.endswith('/api'):
+                    base_url = base_url[:-4]
+                
+                # Remove trailing slash if present
+                if base_url.endswith('/'):
+                    base_url = base_url[:-1]
+                
+                # Log the URL we're checking
+                logger.info(f"Checking Ollama service availability at: {base_url}")
+                
+                # First try a simple health check to see if Ollama is running at all
+                check_response = requests.get(f"{base_url}/api/version", timeout=3)
+                
                 if check_response.status_code >= 400:
-                    logger.warning(f"Ollama service returned status code {check_response.status_code}")
-                    return f"Found {len(results)} issues matching your query. (Analysis unavailable: Ollama service returned status code {check_response.status_code})"
+                    logger.warning(f"Ollama service returned status code {check_response.status_code} from version endpoint")
+                    return f"Found {len(results)} issues matching your query. (Analysis unavailable: Ollama service returned status code {check_response.status_code}. Please ensure Ollama is running.)"
+                
+                # If we get here, Ollama is running. Now check if the model exists
+                try:
+                    models_response = requests.get(f"{base_url}/api/tags", timeout=3)
+                    models_response.raise_for_status()
+                    models_data = models_response.json()
+                    
+                    # Check if our model is in the list of available models
+                    available_models = []
+                    if 'models' in models_data:
+                        available_models = [model.get('name') for model in models_data.get('models', [])]
+                    
+                    if not available_models:
+                        logger.warning(f"No models found in Ollama. Response: {models_data}")
+                        return f"Found {len(results)} issues matching your query. (Analysis unavailable: No models found in Ollama. Please pull a model first.)"
+                    
+                    # If no specific model was configured or the configured model isn't available,
+                    # use the first available model
+                    if not self.analysis_model or self.analysis_model not in available_models:
+                        if self.analysis_model:
+                            logger.warning(f"Model '{self.analysis_model}' not found in available models: {available_models}")
+                        
+                        # Use the first available model
+                        self.analysis_model = available_models[0]
+                        logger.info(f"Using first available model: '{self.analysis_model}'")
+                    else:
+                        logger.info(f"Using configured model: '{self.analysis_model}'")
+                except Exception as model_error:
+                    logger.warning(f"Error checking available models: {model_error}")
+                    # Continue anyway, as the model might still work
+                
+                # Update the API URL to ensure it's correctly formatted for subsequent calls
+                self.ollama_api_url = f"{base_url}/api"
+                logger.info(f"Using Ollama API URL: {self.ollama_api_url}")
+                
             except requests.exceptions.RequestException as e:
                 logger.warning(f"Ollama service is not available: {e}")
-                return f"Found {len(results)} issues matching your query. (Analysis unavailable: Ollama service is not running or not accessible)"
+                return f"Found {len(results)} issues matching your query. (Analysis unavailable: Ollama service is not running or not accessible. Please start Ollama and try again.)"
             
-            # If we get here, the service appears to be running, so try the actual API call
-            # Use the /chat endpoint instead of /generate to match the regular chat functionality
-            logger.debug("Preparing to call Ollama API with chat endpoint")
-            
-            # First, check if the model exists
+            # Make the request to the Ollama API
             try:
-                models_response = requests.get(f"{self.ollama_api_url.split('/api')[0]}/api/tags", timeout=5)
-                models_response.raise_for_status()
-                models_json = models_response.json()
-                logger.debug(f"Available models: {models_json}")
-                
-                # Check if our model is in the list
-                model_exists = False
-                if isinstance(models_json, dict) and "models" in models_json:
-                    model_names = [model.get("name") for model in models_json.get("models", []) if isinstance(model, dict)]
-                    logger.debug(f"Available model names: {model_names}")
-                    if self.analysis_model in model_names:
-                        model_exists = True
-                        logger.debug(f"Model {self.analysis_model} exists")
-                    else:
-                        logger.warning(f"Model {self.analysis_model} not found in available models")
-                else:
-                    logger.warning(f"Unexpected models response format: {models_json}")
-            except Exception as e:
-                logger.warning(f"Error checking available models: {e}")
-                # Continue anyway, as the model might still work
-            
-            # Log the request payload for debugging
-            request_payload = {
-                "model": self.analysis_model,
-                "messages": [
-                    {"role": "system", "content": "You are a helpful assistant that analyzes Jira issues and provides concise summaries."},
-                    {"role": "user", "content": prompt}
-                ],
-                "stream": False,
-                "options": {
-                    "temperature": 0.7
+                logger.info(f"Making request to Ollama API at: {self.ollama_api_url}/generate")
+                # Convert chat format to generate format
+                generate_payload = {
+                    "model": self.analysis_model,
+                    "prompt": f"You are an AI assistant that analyzes Jira issues and provides insights. Be concise and focus on the most important information.\n\nAnalyze the following Jira issues matching the query: '{query}'\n\n{context}",
+                    "stream": False
                 }
-            }
-            logger.debug(f"Request payload: {request_payload}")
-            
-            try:
                 response = requests.post(
-                    f"{self.ollama_api_url}/chat",
-                    json=request_payload,
-                    timeout=10  # Add a reasonable timeout
+                    f"{self.ollama_api_url}/generate",
+                    json=generate_payload,
+                    timeout=15  # Increased timeout for analysis
                 )
                 
-                logger.debug(f"Response status code: {response.status_code}")
+                # Log response status for debugging
+                logger.info(f"Ollama API response status code: {response.status_code}")
+                
+                # Check for specific error status codes
+                if response.status_code == 404:
+                    logger.error(f"Ollama API endpoint not found (404). URL: {self.ollama_api_url}/generate")
+                    return f"Found {len(results)} issues matching your query. (Analysis unavailable: Ollama API endpoint not found. Please check that Ollama is running and supports the /generate endpoint.)"
+                
                 response.raise_for_status()
-                
-                # Parse the response JSON
-                logger.debug("Parsing response JSON")
-                try:
-                    response_json = response.json()
-                    logger.debug(f"Response JSON parsed successfully: {type(response_json)}")
-                except Exception as e:
-                    logger.error(f"Error parsing response JSON: {e}")
-                    logger.debug(f"Raw response content: {response.text}")
-                    return f"Found {len(results)} issues matching your query. (Analysis unavailable: Error parsing response from Ollama API)"
-            except Exception as e:
-                logger.error(f"Error calling Ollama API: {e}")
-                return f"Found {len(results)} issues matching your query. (Analysis unavailable: Error calling Ollama API: {str(e)})"
+            except requests.exceptions.HTTPError as http_err:
+                logger.error(f"HTTP error occurred: {http_err}")
+                status_code = http_err.response.status_code if hasattr(http_err, 'response') and http_err.response is not None else 'unknown'
+                return f"Found {len(results)} issues matching your query. (Analysis unavailable: HTTP Error {status_code} from Ollama API. Please check your Ollama installation.)"
+            except Exception as req_err:
+                logger.error(f"Error making request to Ollama API: {req_err}")
+                return f"Found {len(results)} issues matching your query. (Analysis unavailable: Error connecting to Ollama API: {str(req_err)})"
             
-            # Log the response structure for debugging
-            logger.debug(f"Ollama API response keys: {list(response_json.keys())}")
+            # Parse the response JSON
+            response_json = response.json()
             
-            # Extract the analysis from the response with better error handling
-            # The chat endpoint returns a different structure than the generate endpoint
+            # Extract the analysis from the response
             analysis = ""
-            try:
-                # Log the full response for debugging
-                logger.debug(f"Full Ollama API response: {response_json}")
-                
-                # Guard against None response
-                if response_json is None:
-                    logger.warning("Received None response from Ollama API")
-                    return f"Found {len(results)} issues matching your query. (Analysis unavailable: Received empty response from Ollama API)"
-                
-                # Handle non-dict responses
-                if not isinstance(response_json, dict):
-                    logger.warning(f"Unexpected response type: {type(response_json)}")
-                    # Try to convert to string if possible
-                    try:
-                        analysis = str(response_json)
-                    except Exception as e:
-                        logger.error(f"Error converting response to string: {e}")
-                        analysis = "Analysis unavailable due to unexpected response format."
-                    return analysis
-                
-                # Log all keys in the response
-                response_keys = list(response_json.keys())
-                logger.debug(f"Response keys: {response_keys}")
-                
-                # The /chat endpoint typically returns a structure with a "message" field
-                if "message" in response_json:
-                    logger.debug("Found 'message' key in response")
-                    message = response_json.get("message")
-                    
-                    # Guard against None message
-                    if message is None:
-                        logger.warning("Message field is None in response")
-                        return f"Found {len(results)} issues matching your query. (Analysis unavailable: Message field is empty)"
-                    
-                    logger.debug(f"Message value type: {type(message)}")
-                    
-                    # Handle dict message with content
-                    if isinstance(message, dict):
-                        message_keys = list(message.keys())
-                        logger.debug(f"Message keys: {message_keys}")
-                        
-                        if "content" in message:
-                            logger.debug("Found 'content' key in message")
-                            content = message.get("content")
-                            
-                            # Guard against None content
-                            if content is None:
-                                logger.warning("Content field is None in message")
-                                return f"Found {len(results)} issues matching your query. (Analysis unavailable: Content field is empty)"
-                            
-                            logger.debug(f"Content value type: {type(content)}")
-                            analysis = str(content)
-                        else:
-                            logger.warning(f"No 'content' key in message. Available keys: {message_keys}")
-                            # Try to use the first available key as fallback
-                            if message_keys:
-                                first_key = message_keys[0]
-                                first_value = message.get(first_key)
-                                if first_value is not None:
-                                    analysis = str(first_value)
-                                    logger.debug(f"Using '{first_key}' as fallback: {analysis[:50]}...")
-                    # Handle string or other message types
-                    elif message is not None:
-                        logger.debug(f"Message is not a dict, using direct value: {type(message)}")
-                        analysis = str(message)
-                    else:
-                        logger.warning("Message has unexpected format")
-                
-                # Check for other possible response formats as fallbacks
-                elif "response" in response_json:
-                    logger.debug("Found 'response' key in response")
-                    response_value = response_json.get("response")
-                    if response_value is not None:
-                        analysis = str(response_value)
-                    else:
-                        logger.warning("Response field is None")
-                
+            if isinstance(response_json, dict):
+                # The generate endpoint returns a structure with a "response" field
+                if "response" in response_json:
+                    analysis = response_json["response"]
+                # Fallback to other possible response formats
                 elif "output" in response_json:
-                    logger.debug("Found 'output' key in response")
-                    output_value = response_json.get("output")
-                    if output_value is not None:
-                        analysis = str(output_value)
-                    else:
-                        logger.warning("Output field is None")
-                
+                    analysis = response_json["output"]
                 elif "completion" in response_json:
-                    logger.debug("Found 'completion' key in response")
-                    completion_value = response_json.get("completion")
-                    if completion_value is not None:
-                        analysis = str(completion_value)
-                    else:
-                        logger.warning("Completion field is None")
-                
-                # Last resort: try to use any available key
-                elif response_keys:
-                    logger.warning(f"Could not find expected keys. Available keys: {response_keys}")
-                    # Try the first key as fallback
-                    first_key = response_keys[0]
-                    first_value = response_json.get(first_key)
-                    if first_value is not None:
-                        try:
-                            analysis = str(first_value)
-                            logger.debug(f"Using '{first_key}' as fallback: {analysis[:50]}...")
-                        except Exception as e:
-                            logger.error(f"Error converting '{first_key}' to string: {e}")
-                
-                else:
-                    logger.warning("Response has no keys")
-            except Exception as e:
-                logger.error(f"Error extracting analysis from response: {e}")
-                # Log the response structure for debugging
-                logger.debug(f"Response JSON: {response_json if 'response_json' in locals() else 'Not available'}")
-                # Log the traceback for more detailed debugging
-                import traceback
-                logger.error(f"Traceback: {traceback.format_exc()}")
-                return f"Found {len(results)} issues matching your query. (Analysis unavailable: Error processing response: {str(e)})"
+                    analysis = response_json["completion"]
+                # Fallback for chat format
+                elif "message" in response_json and isinstance(response_json["message"], dict):
+                    message = response_json["message"]
+                    if "content" in message:
+                        analysis = message["content"]
             
             # If we still don't have an analysis, provide a default message
             if not analysis:
-                analysis = f"Found {len(results)} issues matching your query. (Analysis unavailable. Please check if Ollama service is running correctly.)"
+                logger.warning("Could not extract analysis from response")
+                logger.debug(f"Response JSON: {response_json}")
+                return f"Found {len(results)} issues matching your query. (Analysis unavailable: Could not extract analysis from response)"
             
-            logger.debug(f"Final analysis: {analysis[:100]}...")
+            logger.debug(f"Analysis successfully extracted: {analysis[:100]}...")
             return analysis
-        
+            
         except requests.exceptions.HTTPError as e:
-            status_code = 'unknown'
-            if hasattr(e, 'response') and e.response is not None:
-                if hasattr(e.response, 'status_code'):
-                    status_code = e.response.status_code
-                # Log the response content for debugging
-                if hasattr(e.response, 'text'):
-                    logger.debug(f"Error response content: {e.response.text}")
+            status_code = e.response.status_code if hasattr(e, 'response') and e.response is not None else 'unknown'
+            error_message = f"Found {len(results)} issues matching your query. (Analysis unavailable: HTTP Error {status_code} from Ollama API)"
             logger.error(f"HTTP Error analyzing search results: {e} (Status code: {status_code})")
-            return f"Found {len(results)} issues matching your query. (Analysis unavailable: HTTP Error {status_code} from Ollama API)"
+            return self._get_detailed_error_message(status_code, error_message)
         
         except requests.exceptions.ConnectionError as e:
             logger.error(f"Connection Error analyzing search results: {e}")
@@ -980,13 +928,8 @@ class JiraMCPIntegration:
             logger.error(f"Timeout Error analyzing search results: {e}")
             return f"Found {len(results)} issues matching your query. (Analysis unavailable: Request to Ollama API timed out)"
         
-        except ValueError as e:
-            logger.error(f"Error parsing JSON response: {e}")
-            return f"Found {len(results)} issues matching your query. (Analysis unavailable: Invalid response format from Ollama API)"
-        
         except Exception as e:
             logger.error(f"Unexpected error analyzing search results: {e}")
-            # Log the traceback for more detailed debugging
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
             return f"Found {len(results)} issues matching your query. (Analysis unavailable: {str(e)})"
