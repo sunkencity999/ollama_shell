@@ -68,22 +68,44 @@ read -r setup_confluence
 if [ "$setup_confluence" = "y" ]; then
     echo -e "${GREEN}Setting up Confluence integration...${NC}"
     
-    # Check if the template file exists
+    # Create config directory if it doesn't exist
+    mkdir -p "Created Files/config"
+    
+    # Define template and config files
     template_file="Created Files/config/confluence_config_template.env"
     config_file="Created Files/confluence_config.env"
     
-    if [ -f "$template_file" ]; then
-        # Copy the template to the actual config file if it doesn't exist
-        if [ ! -f "$config_file" ]; then
-            cp "$template_file" "$config_file"
-            echo -e "${GREEN}Created Confluence configuration file: $config_file${NC}"
-        fi
+    # Create template file if it doesn't exist
+    if [ ! -f "$template_file" ]; then
+        cat > "$template_file" << EOL
+# Confluence Configuration
+# Fill in your Confluence details below
+
+# Required settings
+CONFLUENCE_URL=https://your-instance.atlassian.net
+CONFLUENCE_EMAIL=your.email@example.com
+CONFLUENCE_API_TOKEN=your_api_token_here
+
+# Optional settings
+CONFLUENCE_AUTH_METHOD=pat
+CONFLUENCE_IS_CLOUD=true
+CONFLUENCE_ANALYSIS_MODEL=llama3.2:latest
+EOL
+        echo -e "${GREEN}Created Confluence configuration template: $template_file${NC}"
+    fi
+    
+    # Copy the template to the actual config file if it doesn't exist
+    if [ ! -f "$config_file" ]; then
+        cp "$template_file" "$config_file"
+        echo -e "${GREEN}Created Confluence configuration file: $config_file${NC}"
+    fi
         
         echo -e "${YELLOW}Please edit the configuration file at $config_file with your Confluence details.${NC}"
         echo -e "${YELLOW}You will need to provide:${NC}"
         echo -e "  - Confluence URL"
         echo -e "  - Your email/username"
         echo -e "  - Your Personal Access Token (PAT) or API token"
+        echo -e "  - (Optional) Confluence analysis model (default: llama3.2:latest)"
         
         # Ask if they want to open the file now
         echo -e "${YELLOW}Would you like to open the configuration file now? (y/n)${NC}"

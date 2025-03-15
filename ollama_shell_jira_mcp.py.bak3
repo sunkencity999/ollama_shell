@@ -132,7 +132,7 @@ def handle_jira_nl_command(command: str, model: str = "llama3") -> Dict[str, Any
                     'highest': ['"Highest Priority"', '"P0"', '"P1"'],
                     'high': ['"High Priority"', '"P2"'],
                     'medium': ['"Medium Priority"', '"P3"'],
-                    'low': ['"Low Priority"'],  # Removed P4 as it doesn't exist in this Jira instance
+                    'low': ['"Low Priority"', '"P4"'],
                     'lowest': ['"Lowest Priority"', '"P5"']
                 }
                 

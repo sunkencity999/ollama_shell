@@ -43,12 +43,16 @@ def load_config():
         print("Please update your configuration file.")
         sys.exit(1)
     
+    # Get optional settings with defaults
+    analysis_model = os.environ.get("CONFLUENCE_ANALYSIS_MODEL", "llama3.2:latest")
+    
     return {
         "url": os.environ.get("CONFLUENCE_URL"),
         "email": os.environ.get("CONFLUENCE_EMAIL"),
         "api_token": os.environ.get("CONFLUENCE_API_TOKEN"),
         "auth_method": os.environ.get("CONFLUENCE_AUTH_METHOD", "pat"),
-        "is_cloud": os.environ.get("CONFLUENCE_IS_CLOUD", "false").lower() == "true"
+        "is_cloud": os.environ.get("CONFLUENCE_IS_CLOUD", "false").lower() == "true",
+        "analysis_model": analysis_model
     }
 
 def print_section(title):

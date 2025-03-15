@@ -21,6 +21,7 @@ You can set up the Confluence integration in two ways:
 
 When you run the installation script (`install.sh`), you'll be prompted to set up the Confluence integration:
 
+
 ```bash
 # During installation
 Would you like to set up the Confluence integration? (y/n): y
@@ -40,37 +41,28 @@ If you didn't set up the integration during installation or need to modify your 
    ```bash
    cp Created Files/config/confluence_config_template.env Created Files/confluence_config.env
    ```
-
 2. Edit the configuration file with your preferred text editor:
    ```bash
    nano Created Files/confluence_config.env
    ```
-
 3. Fill in your Confluence details (see Configuration Options below)
-
 ## Configuration Options
-
 The configuration file contains the following settings:
-
 ```bash
 # Confluence Configuration
-
 # Confluence URL (e.g., https://wiki.example.com or https://your-domain.atlassian.net)
 CONFLUENCE_URL=https://your-confluence-url
-
 # Your username/email for Confluence
 CONFLUENCE_EMAIL=your.email@example.com
-
 # Your Personal Access Token (PAT) or API token
 CONFLUENCE_API_TOKEN=your_token_here
-
 # Authentication method (basic, bearer, or pat)
 CONFLUENCE_AUTH_METHOD=pat
-
 # Is this a Confluence Cloud instance? (true/false)
 CONFLUENCE_IS_CLOUD=false
+# Ollama model to use for analyzing search results (defaults to llama3 if not specified)
+CONFLUENCE_ANALYSIS_MODEL=llama3
 ```
-
 ### Configuration Details
 
 #### Confluence URL
@@ -86,17 +78,14 @@ CONFLUENCE_IS_CLOUD=false
 
 #### API Token
 
-- **For Confluence Cloud**: 
-  - Generate an API token at [https://id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
+- **For Confluence Cloud**:  
+  - Generate an API token at [https://id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)  
   - Click "Create API token", provide a label (e.g., "Ollama Shell"), and copy the token
-
-- **For Confluence Server**: 
-  - Generate a Personal Access Token in your Confluence Server instance
-  - Navigate to your profile > Personal Access Tokens > Create token
+- **For Confluence Server**:  
+  - Generate a Personal Access Token in your Confluence Server instance  
+  - Navigate to your profile > Personal Access Tokens > Create token  
   - Ensure the token has appropriate permissions for the Confluence API
-
 #### Authentication Method
-
 - **For Confluence Cloud**: Use `basic` authentication method
 - **For Confluence Server**: Use `pat` authentication method
 
@@ -105,8 +94,12 @@ CONFLUENCE_IS_CLOUD=false
 - Set to `true` for Confluence Cloud
 - Set to `false` for Confluence Server
 
-## Testing Your Configuration
+#### Analysis Model
 
+- Specifies which Ollama model to use for analyzing search results
+- Default is `llama3` if not specified
+- Use any model available in your Ollama installation that has good text analysis capabilities
+## Testing Your Configuration
 After setting up your configuration, test it with the provided test script:
 
 ```bash
@@ -114,6 +107,7 @@ python test_confluence_setup.py
 ```
 
 The script will:
+
 1. Check if your configuration file exists
 2. Validate your configuration settings
 3. Test the connection to your Confluence instance
@@ -129,9 +123,7 @@ Once configured, you can use the Confluence integration in Ollama Shell:
    - "List all spaces in Confluence"
    - "Create a new page titled 'Meeting Notes' in the 'Team' space"
    - "Search for pages about 'project planning'"
-
 ## Troubleshooting
-
 If you encounter issues with the Confluence integration:
 
 1. Verify your configuration settings in `Created Files/confluence_config.env`
@@ -143,11 +135,13 @@ If you encounter issues with the Confluence integration:
 
 For programmatic access to the Confluence integration, see the example script:
 
+
 ```bash
 python examples/confluence_example.py
 ```
 
 This script demonstrates how to:
+
 - Connect to Confluence
 - List spaces
 - Search for content
@@ -158,4 +152,5 @@ This script demonstrates how to:
 - Your API token or Personal Access Token is stored in the configuration file
 - The configuration file is stored in the `Created Files` directory, which is excluded from Git
 - Never share your API token or Personal Access Token
+
 - Consider using environment variables for production deployments

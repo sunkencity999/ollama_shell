@@ -2075,11 +2075,11 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                 
                 try:
                     # Perform web search and get analysis
-                    search_results = process_enhanced_search(search_query, model)
+                    analysis_text = process_enhanced_search(search_query, model)
                     
                     # Add search results to chat history
                     chat_history.append({"role": "user", "content": f"Web search query: {search_query}"})
-                    chat_history.append({"role": "assistant", "content": search_results})
+                    chat_history.append({"role": "assistant", "content": analysis_text})
                     
                     # Display results
                     # Create thread line for search results
@@ -2087,8 +2087,22 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                         thread_line = "[dim]│[/dim]"
                         console.print(thread_line)
                     
+                    # Store the global search results cache for post-processing
+                    global search_results_cache
+                    # Debug the search results cache
+                    console.print(f"[dim]Debug: Search results cache has {len(search_results_cache)} items[/dim]")
+                    
+                    # Post-process the search results to add clickable links
+                    # Pass both the analysis text and the search results cache directly
+                    formatted_results = post_process_search_results(analysis_text, search_results_cache)
+                    
+                    # Make the panel with enhanced markdown and custom styling
+                    # Use a custom theme for the markdown to style links
+                    md = Markdown(formatted_results)
+                    md.style_links = "bold blue underline"
+                    
                     console.print(Panel(
-                        Markdown(search_results), 
+                        md, 
                         title="[bold green]Search Results & Analysis[/bold green]", 
                         border_style="green",
                         padding=(1, 2)
@@ -3180,35 +3194,96 @@ def display_menu():
 def perform_web_search(query: str) -> tuple[list, str]:
     """Perform a web search and return results with content"""
     try:
-        print("Starting search...")  # Debug print
         with DDGS() as ddgs:
             # Get search results
             search_results = []
             raw_results = list(ddgs.text(query, max_results=10))
-            print(f"Raw results: {raw_results}")  # Debug print
+            
+            # Debug the raw results
+            console.print(f"[dim]Debug: Found {len(raw_results)} raw search results[/dim]")
+            if raw_results and len(raw_results) > 0:
+                first_result = raw_results[0]
+                console.print(f"[dim]Debug: First raw result keys: {', '.join(first_result.keys())}[/dim]")
+                # Print the entire first result for debugging
+                console.print(f"[dim]Debug: First raw result: {first_result}[/dim]")
+                
+                # Check for the href field which might contain the URL
+                if 'href' in first_result:
+                    console.print(f"[dim]Debug: First result has href: {first_result.get('href')}[/dim]")
             
             for r in raw_results:
-                print(f"Processing result: {r}")  # Debug print
+                # Try different possible keys for the URL
+                link = r.get("href", "")  # Try href first (common in DuckDuckGo results)
+                if not link:
+                    link = r.get("link", "")  # Then try link
+                if not link:
+                    link = r.get("url", "")   # Then try url
+                
+                # Ensure link is a valid string
+                if not isinstance(link, str):
+                    link = str(link) if link is not None else ""
+                
+                # Ensure the link is properly formatted
+                if link and not (link.startswith("http://") or link.startswith("https://")):
+                    link = "https://" + link
+                
+                # Debug the link extraction
+                if link:
+                    console.print(f"[dim]Debug: Found valid link: {link}[/dim]")
+                
                 search_results.append({
                     "title": r.get("title", "No title"),
-                    "link": r.get("link", ""),
+                    "link": link,
                     "snippet": r.get("body", "No description available")
                 })
             
             if not search_results:
                 return [], ""
             
-            # Prepare context for LLM
-            context = "Here are the search results:\n\n"
-            for i, result in enumerate(search_results, 1):
-                context += f"{i}. {result['title']}\n"
-                context += f"   URL: {result['link']}\n"
-                context += f"   Summary: {result['snippet']}\n\n"
+            # Debug the processed results
+            console.print(f"[dim]Debug: Processed {len(search_results)} search results[/dim]")
+            if search_results and len(search_results) > 0:
+                console.print(f"[dim]Debug: First processed result link: {search_results[0].get('link', 'No link')}[/dim]")
             
-            return search_results, context
+            # Try to fetch additional content for the top 3 results
+            enhanced_results = []
+            for result in search_results[:3]:
+                try:
+                    if result["link"]:
+                        additional_content = fetch_webpage_content(result["link"])
+                        if additional_content:
+                            result["content"] = additional_content
+                except Exception as e:
+                    console.print(f"[dim]Failed to fetch additional content for {result['link']}: {str(e)}[/dim]")
+                enhanced_results.append(result)
+            
+            # Add the rest of the results without additional content
+            enhanced_results.extend(search_results[3:])
+            
+            # Prepare context for LLM in a structured format
+            context = f"Search Query: {query}\n\nSearch Results:\n\n"
+            
+            for i, result in enumerate(enhanced_results, 1):
+                context += f"Result {i}:\n"
+                context += f"Title: {result['title']}\n"
+                context += f"URL: {result['link']}\n"
+                context += f"Summary: {result['snippet']}\n"
+                
+                # Add the additional content if available
+                if "content" in result:
+                    # Truncate content to avoid overwhelming the model
+                    content_preview = result["content"][:1000]
+                    if len(result["content"]) > 1000:
+                        content_preview += "... (content truncated)"
+                    context += f"Content: {content_preview}\n"
+                
+                context += "\n"
+            
+            return enhanced_results, context
     except Exception as e:
-        print(f"Search error: {str(e)}")  # Debug print
-        console.print(f"[red]Error performing web search: {str(e)}[/red]")
+        # Following the robust error handling pattern from Jira integration
+        error_message = f"Error performing web search: {str(e)}"
+        console.print(f"[red]{error_message}[/red]")
         return [], ""
 
 def fetch_webpage_content(url: str) -> str:
@@ -3266,50 +3341,111 @@ def process_enhanced_search(query: str, model: str) -> str:
         if not results:
             return "No search results found for your query. Please try a different search term."
         
-        # Prepare system prompt for analysis
+        # Store the search results for later reference when formatting the output
+        # IMPORTANT: Store this BEFORE making the API call to ensure it's available
+        global search_results_cache
+        search_results_cache = results
+        console.print(f"[dim]Debug: Stored {len(results)} search results in cache[/dim]")
+        
+        # Determine which model to use for analysis
+        analysis_model = _get_best_available_model(model)
+        if not analysis_model:
+            return "Error: No models available in Ollama. Please pull a model first."
+            
+        console.print(f"[dim]Using model: {analysis_model} for analysis[/dim]")
+        
+        # Prepare system prompt for analysis - more detailed and structured
         system_prompt = """You are a helpful AI assistant that analyzes search results and provides comprehensive summaries. 
-        For the given query, provide a well-structured analysis including:
-        1. A direct answer or summary addressing the main query
-        2. Key findings and insights from the search results
-        3. Supporting evidence from multiple sources where available
-        4. Any important caveats, limitations, or conflicting information
-        5. Relevant quotes or specific details that support the analysis
+        Your task is to analyze the provided search results and generate a clear, accurate, and well-structured response.
         
-        Format your response in clear sections with markdown headings and bullet points for readability.
-        Base your response solely on the provided search results."""
+        Follow these guidelines:
+        1. Provide a direct, concise answer to the query at the beginning of your response
+        2. Include key information from multiple sources when available
+        3. Present facts objectively and note any contradictions between sources
+        4. Include relevant dates, numbers, and specific details when available
+        5. Format your response with markdown headings, bullet points, and paragraphs for readability
+        6. If the search results don't contain enough information to answer the query, acknowledge this limitation
+        7. Base your response ONLY on the provided search results - do not include information from your training data
         
-        # Prepare the prompt for the LLM
-        prompt = f"""
-        Query: {search_query}
-
-        Please analyze these search results and provide a comprehensive summary following the structure outlined in the system prompt.
-
-        Search Results:
-        {context}
+        Structure your response with these sections:
+        - Direct Answer (1-2 sentences addressing the main query)
+        - Key Information (the most important facts and details)
+        - Additional Context (other relevant information)
+        - Sources (IMPORTANT: List the EXACT titles of the sources as they appear in the search results)
+        
+        Note: The system will automatically add clickable links to the sources section, but ONLY if you use the EXACT titles from the search results. Do not modify or paraphrase the titles.
         """
         
-        # Send to Ollama using the /chat endpoint for consistency with Jira integration
+        # Prepare the prompt for the LLM - more concise and focused
+        prompt = f"""Query: {search_query}
+
+Please analyze the following search results to provide a comprehensive answer to the query.
+
+{context}
+
+Based solely on these search results, provide a well-structured analysis that directly answers the query.
+
+IMPORTANT: In the Sources section, list the EXACT titles of the sources as they appear in the search results. DO NOT modify or paraphrase the titles. DO NOT include URLs or links - the system will automatically add clickable links based on the exact titles you provide."""
+        
+        
+        # Send to Ollama using the /api/chat endpoint
         with console.status("[cyan]Analyzing search results...[/cyan]"):
-            response = requests.post(
-                f"{OLLAMA_API}/chat",
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": "You are a helpful assistant that analyzes web search results."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "stream": False
-                }
-            )
-            
-            if response.status_code != 200:
-                return f"Error: Failed to analyze search results. Status code: {response.status_code}"
-            
-            result = response.json().get("response", "")
-            if not result:
-                return "Error: No analysis was generated. Please try again."
-            
-            return result
+            try:
+                # Normalize the API endpoint
+                api_endpoint = OLLAMA_API.rstrip('/')
+                
+                # Make the API request with robust error handling
+                response = requests.post(
+                    f"{api_endpoint}/chat",
+                    json={
+                        "model": analysis_model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": prompt}
+                        ],
+                        "stream": False
+                    },
+                    timeout=60  # Add a timeout to prevent hanging
+                )
+                
+                # Check for HTTP errors
+                if response.status_code != 200:
+                    error_msg = _get_detailed_error_message(response.status_code, "analysis")
+                    console.print(f"[red]API error: {error_msg}[/red]")
+                    return f"Error: {error_msg}"
+                
+                # Parse the response
+                try:
+                    response_json = response.json()
+                    # Log the full response for debugging
+                    console.print(f"[dim]Debug - Full API response: {json.dumps(response_json, indent=2)}[/dim]")
+                    
+                    # Check if we have a message response (newer Ollama API format)
+                    if "message" in response_json:
+                        result = response_json.get("message", {}).get("content", "")
+                    else:
+                        # Fall back to the standard response field
+                        result = response_json.get("response", "")
+                        
+                    if not result:
+                        console.print("[red]Empty response content from API[/red]")
+                        return "Error: No analysis was generated. Please try again."
+                    
+                    return result
+                except json.JSONDecodeError as e:
+                    console.print(f"[red]Invalid JSON response: {str(e)}[/red]")
+                    console.print(f"[dim]Raw response: {response.text[:500]}...[/dim]")
+                    return "Error: Received invalid response from Ollama API."
+                    
+            except requests.exceptions.Timeout:
+                console.print("[red]Request timed out[/red]")
+                return "Error: The analysis request timed out. The model may be busy or the query too complex."
+            except requests.exceptions.ConnectionError:
+                console.print("[red]Connection error[/red]")
+                return "Error: Could not connect to the Ollama API. Please check if Ollama is running."
+            except requests.exceptions.RequestException as e:
+                console.print(f"[red]API request error: {str(e)}[/red]")
+                return f"Error communicating with Ollama API: {str(e)}"
             
     except requests.RequestException as e:
         return f"Network error occurred while processing search: {str(e)}"
@@ -3525,6 +3661,248 @@ def encode_image(image_path: str) -> tuple[str, str]:
             return base64.b64encode(img_byte_arr.getvalue()).decode('utf-8'), mime_type
     except Exception as e:
         raise Exception(f"Error processing image {image_path}: {str(e)}")
+
+def _get_best_available_model(default_model=None):
+    """Determine the best available model to use for AI tasks.
+    
+    Args:
+        default_model: The default model to try first
+        
+    Returns:
+        str: The name of the best available model, or None if no models are available
+    """
+    analysis_model = default_model
+    
+    # First try to use the model from config if no default provided
+    if not analysis_model:
+        try:
+            config = load_config()
+            if "default_model" in config:
+                analysis_model = config["default_model"]
+                console.print(f"[dim]Using model from config: {analysis_model}[/dim]")
+        except Exception as e:
+            console.print(f"[yellow]Error loading config: {str(e)}[/yellow]")
+    
+    # If specified model or config model, verify it exists
+    if analysis_model:
+        try:
+            models_response = requests.get(f"{OLLAMA_API}/tags")
+            if models_response.status_code == 200:
+                available_models = [model_info.get('name') for model_info in models_response.json().get('models', [])]
+                if analysis_model not in available_models and available_models:
+                    console.print(f"[yellow]Model '{analysis_model}' not found. Using '{available_models[0]}' instead.[/yellow]")
+                    analysis_model = available_models[0]
+                elif not available_models:
+                    return None
+        except Exception as e:
+            console.print(f"[yellow]Error checking if model exists: {str(e)}[/yellow]")
+    
+    # If still no model, get first available
+    if not analysis_model:
+        try:
+            models_response = requests.get(f"{OLLAMA_API}/tags")
+            if models_response.status_code == 200:
+                models_list = [model_info.get('name') for model_info in models_response.json().get('models', [])]
+                if models_list:
+                    analysis_model = models_list[0]
+                    console.print(f"[dim]Using first available model: {analysis_model}[/dim]")
+        except Exception as e:
+            console.print(f"[yellow]Error getting models: {str(e)}[/yellow]")
+    
+    return analysis_model
+
+def _get_detailed_error_message(status_code, operation_type="operation"):
+    """Generate a detailed error message based on HTTP status code.
+    
+    Args:
+        status_code: The HTTP status code
+        operation_type: The type of operation being performed (for context in the message)
+        
+    Returns:
+        str: A detailed error message with troubleshooting guidance
+    """
+    if status_code == 400:
+        return f"Bad request during {operation_type}. The request format may be incorrect or contains invalid parameters."
+    elif status_code == 401:
+        return f"Authentication failed during {operation_type}. Please check your credentials."
+    elif status_code == 403:
+        return f"Permission denied during {operation_type}. You may not have the required permissions."
+    elif status_code == 404:
+        return f"Resource not found during {operation_type}. The requested item may not exist."
+    elif status_code == 408 or status_code == 504:
+        return f"Request timed out during {operation_type}. The server took too long to respond."
+    elif status_code == 429:
+        return f"Rate limit exceeded during {operation_type}. Please try again later."
+    elif status_code >= 500 and status_code != 504:
+        return f"Server error during {operation_type}. The server encountered an error processing your request."
+    else:
+        return f"Failed to complete {operation_type}. Status code: {status_code}"
+
+# Global variable to store search results for reference
+search_results_cache = []
+
+def post_process_search_results(analysis_text, results=None):
+    """Post-process search results to add clickable links to sources"""
+    try:
+        # Use provided results if available, fall back to global cache if not
+        global search_results_cache
+        search_results = results if results is not None else search_results_cache
+        
+        # If we don't have search results, return the original text
+        if not search_results:
+            console.print("[dim]Debug: No search results available[/dim]")
+            return analysis_text
+        
+        # Debug output to verify search results
+        console.print(f"[dim]Debug: Search results cache has {len(search_results)} items[/dim]")
+        console.print(f"[dim]Debug: Processing {len(search_results)} search results[/dim]")
+        
+        # Print the structure of the first result for debugging
+        if search_results and len(search_results) > 0:
+            first_result = search_results[0]
+            console.print(f"[dim]Debug: First result keys: {', '.join(first_result.keys())}[/dim]")
+            # Print the first result's link for debugging
+            console.print(f"[dim]Debug: First result link: {first_result.get('link', 'No link')}[/dim]")
+        
+        # Filter out results without links
+        valid_results = []
+        for r in search_results:
+            # Try different possible keys for the URL if 'link' is empty
+            link = r.get('link', '')
+            if not link or not link.strip():
+                link = r.get('href', '')  # Try href next
+            if not link or not link.strip():
+                link = r.get('url', '')   # Try url next
+            
+            # Ensure link is a valid string and properly formatted
+            if link and isinstance(link, str) and link.strip():
+                # Ensure the link is properly formatted
+                if not (link.startswith("http://") or link.startswith("https://")):
+                    link = "https://" + link
+                
+                # Update the result with the valid link
+                r['link'] = link
+                valid_results.append(r)
+                console.print(f"[dim]Debug: Valid link found: {link}[/dim]")
+            else:
+                console.print(f"[dim]Debug: Invalid link: {link} (type: {type(link)})[/dim]")
+        
+        console.print(f"[dim]Debug: Found {len(valid_results)} results with valid links[/dim]")
+        
+        # If we have no valid results with links, return the original text
+        if not valid_results:
+            console.print("[dim]Debug: No valid results with links found[/dim]")
+            return analysis_text
+        
+        # Create a new formatted sources section with clickable links
+        formatted_sources = "\n\nSources\n\n"
+        
+        # Extract source titles from the analysis text if they exist
+        source_titles = []
+        for pattern in [
+            r'\n\*\*Sources\*\*[\s\S]*?(?=\n\n|$)',  # **Sources**
+            r'\nSources[\s\S]*?(?=\n\n|$)',         # Sources
+            r'\n## Sources[\s\S]*?(?=\n\n|$)',       # ## Sources
+            r'\n# Sources[\s\S]*?(?=\n\n|$)'         # # Sources
+        ]:
+            match = re.search(pattern, analysis_text, re.DOTALL)
+            if match:
+                sources_section = match.group(0)
+                # Extract titles from bullet points or numbered lists
+                for line in sources_section.split('\n'):
+                    # Remove bullet points, numbers, and other formatting
+                    cleaned_line = re.sub(r'^\s*[•\-\*\d\.]+\s*', '', line).strip()
+                    if cleaned_line and not cleaned_line.startswith('Sources'):
+                        source_titles.append(cleaned_line)
+                break
+        
+        console.print(f"[dim]Debug: Found {len(source_titles)} source titles in analysis text[/dim]")
+        
+        # Add search results as clickable links, matching with source titles when possible
+        added_sources = set()
+        
+        # First, try to match source titles from the analysis with search results
+        for title in source_titles:
+            matched = False
+            for result in valid_results:
+                result_title = result.get('title', 'No title')
+                # Check if the source title appears in the result title or vice versa
+                if (title.lower() in result_title.lower() or 
+                    result_title.lower() in title.lower() or
+                    _similar_titles(title, result_title)):
+                    link = result.get('link', '')
+                    console.print(f"[dim]Debug: Matched source: {title} with result: {result_title}[/dim]")
+                    formatted_sources += f"• [{title}]({link}) - {link}\n"
+                    added_sources.add(result_title.lower())
+                    matched = True
+                    break
+            
+            # If no match found, add the source title without a link
+            if not matched:
+                console.print(f"[dim]Debug: No match found for source: {title}[/dim]")
+                formatted_sources += f"• {title}\n"
+        
+        # Add any remaining search results that weren't matched
+        for result in valid_results:
+            title = result.get('title', 'No title')
+            if title.lower() not in added_sources:
+                link = result.get('link', '')
+                console.print(f"[dim]Debug: Adding unmatched result: {title} - {link}[/dim]")
+                formatted_sources += f"• [{title}]({link}) - {link}\n"
+                added_sources.add(title.lower())
+        
+        # Debug the total number of source links added
+        console.print(f"[dim]Debug: Added {len(added_sources)} source links[/dim]")
+        
+        # Always ensure we have a clean analysis text to work with
+        clean_analysis = analysis_text.rstrip()
+        
+        # Find and replace the Sources section in the analysis text
+        sources_patterns = [
+            r'\n\*\*Sources\*\*[\s\S]*?(?=\n\n|$)',  # **Sources**
+            r'\nSources[\s\S]*?(?=\n\n|$)',         # Sources
+            r'\n## Sources[\s\S]*?(?=\n\n|$)',       # ## Sources
+            r'\n# Sources[\s\S]*?(?=\n\n|$)'         # # Sources
+        ]
+        
+        for pattern in sources_patterns:
+            if re.search(pattern, clean_analysis, re.DOTALL):
+                console.print(f"[dim]Debug: Found sources section with pattern: {pattern}[/dim]")
+                # Replace the entire Sources section with our formatted version
+                return re.sub(pattern, formatted_sources, clean_analysis, flags=re.DOTALL)
+        
+        # If no Sources section was found, append our formatted sources
+        console.print("[dim]Debug: No sources section found, appending new section[/dim]")
+        return clean_analysis + formatted_sources
+    except Exception as e:
+        # Following the robust error handling pattern from Jira integration
+        console.print(f"[red]Error processing search results: {str(e)}[/red]")
+        # Return the original text if there's an error
+        return analysis_text
+
+def _similar_titles(title1, title2):
+    """Check if two titles are similar enough to be considered the same source"""
+    # Remove common words and punctuation
+    common_words = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'with', 'by', 'about']
+    
+    # Convert to lowercase and remove punctuation
+    t1 = re.sub(r'[^\w\s]', '', title1.lower())
+    t2 = re.sub(r'[^\w\s]', '', title2.lower())
+    
+    # Remove common words
+    for word in common_words:
+        t1 = re.sub(r'\b' + word + r'\b', '', t1)
+        t2 = re.sub(r'\b' + word + r'\b', '', t2)
+    
+    # Remove extra whitespace
+    t1 = ' '.join(t1.split())
+    t2 = ' '.join(t2.split())
+    
+    # Check if one is a substring of the other after cleaning
+    return t1 in t2 or t2 in t1 or (len(t1) > 0 and len(t2) > 0 and 
+           (t1.split()[0] == t2.split()[0] or t1.split()[-1] == t2.split()[-1]))
+
+# This function is no longer used with the new direct link approach
 
 def analyze_image(image_path: str, prompt: Optional[str] = None) -> str:
     """
@@ -3820,10 +4198,94 @@ def terminal_mode():
     import select
     import time
     import signal
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.completion import Completer, Completion, PathCompleter
+    from prompt_toolkit.document import Document
+    from prompt_toolkit.shortcuts import clear
+    from prompt_toolkit.formatted_text import HTML
+    import glob
+    
+    # Load configuration
+    config = load_config()
+    
+    # Set up history file for terminal commands
+    terminal_history_file = os.path.expanduser("~/.ollama_shell_terminal_history")
+    
+    # Create the history file directory if it doesn't exist
+    os.makedirs(os.path.dirname(os.path.expanduser(terminal_history_file)), exist_ok=True)
+    
+    # Define a custom completer that combines command and path completion
+    class TerminalCompleter(Completer):
+        def __init__(self):
+            self.path_completer = PathCompleter()
+            # Common Unix/Linux commands
+            self.common_commands = [
+                'ls', 'cd', 'pwd', 'mkdir', 'rm', 'cp', 'mv', 'cat', 'grep', 'find',
+                'echo', 'touch', 'chmod', 'chown', 'ps', 'kill', 'top', 'df', 'du',
+                'tar', 'zip', 'unzip', 'ssh', 'scp', 'curl', 'wget', 'ping', 'traceroute',
+                'ifconfig', 'netstat', 'python', 'python3', 'pip', 'pip3', 'npm', 'node',
+                'git', 'docker', 'kubectl', 'aws', 'gcloud', 'az', 'terraform', 'ansible',
+                'vim', 'nano', 'less', 'more', 'head', 'tail', 'sort', 'uniq', 'wc',
+                'history', 'man', 'clear', 'exit', 'sudo', 'su', 'whoami', 'date', 'time'
+            ]
+            
+        def get_completions(self, document, complete_event):
+            # Get the text before the cursor
+            text_before_cursor = document.text_before_cursor
+            
+            # If we're at the start of the line or after a pipe/semicolon, suggest commands
+            command_position = True
+            for separator in ['|', ';', '&&', '||', '(', '`']:
+                if separator in text_before_cursor:
+                    last_sep_index = text_before_cursor.rindex(separator)
+                    remaining_text = text_before_cursor[last_sep_index + len(separator):].lstrip()
+                    if ' ' not in remaining_text:
+                        command_position = True
+                        break
+                    else:
+                        command_position = False
+            
+            # If we're at the beginning of a command, suggest from common commands
+            if command_position and not ' ' in text_before_cursor.lstrip():
+                word = text_before_cursor.lstrip()
+                for command in self.common_commands:
+                    if command.startswith(word):
+                        yield Completion(command, start_position=-len(word))
+            
+            # For paths, use the PathCompleter
+            elif ' ' in text_before_cursor or '/' in text_before_cursor:
+                # Get the last word
+                if ' ' in text_before_cursor:
+                    last_word_start = text_before_cursor.rindex(' ') + 1
+                    last_word = text_before_cursor[last_word_start:]
+                else:
+                    last_word = text_before_cursor
+                
+                # Use PathCompleter for paths
+                path_document = Document(last_word, cursor_position=len(last_word))
+                for completion in self.path_completer.get_completions(path_document, complete_event):
+                    yield Completion(completion.text, start_position=-len(last_word))
+    
+    # Set up key bindings
+    kb = KeyBindings()
+    
+    # Create prompt session with history and completion
+    session = PromptSession(
+        history=FileHistory(terminal_history_file),
+        auto_suggest=AutoSuggestFromHistory(),
+        completer=TerminalCompleter(),
+        complete_while_typing=True,
+        key_bindings=kb
+    )
     
     console.print("\n[bold cyan]Terminal Mode[/bold cyan]")
     console.print("[yellow]Type commands to execute them. Type 'exit' to return to the main menu.[/yellow]")
     console.print("[yellow]Press Ctrl+C to interrupt a running command.[/yellow]")
+    console.print("[yellow]Press Up/Down arrows to navigate command history.[/yellow]")
+    console.print("[yellow]Use Tab for command and path completion.[/yellow]")
     console.print("[yellow]Current directory: [green]{0}[/green][/yellow]".format(os.getcwd()))
     
     # Track the current process for handling interrupts
@@ -3848,8 +4310,8 @@ def terminal_mode():
     try:
         while True:
             try:
-                # Get command from user
-                cmd = Prompt.ask("\n[bold green]$[/bold green]")
+                # Get command from user with history support
+                cmd = session.prompt(HTML('\n<b><ansigreen>$</ansigreen></b> '))
                 
                 # Exit terminal mode
                 if cmd.lower() in ['exit', 'quit', 'q']:
@@ -3875,6 +4337,8 @@ def terminal_mode():
                     console.print("[bold cyan]Terminal Mode[/bold cyan]")
                     console.print("[yellow]Type commands to execute them. Type 'exit' to return to the main menu.[/yellow]")
                     console.print("[yellow]Press Ctrl+C to interrupt a running command.[/yellow]")
+                    console.print("[yellow]Press Up/Down arrows to navigate command history.[/yellow]")
+                    console.print("[yellow]Use Tab for command and path completion.[/yellow]")
                     console.print("[yellow]Current directory: [green]{0}[/green][/yellow]".format(os.getcwd()))
                     continue
                 

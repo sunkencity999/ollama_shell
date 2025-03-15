@@ -58,6 +58,76 @@ if ! curl -s http://localhost:11434/api/tags &> /dev/null; then
     fi
 fi
 
+# Load environment variables for integrations
+echo "Loading integration configurations..."
+
+# Load Confluence configuration if available
+if [ -f "Created Files/confluence_config.env" ]; then
+    echo "Loading Confluence configuration..."
+    set -a
+    source "Created Files/confluence_config.env"
+    set +a
+    echo "Confluence configuration loaded successfully!"
+    
+    # Check if Ollama is running and get available models
+    echo "Checking available Ollama models..."
+    OLLAMA_RUNNING=false
+    AVAILABLE_MODELS=""
+    
+    # Try to get available models from Ollama
+    if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+        OLLAMA_RUNNING=true
+        AVAILABLE_MODELS=$(curl -s http://localhost:11434/api/tags | grep -o '"name":"[^"]*"' | cut -d '"' -f 4 | tr '\n' ' ')
+        echo "Available Ollama models: $AVAILABLE_MODELS"
+    else
+        echo "Ollama service not detected. Will check model availability when service starts."
+    fi
+    
+    # Verify the analysis model is set
+    if [ -z "$CONFLUENCE_ANALYSIS_MODEL" ]; then
+        PREFERRED_MODEL="llama3.2:latest"
+        echo "CONFLUENCE_ANALYSIS_MODEL not set in config"
+        
+        # If Ollama is running, check if preferred model is available
+        if [ "$OLLAMA_RUNNING" = true ] && [[ " $AVAILABLE_MODELS " == *" $PREFERRED_MODEL "* ]]; then
+            echo "Using preferred model: $PREFERRED_MODEL"
+            export CONFLUENCE_ANALYSIS_MODEL="$PREFERRED_MODEL"
+        elif [ "$OLLAMA_RUNNING" = true ] && [ ! -z "$AVAILABLE_MODELS" ]; then
+            # Use first available model
+            FIRST_MODEL=$(echo $AVAILABLE_MODELS | awk '{print $1}')
+            echo "Preferred model not available. Using first available model: $FIRST_MODEL"
+            export CONFLUENCE_ANALYSIS_MODEL="$FIRST_MODEL"
+        else
+            # Default to preferred model if Ollama isn't running or no models available
+            echo "Setting default model: $PREFERRED_MODEL (will be verified when Ollama starts)"
+            export CONFLUENCE_ANALYSIS_MODEL="$PREFERRED_MODEL"
+        fi
+    else
+        # Model is set in config, but verify if it's available
+        if [ "$OLLAMA_RUNNING" = true ]; then
+            if [[ " $AVAILABLE_MODELS " == *" $CONFLUENCE_ANALYSIS_MODEL "* ]]; then
+                echo "Using configured model: $CONFLUENCE_ANALYSIS_MODEL"
+            else
+                echo "Configured model '$CONFLUENCE_ANALYSIS_MODEL' not found in available models"
+                
+                # Check if preferred model is available
+                PREFERRED_MODEL="llama3.2:latest"
+                if [[ " $AVAILABLE_MODELS " == *" $PREFERRED_MODEL "* ]]; then
+                    echo "Using preferred model: $PREFERRED_MODEL"
+                    export CONFLUENCE_ANALYSIS_MODEL="$PREFERRED_MODEL"
+                elif [ ! -z "$AVAILABLE_MODELS" ]; then
+                    # Use first available model
+                    FIRST_MODEL=$(echo $AVAILABLE_MODELS | awk '{print $1}')
+                    echo "Using first available model: $FIRST_MODEL"
+                    export CONFLUENCE_ANALYSIS_MODEL="$FIRST_MODEL"
+                fi
+            fi
+        else
+            echo "Using configured model: $CONFLUENCE_ANALYSIS_MODEL (will be verified when Ollama starts)"
+        fi
+    fi
+fi
+
 # Ensure Filesystem MCP Protocol server is available
 echo "Initializing Filesystem MCP Protocol server..."
 # Start the server and wait for it to initialize (with a timeout)

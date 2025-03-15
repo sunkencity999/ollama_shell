@@ -541,13 +541,15 @@ class ConfluenceMCPIntegration:
                     "When using the search_confluence_pages tool:\n"
                     "1. For natural language questions like 'How do I update SSL certificates?' or 'What is Polarion?', "
                     "extract the key terms (e.g., 'SSL certificates', 'Polarion') and use them as the search query.\n"
-                    "2. Do NOT use CQL syntax like 'status:OPEN' or 'type:Page' unless the user explicitly asks for it.\n"
-                    "3. For questions about specific topics, include all relevant terms in the search query.\n"
-                    "4. When searching for information about procedures or how-to guides, include terms like 'guide', 'procedure', 'steps', or 'how to' in your search.\n"
-                    "5. Always prioritize specific technical terms from the user's question in your search query.\n"
-                    "6. The search results will now be automatically analyzed to provide a direct answer to the user's query. "
+                    "2. IMPORTANT: Confluence is NOT Jira! NEVER use JIRA-style query syntax like 'status:OPEN', 'status=OPEN', or any status fields in your Confluence queries.\n"
+                    "3. NEVER use 'type:Page' or 'type=Page' in your queries. Instead, use simple text searches with the key terms.\n"
+                    "4. For Confluence searches, use simple AND/OR operators between terms, like 'Polarion AND SSL certificates'.\n"
+                    "5. For questions about specific topics, include all relevant terms in the search query.\n"
+                    "6. When searching for information about procedures or how-to guides, include terms like 'guide', 'procedure', 'steps', or 'how to' in your search.\n"
+                    "7. Always prioritize specific technical terms from the user's question in your search query.\n"
+                    "8. The search results will now be automatically analyzed to provide a direct answer to the user's query. "
                     "This analysis will extract relevant information from the search results and present it as a concise answer.\n"
-                    "7. You can control whether to analyze results by setting the 'analyze_results' parameter to true or false. "
+                    "9. You can control whether to analyze results by setting the 'analyze_results' parameter to true or false. "
                     "By default, analysis is enabled."
                 )
             }
@@ -1066,14 +1068,72 @@ class ConfluenceMCPIntegration:
                 )
             }
             
-            # Prepare the user message with the query and context
+            # Prepare the user message with the formatted query and context
+            # Store the original query for reference
+            search_results["original_query"] = original_query
+            
             user_message = {
                 "role": "user",
                 "content": f"Question: {original_query}\n\nSearch results from Confluence:\n{context}"
             }
             
-            # Call the LLM to analyze the results
-            model = os.environ.get("CONFLUENCE_ANALYSIS_MODEL", "llama3")  # Default to llama3 if not specified
+            # Get the Ollama API URL
+            ollama_url = os.environ.get("OLLAMA_API_URL", "http://localhost:11434/api")
+            base_url = ollama_url.rstrip('/api')
+            
+            # First check if Ollama service is available
+            try:
+                service_check = requests.get(f"{base_url}/api/version", timeout=2)
+                service_check.raise_for_status()
+                logger.info(f"Ollama service is available: {service_check.json()}")
+                
+                # Check available models
+                try:
+                    models_response = requests.get(f"{base_url}/api/tags", timeout=5)
+                    models_response.raise_for_status()
+                    models_data = models_response.json()
+                    
+                    # Get list of available models
+                    available_models = []
+                    if 'models' in models_data:
+                        available_models = [model.get('name') for model in models_data.get('models', [])]
+                    
+                    if not available_models:
+                        logger.warning(f"No models found in Ollama. Response: {models_data}")
+                        search_results["analysis"] = "Analysis unavailable: No models found in Ollama. Please pull a model first."
+                        return search_results
+                    
+                    # Get the model to use
+                    # First check if a model is specified in settings or environment
+                    model = os.environ.get("CONFLUENCE_ANALYSIS_MODEL", "")
+                    preferred_model = "llama3.2:latest"
+                    
+                    # If no model specified or specified model not available
+                    if not model or model not in available_models:
+                        if model:
+                            logger.warning(f"Model '{model}' not found in available models: {available_models}")
+                        
+                        # Check if preferred model is available
+                        if preferred_model in available_models:
+                            model = preferred_model
+                            logger.info(f"Using preferred model: '{model}'")
+                        else:
+                            # Use the first available model
+                            model = available_models[0]
+                            logger.info(f"Using first available model: '{model}'")
+                    else:
+                        logger.info(f"Using configured model: '{model}'")
+                    
+                except Exception as model_error:
+                    logger.warning(f"Error checking available models: {model_error}")
+                    # Continue with the specified model or default
+                    model = os.environ.get("CONFLUENCE_ANALYSIS_MODEL", "llama3.2:latest")
+                    logger.info(f"Falling back to specified or default model: {model}")
+            
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Ollama service is not available: {e}")
+                search_results["analysis"] = "Analysis unavailable: Ollama service is not running or not accessible."
+                return search_results
             
             # Prepare the request payload
             payload = {
@@ -1082,14 +1142,29 @@ class ConfluenceMCPIntegration:
                 "stream": False
             }
             
+            logger.info(f"Calling Ollama API at: {ollama_url}/chat with model: {model}")
+            
             # Make the request to the Ollama API
-            ollama_url = os.environ.get("OLLAMA_API_URL", "http://localhost:11434/api")
-            response = requests.post(f"{ollama_url}/chat", json=payload)
+            response = requests.post(f"{ollama_url}/chat", json=payload, timeout=30)
             response.raise_for_status()
             
-            # Extract the analysis from the response
+            # Extract the analysis from the response with better error handling
             result = response.json()
-            analysis = result.get("message", {}).get("content", "")
+            analysis = ""
+            
+            # Log the full response for debugging
+            logger.debug(f"Full Ollama API response for analysis: {result}")
+            
+            if "message" in result:
+                message = result.get("message")
+                if isinstance(message, dict) and "content" in message:
+                    analysis = message.get("content", "")
+            elif "response" in result:
+                analysis = result.get("response", "")
+            
+            # If we still don't have an analysis, provide a default message
+            if not analysis:
+                analysis = "Analysis unavailable. Please check if Ollama service is running correctly."
             
             # Add the analysis to the search results
             search_results["analysis"] = analysis
@@ -1296,7 +1371,7 @@ class ConfluenceMCPIntegration:
                     })
                 
                 search_result = {
-                    "search_query": cql,
+                    "search_query": formatted_cql,
                     "total_results": result.get('size', 0),
                     "results": formatted_results
                 }
@@ -1304,7 +1379,7 @@ class ConfluenceMCPIntegration:
                 # If we found results, analyze them if requested
                 if search_result["total_results"] > 0:
                     if analyze_results:
-                        return self._analyze_search_results(search_result, cql)
+                        return self._analyze_search_results(search_result, formatted_cql)
                     else:
                         return search_result
                     
@@ -1318,10 +1393,11 @@ class ConfluenceMCPIntegration:
                         # Pass analyze_results=False to avoid recursive analysis
                         broader_result = self._search_pages(broader_cql, limit, analyze_results=False)
                         if broader_result.get("total_results", 0) > 0:
-                            broader_result["search_query"] = cql  # Keep original query for reference
+                            # Keep the formatted query for consistency
+                            broader_result["original_query"] = cql  # Store original query for reference
                             broader_result["note"] = "No exact matches found. Showing related results instead."
                             if analyze_results:
-                                return self._analyze_search_results(broader_result, cql)
+                                return self._analyze_search_results(broader_result, formatted_cql)
                             else:
                                 return broader_result
                     except Exception as e:
@@ -1343,10 +1419,11 @@ class ConfluenceMCPIntegration:
                                 # Pass analyze_results=False to avoid recursive analysis
                                 keyword_result = self._search_pages(f'text ~ "{keyword}"', limit, analyze_results=False)
                                 if keyword_result.get("total_results", 0) > 0:
-                                    keyword_result["search_query"] = cql  # Keep original query for reference
+                                    # Keep the formatted query for consistency
+                                    keyword_result["original_query"] = cql  # Store original query for reference
                                     keyword_result["note"] = f"No exact matches found. Showing results for '{keyword}' instead."
                                     if analyze_results:
-                                        return self._analyze_search_results(keyword_result, cql)
+                                        return self._analyze_search_results(keyword_result, formatted_cql)
                                     else:
                                         return keyword_result
                             except Exception as e:
@@ -1381,12 +1458,12 @@ class ConfluenceMCPIntegration:
             
         # Check if this is a complex CQL query with parentheses and special syntax
         # If so, we should preserve it rather than reformatting
-        if cql.startswith('(') and ')' in cql and any(op in cql for op in ['title:', 'key:', 'space_key:', 'type:', 'status:']):
+        if cql.startswith('(') and ')' in cql and any(op in cql for op in ['title:', 'key:', 'space_key:', 'type:']):
             # This looks like a structured CQL query from the LLM - extract meaningful terms
             terms = re.findall(r'\b\w{3,}\b', cql)
             # Filter out common CQL keywords
-            cql_keywords = ['title', 'content', 'space', 'key', 'type', 'page', 'blog', 'status', 
-                          'open', 'inprogress', 'and', 'or', 'not', 'label', 'space_key']
+            cql_keywords = ['title', 'content', 'space', 'key', 'type', 'page', 'blog', 
+                          'and', 'or', 'not', 'label', 'space_key']
             meaningful_terms = [t for t in terms if t.lower() not in cql_keywords]
             
             if meaningful_terms:
@@ -1396,11 +1473,42 @@ class ConfluenceMCPIntegration:
                 # If we couldn't extract meaningful terms, use a generic search
                 return 'type = page'
         
-        # First, check if this looks like a CQL status query (which is likely from an LLM not following instructions)
-        if cql.startswith('status:') or 'type:Page' in cql:
-            # This is likely an LLM generating CQL directly - extract any useful terms
-            terms = re.findall(r'\b\w{4,}\b', cql)
-            useful_terms = [t for t in terms if t.lower() not in ['status', 'open', 'type', 'page']]
+        # Check if this looks like a JIRA-style query with status fields (which is not applicable to Confluence)
+        if cql.startswith('status:') or 'status:' in cql or 'status=' in cql:
+            # This is likely an LLM generating JIRA-style CQL - extract any useful terms
+            # Remove status-related parts first
+            clean_query = re.sub(r'status:\s*\w+\s*(AND|OR)?\s*', '', cql, flags=re.IGNORECASE)
+            clean_query = re.sub(r'\(status:\s*\w+\s*(OR|AND)\s*status:\s*\w+\)', '', clean_query, flags=re.IGNORECASE)
+            
+            # Log the cleaned query
+            logger.info(f"Removed status fields from query, new query: {clean_query}")
+            
+            # Extract meaningful terms
+            terms = re.findall(r'\b\w{4,}\b', clean_query)
+            useful_terms = [t for t in terms if t.lower() not in ['status', 'open', 'closed', 'type', 'page', 'title']]
+            
+            if useful_terms:
+                # Use these terms instead of the raw CQL
+                logger.info(f"Extracted useful terms from JIRA-style query: {useful_terms}")
+                return f'text ~ "{" ".join(useful_terms)}"'
+            else:
+                # Try to extract title terms if present
+                title_match = re.search(r'title:\s*([\w\s]+)', clean_query, re.IGNORECASE)
+                if title_match:
+                    title_term = title_match.group(1).strip()
+                    logger.info(f"Using title term from query: {title_term}")
+                    return f'title ~ "{title_term}"'
+                else:
+                    # Fallback to a general search
+                    logger.info("No useful terms found, using general page search")
+                    return 'type = page'
+                    
+        # Also check for type:Page which is common in LLM-generated queries
+        elif 'type:Page' in cql or 'type=Page' in cql:
+            # Extract any useful terms
+            clean_query = re.sub(r'type:\s*Page\s*(AND|OR)?\s*', '', cql, flags=re.IGNORECASE)
+            terms = re.findall(r'\b\w{4,}\b', clean_query)
+            useful_terms = [t for t in terms if t.lower() not in ['type', 'page']]
             
             if useful_terms:
                 # Use these terms instead of the raw CQL
@@ -1527,8 +1635,30 @@ class ConfluenceMCPIntegration:
             logger.info(f"Complex CQL query detected, using as is: {cql}")
             return cql
                 
-        # Check for square brackets which indicate Confluence Server CQL syntax
+        # Check for square brackets which indicate Confluence Server CQL syntax or special operators
         if '[' in cql and ']' in cql:
+            # First, check for [+] style syntax which is invalid in Confluence CQL
+            if '[+]' in cql:
+                # This is likely an LLM-generated query with incorrect syntax
+                # Extract terms enclosed in quotes
+                terms = re.findall(r'"([^"]+)"', cql)
+                
+                if terms:
+                    logger.info(f"Extracted terms from [+] style query: {terms}")
+                    # Join terms with AND for better search results
+                    return ' AND '.join([f'text ~ "{term}"' for term in terms])
+                else:
+                    # If no quoted terms, try to extract meaningful words
+                    clean_text = re.sub(r'[\[\]\+]', ' ', cql).strip()
+                    words = re.findall(r'\b\w{3,}\b', clean_text)
+                    meaningful_words = [w for w in words if w.lower() not in ['and', 'or', 'not']]
+                    
+                    if meaningful_words:
+                        logger.info(f"Extracted words from [+] style query: {meaningful_words}")
+                        return ' AND '.join([f'text ~ "{word}"' for word in meaningful_words])
+                    else:
+                        return 'type = page'
+            
             # Look for patterns like [title] ~ "term" or [content] ~ "term"
             match = re.search(r'\[(\w+)\]\s*~\s*"([^"]+)"', cql)
             if match:
