@@ -1067,7 +1067,7 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
             current_prompt += f"\n\nAvailable document context:\n{chat_state.document_context}"
         return current_prompt
 
-    if not system_prompt and config["stored_prompts"]:
+    if not system_prompt and config["stored_prompts"] and isinstance(config["stored_prompts"], dict):
         # Offer to use a stored prompt
         console.print("\n[bold yellow]Stored System Prompts[/bold yellow]")
         prompts = list(config["stored_prompts"].items())
@@ -2740,62 +2740,61 @@ def interactive_config():
                         model_choice = Prompt.ask("\nSelect model number", default="1")
                         if model_choice.isdigit() and 1 <= int(model_choice) <= len(models):
                             current_config[key] = models[int(model_choice) - 1]
-            elif CONFLUENCE_MCP_AVAILABLE and choice_num == len(config_items) + 1:
-                # Configure Confluence settings
-                console.print("\n[cyan]Confluence Configuration[/cyan]")
-                console.print("You'll need your Confluence Cloud URL and API token to proceed.")
-                console.print("You can generate an API token at https://id.atlassian.com/manage-profile/security/api-tokens")
-                
-                confluence_url = Prompt.ask("Enter your Confluence Cloud URL (e.g., https://your-domain.atlassian.net)")
-                confluence_email = Prompt.ask("Enter your Confluence email address")
-                confluence_token = Prompt.ask("Enter your Confluence API token", password=True)
-                
-                # Save configuration
-                if save_confluence_config(confluence_url, confluence_token, confluence_email):
-                    console.print("[green]Confluence configuration saved successfully![/green]")
-                else:
-                    console.print("[red]Failed to save Confluence configuration.[/red]")
+                elif CONFLUENCE_MCP_AVAILABLE and choice_num == len(config_items) + 1:
+                    # Configure Confluence settings
+                    console.print("\n[cyan]Confluence Configuration[/cyan]")
+                    console.print("You'll need your Confluence Cloud URL and API token to proceed.")
+                    console.print("You can generate an API token at https://id.atlassian.com/manage-profile/security/api-tokens")
+                    
+                    confluence_url = Prompt.ask("Enter your Confluence Cloud URL (e.g., https://your-domain.atlassian.net)")
+                    confluence_email = Prompt.ask("Enter your Confluence email address")
+                    confluence_token = Prompt.ask("Enter your Confluence API token", password=True)
+                    
+                    # Save configuration
+                    if save_confluence_config(confluence_url, confluence_token, confluence_email):
+                        console.print("[green]Confluence configuration saved successfully![/green]")
+                    else:
+                        console.print("[red]Failed to save Confluence configuration.[/red]")
             
-            elif JIRA_MCP_AVAILABLE and choice_num == (len(config_items) + 1 + (1 if CONFLUENCE_MCP_AVAILABLE else 0)):
-                # Configure Jira settings
-                console.print("\n[cyan]Jira Configuration[/cyan]")
-                console.print("You'll need your Jira URL and API token to proceed.")
-                console.print("You can generate an API token at https://id.atlassian.com/manage-profile/security/api-tokens")
-                
-                jira_url = Prompt.ask("Enter your Jira URL (e.g., https://your-domain.atlassian.net)")
-                jira_email = Prompt.ask("Enter your Jira email address")
-                jira_token = Prompt.ask("Enter your Jira API token", password=True)
-                
-                # Save configuration
-                if save_jira_config(jira_url, jira_token, jira_email):
-                    console.print("[green]Jira configuration saved successfully![/green]")
-                else:
-                    console.print("[red]Failed to save Jira configuration.[/red]")
+                elif JIRA_MCP_AVAILABLE and choice_num == (len(config_items) + 1 + (1 if CONFLUENCE_MCP_AVAILABLE else 0)):
+                    # Configure Jira settings
+                    console.print("\n[cyan]Jira Configuration[/cyan]")
+                    console.print("You'll need your Jira URL and API token to proceed.")
+                    console.print("You can generate an API token at https://id.atlassian.com/manage-profile/security/api-tokens")
+                    
+                    jira_url = Prompt.ask("Enter your Jira URL (e.g., https://your-domain.atlassian.net)")
+                    jira_email = Prompt.ask("Enter your Jira email address")
+                    jira_token = Prompt.ask("Enter your Jira API token", password=True)
+                    
+                    # Save configuration
+                    if save_jira_config(jira_url, jira_token, jira_email):
+                        console.print("[green]Jira configuration saved successfully![/green]")
+                    else:
+                        console.print("[red]Failed to save Jira configuration.[/red]")
             
-            elif isinstance(current_value, bool):
-                current_config[key] = not current_value
-                console.print(f"\n[green]{key} set to {current_config[key]}[/green]")
+                elif isinstance(current_value, bool):
+                    current_config[key] = not current_value
+                    console.print(f"\n[green]{key} set to {current_config[key]}[/green]")
             
-            elif isinstance(current_value, (int, float)):
-                if key == "temperature":
-                    new_value = Prompt.ask(f"\nEnter new {key} (0.0-1.0)", default=str(current_value))
-                    try:
-                        current_config[key] = max(0.0, min(1.0, float(new_value)))
-                    except ValueError:
-                        console.print("[red]Invalid value. Must be between 0.0 and 1.0[/red]")
-                else:
+                elif isinstance(current_value, (int, float)):
+                    if key == "temperature":
+                        new_value = Prompt.ask(f"\nEnter new {key} (0.0-1.0)", default=str(current_value))
+                        try:
+                            current_config[key] = max(0.0, min(1.0, float(new_value)))
+                        except ValueError:
+                            console.print("[red]Invalid value. Must be between 0.0 and 1.0[/red]")
+                    else:
+                        new_value = Prompt.ask(f"\nEnter new {key}", default=str(current_value))
+                        try:
+                            current_config[key] = int(new_value) if isinstance(current_value, int) else float(new_value)
+                        except ValueError:
+                            console.print("[red]Invalid value[/red]")
+            
+                else:  # string values
                     new_value = Prompt.ask(f"\nEnter new {key}", default=str(current_value))
-                    try:
-                        current_config[key] = int(new_value) if isinstance(current_value, int) else float(new_value)
-                    except ValueError:
-                        console.print("[red]Invalid value[/red]")
+                    current_config[key] = new_value
             
-            else:  # string values
-                new_value = Prompt.ask(f"\nEnter new {key}", default=str(current_value))
-                current_config[key] = new_value
-            
-            Prompt.ask("\n[yellow]Press Enter to continue[/yellow]")
-        Prompt.ask("\n[yellow]Press Enter to continue[/yellow]")
+                Prompt.ask("\n[yellow]Press Enter to continue[/yellow]")
 
 def manage_prompts():
     """Manage stored system prompts"""
@@ -2806,8 +2805,13 @@ def manage_prompts():
         # Display current prompts
         console.print("\n[bold yellow]Stored System Prompts[/bold yellow]")
         config = load_config()
-        if not config["stored_prompts"]:
+        # Ensure stored_prompts is a dictionary
+        if not config["stored_prompts"] or not isinstance(config["stored_prompts"], dict):
             console.print("[dim]No stored prompts. Add one to get started![/dim]")
+            # Initialize as empty dict if it's not a dict
+            if not isinstance(config["stored_prompts"], dict):
+                config["stored_prompts"] = {}
+                save_config(config)
         else:
             table = Table(show_header=True)
             table.add_column("Name", style="cyan")
