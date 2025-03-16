@@ -8,6 +8,7 @@ import typer
 import requests
 import sys
 import base64
+import asyncio
 from io import BytesIO
 from PIL import Image
 import mimetypes
@@ -39,6 +40,13 @@ import pyperclip
 from bs4 import BeautifulSoup
 import time
 import re
+
+# Import Agentic Assistant module
+try:
+    from agentic_assistant import agentic_assistant_mode, handle_agentic_assistant_task, display_agentic_assistant_result
+    AGENTIC_ASSISTANT_AVAILABLE = True
+except ImportError:
+    AGENTIC_ASSISTANT_AVAILABLE = False
 
 # Import vector database and embedding libraries
 try:
@@ -92,6 +100,13 @@ try:
     JIRA_MCP_AVAILABLE = True
 except ImportError:
     JIRA_MCP_AVAILABLE = False
+
+# Import Agentic Mode integration
+try:
+    from ollama_shell_agentic import handle_agentic_nl_command, display_agentic_result, agentic_mode, check_agentic_installation, install_agentic_mode, configure_agentic_mode
+    AGENTIC_AVAILABLE = True
+except ImportError:
+    AGENTIC_AVAILABLE = False
 
 app = typer.Typer()
 console = Console(
@@ -2422,6 +2437,18 @@ def help():
         console.print("    [green]/fsnl create a text file named notes.txt with my meeting agenda[/green]")
         console.print("    [green]/fsnl find all images in my downloads folder[/green]")
     
+    # OpenManus agentic task completion
+    if AGENTIC_AVAILABLE:
+        console.print("\n[bold cyan]Agentic Task Completion:[/bold cyan]")
+        console.print("  [green]/agentic [task][/green] - Execute complex tasks using natural language")
+        console.print("  [green]/agentic --mode (-m)[/green] - Enter interactive agentic mode")
+        console.print("  [green]/agentic --install (-i)[/green] - Install OpenManus dependencies")
+        console.print("  [green]/agentic --configure (-c)[/green] - Configure OpenManus for Ollama")
+        console.print("  [green]/agentic --model [model][/green] - Specify Ollama model to use (default: llama3)")
+        console.print("  [yellow]Examples:[/yellow]")
+        console.print("    [green]/agentic Create a Python script that downloads images from a website[/green]")
+        console.print("    [green]/agentic Find all PDF files in my documents and summarize them[/green]")
+    
     console.print("  Supported formats: PDF, DOCX, TXT, code files, images (with vision models)")
     console.print("  [green]/create [filename] [content][/green] - Create a file with specified content")
     console.print("  [green]/create [request] and save to [filename][/green] - Generate and save content")
@@ -2702,6 +2729,21 @@ def interactive_config():
             if CONFLUENCE_MCP_AVAILABLE:
                 jira_option_number += 1
             table.add_row(f"[green]{jira_option_number}[/green]", "jira_settings", status)
+            
+        # Add Agentic Mode configuration option if available
+        if AGENTIC_AVAILABLE:
+            is_installed, is_configured, _ = check_agentic_installation()
+            status = "[green]Configured[/green]" if is_configured else "[red]Not configured[/red]"
+            if not is_installed:
+                status = "[red]Not installed[/red]"
+            
+            agentic_option_number = len(config_items) + 1
+            if CONFLUENCE_MCP_AVAILABLE:
+                agentic_option_number += 1
+            if JIRA_MCP_AVAILABLE:
+                agentic_option_number += 1
+                
+            table.add_row(f"[green]{agentic_option_number}[/green]", "agentic_settings", status)
         
         console.print(table)
         console.print("\n[cyan]Options:[/cyan]")
@@ -2713,6 +2755,13 @@ def interactive_config():
             if CONFLUENCE_MCP_AVAILABLE:
                 jira_option_number += 1
             console.print(f"[green]{jira_option_number}[/green]: Configure Jira")
+        if AGENTIC_AVAILABLE:
+            agentic_option_number = len(config_items) + 1
+            if CONFLUENCE_MCP_AVAILABLE:
+                agentic_option_number += 1
+            if JIRA_MCP_AVAILABLE:
+                agentic_option_number += 1
+            console.print(f"[green]{agentic_option_number}[/green]: Configure Agentic Mode")
         console.print("[green]s[/green]: Save and exit")
         console.print("[green]x[/green]: Exit without saving")
         
@@ -2769,8 +2818,21 @@ def interactive_config():
                     # Save configuration
                     if save_jira_config(jira_url, jira_token, jira_email):
                         console.print("[green]Jira configuration saved successfully![/green]")
+                elif AGENTIC_AVAILABLE and choice_num == (len(config_items) + 1 + 
+                                                           (1 if CONFLUENCE_MCP_AVAILABLE else 0) + 
+                                                           (1 if JIRA_MCP_AVAILABLE else 0)):
+                    # Configure Agentic Mode settings
+                    console.print("\n[cyan]Agentic Mode Configuration[/cyan]")
+                    
+                    # Get the default model from config
+                    model = current_config.get("default_model", "llama3")
+                    model_choice = Prompt.ask("Enter the Ollama model to use for Agentic Mode", default=model)
+                    
+                    if configure_agentic_mode(model_choice):
+                        console.print("[green]Agentic mode configuration saved successfully![/green]")
                     else:
-                        console.print("[red]Failed to save Jira configuration.[/red]")
+                        console.print("[red]Failed to configure Agentic mode.[/red]")
+
             
                 elif isinstance(current_value, bool):
                     current_config[key] = not current_value
@@ -3076,6 +3138,14 @@ def display_menu():
     # Add Jira mode if available
     if JIRA_MCP_AVAILABLE:
         commands["jira"] = jira_mode
+        
+    # Add agentic task completion if available
+    if AGENTIC_AVAILABLE:
+        commands["agentic"] = lambda: asyncio.run(agentic_mode())
+        
+    # Add agentic assistant if available
+    if AGENTIC_ASSISTANT_AVAILABLE:
+        commands["assistant"] = lambda: asyncio.run(agentic_assistant_mode())
     
     # Add fine-tuning command if available
     if FINETUNE_AVAILABLE:
@@ -3112,6 +3182,16 @@ def display_menu():
     # Add Jira option if available
     if JIRA_MCP_AVAILABLE:
         menu_items.append((str(menu_option_number), "jira", "Access Jira issue tracking"))
+        menu_option_number += 1
+    
+    # Add agentic task completion if available
+    if AGENTIC_AVAILABLE:
+        menu_items.append((str(menu_option_number), "agentic", "Agentic Task Completion"))
+        menu_option_number += 1
+        
+    # Add agentic assistant if available
+    if AGENTIC_ASSISTANT_AVAILABLE:
+        menu_items.append((str(menu_option_number), "assistant", "Agentic Assistant"))
         menu_option_number += 1
     
     # Add fine-tuning option if available
@@ -3604,6 +3684,96 @@ def jira(
         # Display the result
         display_jira_result(result)
         
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+
+@app.command()
+def agentic(
+    command: str = typer.Argument(None, help="Natural language task to execute"),
+    mode: bool = typer.Option(False, "--mode", "-m", help="Enter interactive agentic mode"),
+    install: bool = typer.Option(False, "--install", "-i", help="Install OpenManus"),
+    configure: bool = typer.Option(False, "--configure", "-c", help="Configure OpenManus for Ollama"),
+    model: str = typer.Option(None, "--model", help="Ollama model to use for task execution")
+):
+    """Execute complex tasks using natural language or enter agentic mode
+    
+    This command allows you to use the OpenManus agent framework to perform complex tasks
+    such as web browsing, file operations, and more, all using local LLMs via Ollama.
+    """
+    try:
+        if not AGENTIC_AVAILABLE:
+            console.print("[red]Agentic Mode integration is not available. Please check your installation.[/red]")
+            console.print("[yellow]Please ensure the required dependencies are installed.[/yellow]")
+            return
+        
+        # Check if we need to install OpenManus
+        if install:
+            console.print("[bold]Installing OpenManus...[/bold]")
+            method = Prompt.ask("Choose installation method", choices=["uv", "conda"], default="uv")
+            if install_openmanus(method):
+                console.print("[green]OpenManus installed successfully![/green]")
+            else:
+                console.print("[red]Failed to install OpenManus. Please check the logs for details.[/red]")
+            return
+        
+        # Check if we need to configure OpenManus
+        if configure:
+            # Get default model from config if not specified
+            config = load_config()
+            if model is None:
+                model = config.get("default_model", "llama3")
+                
+            console.print(f"[bold]Configuring OpenManus for Ollama using model: {model}...[/bold]")
+            if configure_openmanus(model):
+                console.print(f"[green]OpenManus configured successfully to use Ollama model: {model}[/green]")
+            else:
+                console.print("[red]Failed to configure OpenManus. Please check the logs for details.[/red]")
+            return
+        
+        # Check if we should enter interactive mode
+        if mode:
+            # Use asyncio to run the openmanus_mode function
+            try:
+                asyncio.run(openmanus_mode())
+            except Exception as e:
+                console.print(f"[red]Error in OpenManus mode: {str(e)}[/red]")
+            return
+        
+        # Execute a single command if provided
+        if command:
+            console.print(f"[bold]Executing task:[/bold] {command}")
+            
+            # Get config for model if not specified
+            config = load_config()
+            if model is None:
+                model = config.get("default_model", "llama3")
+            
+            # Display progress spinner while executing command
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[bold blue]Executing task...[/bold blue]"),
+                transient=True
+            ) as progress:
+                progress.add_task("Processing", total=None)
+                
+                # Execute the command
+                try:
+                    result = asyncio.run(handle_openmanus_nl_command(command, model))
+                    # Display the result
+                    display_openmanus_result(result)
+                except Exception as e:
+                    console.print(f"[red]Error executing task: {str(e)}[/red]")
+            return
+        
+        # If no subcommand or command provided, show help
+        console.print(
+            "[yellow]Please provide a task to execute or use one of the following options:[/yellow]\n"
+            "  --mode (-m): Enter interactive agentic mode\n"
+            "  --install (-i): Install OpenManus\n"
+            "  --configure (-c): Configure OpenManus for Ollama\n"
+            "\nExample: ollama_shell.py agentic \"Create a Python script that downloads images from a website\"\n"
+            "Example: ollama_shell.py agentic --mode"
+        )
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")
 

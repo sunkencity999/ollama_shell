@@ -1,0 +1,624 @@
+import asyncio
+import logging
+import os
+import re
+import json
+import datetime
+from typing import Dict, List, Optional, Any
+import aiohttp
+from bs4 import BeautifulSoup
+from agentic_ollama import AgenticOllama
+
+# Set up logging
+logger = logging.getLogger("local_web_integration")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+class LocalWebIntegration:
+    """
+    Integration for web browsing using local resources.
+    """
+    
+    def __init__(self, model: Optional[str] = None):
+        """
+        Initialize the LocalWebIntegration with optional model name.
+        
+        Args:
+            model: Optional name of the model to use for local queries
+        """
+        # Initialize with AgenticOllama without model parameter
+        self.agentic_ollama = AgenticOllama()
+        logger.info(f"Initialized Local Web Integration with model: {self.agentic_ollama.model}")
+    
+    async def _query_local_model(self, prompt: str) -> str:
+        """
+        Query the local Ollama model with a prompt.
+        
+        Args:
+            prompt: The prompt to send to the model
+            
+        Returns:
+            The model's response as a string
+        """
+        try:
+            response = await self.agentic_ollama._generate_completion(prompt)
+            return response.get("content", "")
+        except Exception as e:
+            logger.error(f"Error querying local model: {e}")
+            return f"Error: {str(e)}"
+    
+    async def browse_website(self, url: str) -> Dict[str, Any]:
+        """
+        Browse a website and extract its content using local resources.
+        
+        Args:
+            url: The URL to browse
+            
+        Returns:
+            Dict containing the browsing results
+        """
+        try:
+            # Set custom headers to avoid 401/403 errors
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Cache-Control': 'max-age=0'
+            }
+            
+            # Fetch the webpage content
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=10) as response:
+                    if response.status != 200:
+                        return {
+                            "success": False,
+                            "error": f"Failed to fetch URL: HTTP {response.status}"
+                        }
+                    
+                    html = await response.text()
+            
+            # Parse the HTML
+            soup = BeautifulSoup(html, 'html.parser')
+            
+            # Extract title
+            title = soup.title.string if soup.title else "No title found"
+            
+            # Extract headlines directly using common headline patterns
+            headlines = []
+            
+            # Look for headline elements with common patterns
+            headline_elements = []
+            headline_elements.extend(soup.find_all(['h1', 'h2', 'h3']))
+            headline_elements.extend(soup.find_all(class_=lambda c: c and any(x in c.lower() for x in ['headline', 'title', 'heading'])))
+            headline_elements.extend(soup.find_all(id=lambda i: i and any(x in i.lower() for x in ['headline', 'title', 'heading'])))
+            
+            # Extract text from headline elements
+            for element in headline_elements[:15]:  # Limit to first 15 potential headlines
+                text = element.get_text().strip()
+                if text and len(text) > 15 and len(text) < 200:  # Filter out too short or too long texts
+                    headlines.append(text)
+            
+            # Remove duplicates while preserving order
+            unique_headlines = []
+            for headline in headlines:
+                if headline not in unique_headlines:
+                    unique_headlines.append(headline)
+            
+            # Extract main content (simplified approach)
+            # Remove script and style elements
+            for script in soup(["script", "style"]):
+                script.extract()
+            
+            # Get text
+            text = soup.get_text()
+            
+            # Break into lines and remove leading and trailing space
+            lines = (line.strip() for line in text.splitlines())
+            # Break multi-headlines into a line each
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            # Drop blank lines
+            content = '\n'.join(chunk for chunk in chunks if chunk)
+            
+            # Truncate if too long
+            max_length = 5000
+            if len(content) > max_length:
+                content = content[:max_length] + "...[content truncated]"
+            
+            return {
+                "success": True,
+                "title": title,
+                "content": content,
+                "headlines": unique_headlines[:10],  # Return top 10 headlines
+                "url": url
+            }
+            
+        except Exception as e:
+            logger.error(f"Error browsing website: {e}")
+            return {
+                "success": False,
+                "error": f"Error browsing website: {str(e)}"
+            }
+    
+    async def gather_headlines(self, sites: List[Dict[str, str]], count: int = 5, topic: str = "general") -> Dict[str, Any]:
+        """
+        Gather headlines from specified sites using local resources.
+        
+        Args:
+            sites: List of dictionaries containing name and url for each site
+            count: Number of headlines to gather per site
+            topic: Topic of headlines to gather (e.g., "news", "gaming", "tech")
+            
+        Returns:
+            Dict containing the gathered headlines
+        """
+        try:
+            all_headlines = []
+            
+            for site in sites:
+                site_name = site["name"]
+                site_url = site["url"]
+                
+                # Fetch the website content
+                browse_result = await self.browse_website(site_url)
+                
+                if browse_result.get("success", False):
+                    # First try to use the directly extracted headlines
+                    direct_headlines = browse_result.get("headlines", [])
+                    if direct_headlines:
+                        headlines = [f"{site_name}: {headline}" for headline in direct_headlines[:count]]
+                        all_headlines.extend(headlines)
+                        continue
+                    
+                    # If no direct headlines, fall back to using the model
+                    content = browse_result.get("content", "")
+                    
+                    # Use the local model to extract headlines
+                    prompt = f"""
+                    Extract exactly {count} {topic} headlines from this content from {site_name}. 
+                    Format each headline on a new line prefixed with '- '.
+                    Only extract actual headlines, not navigation items or other text.
+                    
+                    Content:
+                    {content[:2000]}  # Limit content to avoid token limits
+                    """
+                    
+                    headlines_text = await self._query_local_model(prompt)
+                    
+                    # Process the headlines
+                    headlines = [
+                        f"{site_name}: {line[2:].strip()}" 
+                        for line in headlines_text.split('\n') 
+                        if line.strip().startswith('- ')
+                    ]
+                    
+                    # If no headlines were found with the dash format, try to extract any reasonable headlines
+                    if not headlines:
+                        lines = headlines_text.split('\n')
+                        headlines = [
+                            f"{site_name}: {line.strip()}" 
+                            for line in lines 
+                            if line.strip() and len(line.strip()) > 15 and not line.strip().startswith('Content:')
+                        ][:count]
+                    
+                    # Limit to requested count
+                    headlines = headlines[:count]
+                    all_headlines.extend(headlines)
+                else:
+                    all_headlines.append(f"{site_name}: Failed to fetch headlines - {browse_result.get('error', 'Unknown error')}")
+            
+            # If we still don't have any valid headlines, create a fallback
+            if not all_headlines or all(headline.endswith("Unknown error") for headline in all_headlines):
+                all_headlines = [
+                    f"Unable to extract {topic} headlines automatically. Please visit the sites directly for the latest information."
+                ]
+            
+            return {
+                "success": True,
+                "headlines": all_headlines,
+                "count": len(all_headlines)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error gathering headlines: {e}")
+            return {
+                "success": False,
+                "error": f"Error gathering headlines: {str(e)}"
+            }
+    
+    async def save_to_file(self, content: str, filename: str) -> Dict[str, Any]:
+        """
+        Save content to a file in the Documents folder by default.
+        
+        Args:
+            content: The content to save
+            filename: The filename to save to
+            
+        Returns:
+            Dict indicating success or failure
+        """
+        try:
+            # Add timestamp
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            content_with_timestamp = f"Generated on: {timestamp}\n\n{content}"
+            
+            # Ensure we're using an absolute path for the file
+            if not os.path.isabs(filename):
+                # Save to Documents folder by default
+                documents_path = os.path.expanduser("~/Documents")
+                filename = os.path.join(documents_path, filename)
+            
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            
+            # Write to file
+            with open(filename, 'w') as f:
+                f.write(content_with_timestamp)
+            
+            return {
+                "success": True,
+                "filename": filename,
+                "message": f"Content saved to {filename}"
+            }
+        except Exception as e:
+            logger.error(f"Error saving to file: {e}")
+            return {
+                "success": False,
+                "error": f"Error saving to file: {str(e)}"
+            }
+    
+    async def execute_web_task(self, task: str) -> Dict[str, Any]:
+        """
+        Execute a web-based task described in natural language using local resources.
+        
+        Args:
+            task: Natural language description of the web task to execute
+            
+        Returns:
+            Dict containing the execution results
+        """
+        # Handle specific types of tasks
+        task_lower = task.lower()
+        
+        # Extract filename if specified
+        filename = None
+        filename_match = re.search(r'save\s+(?:to|in|as)\s+[\'"]?([^\'"]+\.txt)[\'"]?', task_lower)
+        if filename_match:
+            filename = filename_match.group(1)
+        
+        # Information gathering tasks (news headlines, web research, etc.)
+        if any(word in task_lower for word in ["gather", "collect", "get", "find", "search", "visit"]):
+            # Extract the main topic from the task
+            # First, try to identify predefined topics
+            content_type = "general"
+            
+            # First, check for specific known topics directly in the task
+            specific_topic = None
+            
+            # Direct topic detection for common topics
+            if "fishing" in task_lower:
+                specific_topic = "fishing"
+            elif "cooking" in task_lower:
+                specific_topic = "cooking"
+            elif "travel" in task_lower:
+                specific_topic = "travel"
+            elif "sports" in task_lower:
+                specific_topic = "sports"
+            elif "health" in task_lower:
+                specific_topic = "health"
+            
+            # If no direct match, try pattern matching
+            if not specific_topic:
+                # Pattern 1: Look for phrases like "about fishing" or "on fishing"
+                topic_match = re.search(r'(?:about|on|for|related to|regarding)\s+([a-z]+(?:\s+[a-z]+)?)', task_lower)
+                if topic_match:
+                    specific_topic = topic_match.group(1).strip()
+                
+                # Pattern 2: Look for "X websites" where X is the topic
+                if not specific_topic:
+                    topic_match = re.search(r'([a-z]+)\s+websites', task_lower)
+                    if topic_match:
+                        specific_topic = topic_match.group(1).strip()
+                
+                # Pattern 3: Look for "top five X" or "top 5 X" patterns
+                if not specific_topic:
+                    topic_match = re.search(r'top\s+(?:five|5|ten|10)\s+([a-z]+)(?:\s+websites)?', task_lower)
+                    if topic_match:
+                        specific_topic = topic_match.group(1).strip()
+            
+            # If topic is "web" but the task contains a specific topic, use that instead
+            if (not specific_topic or specific_topic == "web") and "fishing" in task_lower:
+                specific_topic = "fishing"
+            
+            # First, check for explicit content type mentions regardless of headline/information request
+            # Check for tech content first
+            if "tech" in task_lower or "technology" in task_lower:
+                content_type = "tech"
+                # Default filename for tech
+                if not filename:
+                    filename = "techSummary.txt"
+                
+                # Define major tech sites
+                sites = [
+                    {"name": "The Verge", "url": "https://www.theverge.com/"},
+                    {"name": "TechCrunch", "url": "https://techcrunch.com/"},
+                    {"name": "Wired", "url": "https://www.wired.com/"},
+                    {"name": "Ars Technica", "url": "https://arstechnica.com/"},
+                    {"name": "CNET", "url": "https://www.cnet.com/"}
+                ]
+            # Check for gaming content
+            elif any(term in task_lower for term in ["gaming", "games", "game", "gamer", "video game", "video games", "gamers"]):
+                content_type = "gaming"
+                # Default filename for gaming
+                if not filename:
+                    filename = "gameSummary.txt"
+                
+                # Define major gaming sites
+                sites = [
+                    {"name": "IGN", "url": "https://www.ign.com/"},
+                    {"name": "GameSpot", "url": "https://www.gamespot.com/"},
+                    {"name": "Polygon", "url": "https://www.polygon.com/"},
+                    {"name": "Kotaku", "url": "https://kotaku.com/"},
+                    {"name": "PC Gamer", "url": "https://www.pcgamer.com/"}
+                ]
+            # Check for news content
+            elif "news" in task_lower or ("headlines" in task_lower and not specific_topic):
+                content_type = "news"
+                # Default filename for news
+                if not filename:
+                    filename = "newsSummary.txt"
+                
+                # Define major news sites
+                sites = [
+                    {"name": "BBC News", "url": "https://www.bbc.com/news"},
+                    {"name": "CNN", "url": "https://www.cnn.com/"},
+                    {"name": "The Guardian", "url": "https://www.theguardian.com/international"},
+                    {"name": "AP News", "url": "https://apnews.com/"},
+                    {"name": "Al Jazeera", "url": "https://www.aljazeera.com/"}
+                ]
+            # Handle custom topics
+            elif specific_topic:
+                content_type = specific_topic
+                # Create a custom filename based on the topic
+                if not filename:
+                    filename = f"{specific_topic.capitalize()}Summary.txt"
+                    
+                # Use the local model to determine relevant sites for this topic
+                prompt = f"I need to gather information about {specific_topic}. What are the top 5 websites I should visit to gather information about {specific_topic}? Format your response as a simple list of URLs."
+                
+                # Get website suggestions from local model
+                websites_result = await self._query_local_model(prompt)
+                
+                # Process the result to extract websites
+                urls = re.findall(r'https?://[^\s\"\)\(\,]+', websites_result)
+                
+                if not urls:
+                    # Try a more lenient pattern if no URLs found
+                    urls = re.findall(r'(?:www\.)?([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', websites_result)
+                    # Add http:// prefix if missing
+                    urls = [f"https://{url}" if not url.startswith('http') else url for url in urls]
+                
+                if urls and len(urls) >= 2:  # Ensure we have at least 2 valid URLs
+                    # Create sites list from extracted URLs
+                    sites = []
+                    for url in urls[:5]:  # Limit to top 5
+                        # Clean up URL
+                        url = url.strip('.,"\'\'()[]')
+                        if not (url.startswith('http://') or url.startswith('https://')):
+                            url = 'https://' + url
+                            
+                        # Extract domain name for site name
+                        domain_match = re.search(r'https?://(?:www\.)?([^/]+)', url)
+                        site_name = domain_match.group(1) if domain_match else "Website"
+                        sites.append({"name": site_name, "url": url})
+                else:
+                    # Fallback to predefined sites for the topic if we couldn't get good URLs
+                    if specific_topic == "fishing":
+                        sites = [
+                            {"name": "Field & Stream", "url": "https://www.fieldandstream.com/"},
+                            {"name": "In-Fisherman", "url": "https://www.in-fisherman.com/"},
+                            {"name": "Bassmaster", "url": "https://www.bassmaster.com/"},
+                            {"name": "Sport Fishing Magazine", "url": "https://www.sportfishingmag.com/"},
+                            {"name": "Fishing Tackle Retailer", "url": "https://fishingtackleretailer.com/"}
+                        ]
+                    else:
+                        # If we can't get URLs and don't have a fallback, use general information sites
+                        sites = [
+                            {"name": "Wikipedia", "url": f"https://en.wikipedia.org/wiki/{specific_topic}"},
+                            {"name": "Reddit", "url": f"https://www.reddit.com/search/?q={specific_topic}"},
+                            {"name": "Google News", "url": f"https://news.google.com/search?q={specific_topic}"},
+                            {"name": "YouTube", "url": f"https://www.youtube.com/results?search_query={specific_topic}"},
+                            {"name": "Twitter", "url": f"https://twitter.com/search?q={specific_topic}"}
+                        ]
+            # Default case for general information
+            else:
+                # For other topics, use the local model to determine relevant sites
+                content_type = "information"
+                # Default filename for general information
+                if not filename:
+                    filename = "infoSummary.txt"
+                
+                # Use the local model to determine what information to gather
+                prompt = f"I need to gather information about: '{task}'. What are the top 5 websites I should visit to gather this information? Please provide the full URLs."
+                
+                # Get website suggestions from local model
+                websites_result = await self._query_local_model(prompt)
+                
+                # Process the result to extract websites
+                urls = re.findall(r'https?://[^\s]+', websites_result)
+                
+                if urls:
+                    # Create sites list from extracted URLs
+                    sites = []
+                    for url in urls[:5]:  # Limit to top 5
+                        # Extract domain name for site name
+                        domain_match = re.search(r'https?://(?:www\.)?([^/]+)', url)
+                        site_name = domain_match.group(1) if domain_match else "Website"
+                        sites.append({"name": site_name, "url": url})
+                else:
+                    return {
+                        "success": False,
+                        "task_type": "information_gathering",
+                        "error": "Could not determine relevant websites for this task"
+                    }
+            
+            # Extract count if specified
+            count = 5  # Default
+            count_match = re.search(r'(\d+)\s+headlines', task_lower)
+            if count_match:
+                count = int(count_match.group(1))
+            
+            # Determine if this is a general information request or a headlines request
+            is_headlines_request = "headlines" in task_lower
+            is_information_request = not is_headlines_request or any(term in task_lower for term in ["information", "info", "details", "data", "who", "what", "when", "where", "why", "how"])
+            
+            if is_headlines_request:
+                # For headline requests, use the existing approach
+                headlines_result = await self.gather_headlines(sites, count, content_type)
+                
+                if headlines_result.get("success", False):
+                    # Format headlines for saving
+                    headlines_text = "\n".join(headlines_result.get("headlines", []))
+                    
+                    # Save to file
+                    save_result = await self.save_to_file(headlines_text, filename)
+                    
+                    if save_result.get("success", False):
+                        # Get sample headlines for display
+                        headlines = headlines_result.get("headlines", [])
+                        sample_headlines = headlines[:3] if len(headlines) > 3 else headlines
+                        
+                        # Make sure we're using the correct filename based on content type
+                        actual_filename = save_result.get("filename", filename)
+                        
+                        return {
+                            "success": True,
+                            "task_type": f"{content_type}_headlines",
+                            "headlines": headlines_result.get("headlines", []),
+                            "sample_headlines": sample_headlines,
+                            "filename": actual_filename,
+                            "message": f"Successfully gathered {content_type} headlines and saved to {actual_filename}"
+                        }
+                    else:
+                        return save_result
+            else:
+                # For general information requests, use a different approach
+                # Create a prompt for the LLM to gather the requested information
+                information_prompt = f"I need to {task}. Please provide detailed information based on the following websites: {', '.join([site['name'] for site in sites])}."
+                information_result = await self._query_local_model(information_prompt)
+                
+                # Format the information for saving
+                information_text = f"Information about: {task}\n\n{information_result}"
+                
+                # Save to file with appropriate filename
+                if not filename:
+                    # Use a default filename based on the task
+                    task_words = task_lower.split()
+                    if len(task_words) > 3:
+                        # Use first few words of the task for the filename
+                        short_name = '_'.join(task_words[:3])
+                    else:
+                        short_name = content_type
+                    filename = f"{short_name}_info.txt"
+                
+                save_result = await self.save_to_file(information_text, filename)
+                
+                if save_result.get("success", False):
+                    # Extract sample information (first few sentences)
+                    sentences = re.split(r'(?<=[.!?])\s+', information_result)
+                    sample_information = sentences[:3] if len(sentences) > 3 else sentences
+                    
+                    # Make sure we're using the correct filename based on content type
+                    actual_filename = save_result.get("filename", filename)
+                    
+                    return {
+                        "success": True,
+                        "task_type": f"{content_type}_information",
+                        "information": sentences,
+                        "sample_information": sample_information,
+                        "filename": actual_filename,
+                        "message": f"Successfully gathered information and saved to {actual_filename}"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "task_type": f"{content_type}_information",
+                        "error": save_result.get("error", "Unknown error saving file")
+                    }
+            else:
+                return {
+                    "success": False,
+                    "task_type": f"{content_type}_headlines",
+                    "error": headlines_result.get("error", f"Failed to gather {content_type} headlines")
+                }
+        
+        # General web browsing task
+        elif "browse" in task_lower or "visit" in task_lower or "go to" in task_lower:
+            # Extract URL from task
+            url_match = re.search(r'https?://[^\s]+', task)
+            if url_match:
+                url = url_match.group(0)
+                browse_result = await self.browse_website(url)
+                
+                return {
+                    "success": browse_result.get("success", False),
+                    "task_type": "web_browsing",
+                    "result": browse_result.get("content", ""),
+                    "title": browse_result.get("title", ""),
+                    "url": url
+                }
+            else:
+                return {
+                    "success": False,
+                    "task_type": "web_browsing",
+                    "error": "No URL found in task description"
+                }
+        
+        # Default to using local Ollama model to analyze the task
+        try:
+            # Use the local Ollama model to analyze the task
+            prompt = f"I need to perform this web task: '{task}'. Please analyze what needs to be done and provide guidance on how to execute it."
+            
+            # Get analysis from local model
+            analysis_result = await self._query_local_model(prompt)
+            
+            return {
+                "success": True,
+                "task_type": "general_web_task",
+                "result": analysis_result,
+                "task": task,
+                "message": "Task analyzed using local model"
+            }
+        except Exception as e:
+            logger.error(f"Error analyzing web task: {e}")
+            return {
+                "success": False,
+                "task_type": "general_web_task",
+                "error": f"Error analyzing web task: {str(e)}"
+            }
+
+async def handle_web_task(task: str) -> Dict[str, Any]:
+    """
+    Handle a web-based task using local resources.
+    
+    Args:
+        task: Natural language description of the web task to execute
+        
+    Returns:
+        Dict containing the execution results
+    """
+    try:
+        integration = LocalWebIntegration()
+        result = await integration.execute_web_task(task)
+        return result
+    except Exception as e:
+        logger.error(f"Error handling web task: {e}")
+        return {
+            "success": False,
+            "error": f"Web browsing failed: {str(e)}"
+        }

@@ -98,7 +98,7 @@ class JiraMCPIntegration:
         # Try to get the model from system configuration first
         try:
             # Get the path to the config.json file
-            config_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+            config_file = os.path.join(os.path.dirname(__file__), "config.json")
             if os.path.exists(config_file):
                 with open(config_file, 'r') as f:
                     config = json.load(f)
@@ -878,17 +878,32 @@ class JiraMCPIntegration:
                         logger.warning(f"No models found in Ollama. Response: {models_data}")
                         return f"Found {len(results)} issues matching your query. (Analysis unavailable: No models found in Ollama. Please pull a model first.)"
                     
-                    # If no specific model was configured or the configured model isn't available,
-                    # use the first available model
-                    if not self.analysis_model or self.analysis_model not in available_models:
+                    # Load the default model from config if it wasn't already set
+                    if not self.analysis_model:
+                        try:
+                            config_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+                            if os.path.exists(config_file):
+                                with open(config_file, 'r') as f:
+                                    config = json.load(f)
+                                    self.analysis_model = config.get("default_model", "")
+                                    logger.info(f"Using default model from config: {self.analysis_model}")
+                        except Exception as e:
+                            logger.warning(f"Error loading default model from config: {e}")
+                    
+                    # Check if the model (either from initial config or just loaded) is available
+                    if self.analysis_model and self.analysis_model in available_models:
+                        logger.info(f"Using configured model: '{self.analysis_model}'")
+                    else:
+                        # Model not available, log appropriate message
                         if self.analysis_model:
                             logger.warning(f"Model '{self.analysis_model}' not found in available models: {available_models}")
+                        else:
+                            logger.warning("No model configured")
                         
-                        # Use the first available model
+                        # Fall back to first available model
                         self.analysis_model = available_models[0]
-                        logger.info(f"Using first available model: '{self.analysis_model}'")
-                    else:
-                        logger.info(f"Using configured model: '{self.analysis_model}'")
+                        logger.info(f"Falling back to first available model: '{self.analysis_model}'")
+
                 except Exception as model_error:
                     logger.warning(f"Error checking available models: {model_error}")
                     # Continue anyway, as the model might still work

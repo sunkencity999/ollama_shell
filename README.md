@@ -5,6 +5,7 @@
 A powerful interactive shell for Ollama, featuring enhanced chat capabilities, document analysis, image analysis, and real-time web search integration.
 
 Created by Christopher Bradford
+
 Contact: [contact@christopherdanielbradford.com](mailto:contact@christopherdanielbradford.com)
 
 ## Features
@@ -127,21 +128,76 @@ The Enhanced Search feature allows you to combine real-time web information with
 
    Combines web search results with model expertise for comprehensive answers.
 
+### Web Browsing Integration
+
+The Web Browsing integration allows you to gather information from the web and save it to files:
+
+1. **Headline Gathering**:
+
+   ```bash
+   gather the latest news headlines and save them in "todaysNews.txt"
+   ```
+
+   ```bash
+   collect gaming headlines and save to "gamingNews.txt"
+   ```
+
+   ```bash
+   find tech headlines and save them as "techUpdate.txt"
+   ```
+
+   This will intelligently gather headlines from relevant websites based on the topic and save them to the specified file.
+
+2. **General Information Gathering**:
+
+   ```bash
+   gather information about gardening tips for beginners and save it as "gardeningGuide.txt"
+   ```
+
+   ```bash
+   research information on electric vehicles and save to "evGuide.txt"
+   ```
+
+   This will collect comprehensive information about the topic and save it to the specified file.
+
+3. **Dynamic Content Type Detection**:
+
+   The system automatically detects the content type based on your query and selects the most relevant sources:
+   - News: BBC, CNN, The Guardian, AP News, Al Jazeera
+   - Gaming: IGN, GameSpot, Polygon, Kotaku, PC Gamer
+   - Tech: The Verge, TechCrunch, Wired, Ars Technica, CNET
+   - General: Uses LLM to determine relevant sites based on the query
+
+4. **Custom Filenames**:
+
+   You can specify a custom filename in your request, or the system will use an appropriate default based on the content type:
+   - News: newsSummary.txt
+   - Gaming: gameSummary.txt
+   - Tech: techSummary.txt
+   - General: topicSummary.txt
+
+5. **File Storage**:
+
+   All files are saved to your Documents folder by default, and the full path is returned in the response for easy access.
+
 ### Image Analysis
 
 Analyze images using vision models:
 
 1. **From Menu**:
+
    - Select "Analyze Image" from the menu
    - Enter the path to your image
    - Optionally provide a custom prompt
 
 2. **Drag & Drop**:
+
    - Press Ctrl+V to toggle drag & drop mode
    - Drag an image file into the terminal
    - The vision model will analyze the image
 
 3. **In Chat Context**:
+
    - Images can be included in chat for analysis
    - Supported formats: JPG, PNG, GIF, BMP, WebP
 
@@ -150,6 +206,7 @@ Analyze images using vision models:
 Analyze various document types:
 
 1. **Supported Formats**:
+
    - Word Documents (.docx, .doc)
    - Excel Spreadsheets (.xlsx, .xls)
    - PDF Files (.pdf)
@@ -157,15 +214,31 @@ Analyze various document types:
    - Code Files (.py, .js, .html, etc.)
 
 2. **Drag & Drop**:
+
    - Press Ctrl+V to toggle drag & drop mode
    - Drag a document into the terminal
    - The model will analyze the document content
 
 3. **File Creation**:
+
    - Create files directly from the chat using the `/create` command
-   - Standard syntax: `/create [filename] [content]`
-   - Natural language syntax: `/create a haiku about nature and save to nature.txt`
-   - Example: `/create data.csv "Name,Age,City\nJohn,30,New York\nJane,25,Boston"`
+
+   ```bash
+   /create [filename] [content]
+   ```
+
+   - Natural language syntax:
+
+   ```bash
+   /create a haiku about nature and save to nature.txt
+   ```
+
+   - Example:
+
+   ```bash
+   /create data.csv "Name,Age,City\nJohn,30,New York\nJane,25,Boston"
+   ```
+
    - Supported formats: TXT, CSV, DOC/DOCX, XLS/XLSX, PDF
 
 ### Natural Language Filesystem Operations
@@ -181,6 +254,7 @@ Interact with your filesystem using natural language commands through the Filesy
    This will list all files and directories in your Documents folder.
 
 2. **Supported Operations**:
+
    - **List Directories**: View contents of directories
 
      ```bash
@@ -248,7 +322,6 @@ Interact with your Confluence instance (both Cloud and Server) using natural lan
    - Copy the template file from `Created Files/config/confluence_config_template.env` to `Created Files/confluence_config.env`
    - Edit the file to provide your Confluence details:
    - For detailed instructions, see the [Comprehensive Setup Guide](docs/confluence_setup_guide.md)
-
      ```env
      # Confluence Configuration
      
@@ -267,12 +340,9 @@ Interact with your Confluence instance (both Cloud and Server) using natural lan
      # Is this a Confluence Cloud instance? (true/false)
      CONFLUENCE_IS_CLOUD=false
      ```
-
-
 3. **Authentication Methods**:
    - **Confluence Server**: Use a Personal Access Token (PAT) with the `pat` authentication method
    - **Confluence Cloud**: Use an API token with the `basic` authentication method
-
 4. **Using the Integration**:
    - Run the `/confluence` command to activate the integration
    - Use natural language to interact with your Confluence instance, for example:
@@ -280,154 +350,114 @@ Interact with your Confluence instance (both Cloud and Server) using natural lan
      - "Create a new page titled 'Meeting Notes' in the 'Team' space"
      - "Search for pages about 'project planning'"
      - "Get the content of the 'Home' page in the 'Documentation' space"
-
 5. **API Tokens**:
    - For Confluence Cloud: Generate an API token at [https://id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
    - For Confluence Server: Generate a Personal Access Token in your Confluence Server instance
    - Configuration will be saved securely as environment variables
-
 6. **Testing Your Configuration**:
    - Run the test script to verify your Confluence setup:
-
      ```bash
      python test_confluence_setup.py
      ```
-
-
    - The script will check your configuration file, validate settings, and test the connection to your Confluence instance
-
 7. **Troubleshooting**:
    - If you encounter issues with the Confluence integration, refer to the [Confluence Troubleshooting Guide](docs/confluence_troubleshooting.md)
    - The guide covers common problems with connection, authentication, and permissions
-
 8. **Example Script**:
    - An example script is provided to demonstrate how to use the Confluence integration programmatically
    - Located at `examples/confluence_example.py`
    - Run the script to see how to connect to Confluence, list spaces, and search for content:
-
      ```bash
      python examples/confluence_example.py
      ```
-
 9. **Supported Operations**:
    - **List Spaces**: View all accessible spaces in your Confluence instance
-
      ```bash
      list all spaces
      ```
    - **Get Space Details**: View details about a specific space
-
      ```bash
      show me details about the Engineering space
      ```
    - **List Pages**: View pages in a specific space
-
      ```bash
      list all pages in the Marketing space
      ```
    - **Get Page Content**: View the content of a specific page
-
      ```bash
      show me the content of the "Project Roadmap" page
      ```
    - **Create Pages**: Create new pages in a space
-
      ```bash
      create a new page titled "Meeting Notes" in the Team space with content "Notes from today's meeting"
      ```
    - **Update Pages**: Update existing pages
-
      ```bash
      update the "Weekly Status" page in the Project space with new content
      ```
    - **Search Content**: Search for content using Confluence Query Language (CQL)
-
      ```text
      search for pages containing "budget proposal"
      ```
-
      For more targeted searches, use specific query formats:
-
      ```text
      search Confluence for information about Polarion
      ```
-
      ```text
      find all Confluence pages containing "API documentation"
      ```
-
      ```text
      search Confluence for "release planning"
      ```
-
    - **Content Analysis**: Get AI-powered analysis of search results
-
      ```text
      analyze Confluence content about "deployment procedures"
      ```
-
      ```text
      explain the information in Confluence about SSL certificates
      ```
-
      The LLM will automatically analyze search results to provide direct answers to your queries, extracting relevant information from multiple pages.
-
    - **Manage Labels**: Add or remove labels from pages
-
      ```text
      add labels "important,review" to the "Quarterly Report" page
      ```
-
 3. **Best Practices**:
    - Be specific about space and page names to avoid ambiguity
    - For complex operations, break them down into multiple commands
    - Use the model's capabilities to summarize or explain page content
-
 ### Jira Integration
-
 Ollama Shell includes a powerful Jira integration that allows you to interact with Jira through natural language commands.
-
 1. **Setup**:
    - Run the `/jira setup` command to configure the integration
    - You'll be prompted to enter your Jira URL, user email, and API token
    - For detailed setup instructions, see the [Jira Setup Guide](docs/jira_setup_guide.md)
-
 2. **Authentication**:
    - Generate an API token at [https://id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
    - Use your Atlassian account email address
    - Configuration will be saved securely as environment variables
-
 3. **Testing Your Configuration**:
    - After setup, test your configuration with:
-
      ```bash
      /jira status
      ```
-
 4. **Troubleshooting**:
    - If you encounter issues with the Jira integration, refer to the [Jira Troubleshooting Guide](docs/jira_troubleshooting.md)
    - The guide covers common problems with connection, authentication, and JQL queries
-
 5. **Example Script**:
    - An example script is provided to demonstrate how to use the Jira integration programmatically
    - Located at `examples/jira_example.py`
    - Run the script to see how to search for issues, get issue details, add comments, and update issues:
-
      ```bash
      python examples/jira_example.py
      ```
-
 6. **Supported Operations**:
    - **Natural Language Search**: Find issues using intuitive natural language queries
-
      ```text
      /jira search highest priority bugs
      ```
-
      ```text
      /jira find issues assigned to me and status = "In Progress"
      ```
-
      The natural language query processor supports a wide range of query patterns:
      
      ```text
@@ -447,107 +477,74 @@ Ollama Shell includes a powerful Jira integration that allows you to interact wi
      ```
      
      The system intelligently handles various priority formats (P2, High Priority), resolution statuses, and assignee specifications to generate the correct JQL query.
-
    - **Get Issue Details**: View detailed information about a specific issue
-
      ```text
      /jira get PROJECT-123
      ```
-
    - **Add Comments**: Add comments to issues
-
      ```text
      /jira comment PROJECT-123 This is a comment added via Ollama Shell
      ```
-
    - **Update Issues**: Update issue fields such as status, priority, or assignee
-
      ```text
      /jira update PROJECT-123 status "In Progress"
      ```
-
    - **Issue Analysis**: Get AI-powered analysis of issues
-
      ```text
      /jira analyze PROJECT-123
      ```
-
      The LLM will automatically analyze the issue details to provide insights, identify key points from the description, current status, next steps, and recommendations for resolution.
-
 ### Context Management
-
 The Context Management feature allows you to optimize token usage and maintain important information in long conversations:
-
 1. **Pin Important Messages**:
-
    ```bash
    /pin 5
    ```
-
    This pins message #5 to ensure it stays in context even as the conversation grows.
-
 2. **Exclude Irrelevant Messages**:
-
    ```bash
    /exclude 3
    ```
-
    This excludes message #3 from the context, saving tokens for more relevant information.
-
 3. **Summarize Conversations**:
-
    ```bash
    /summarize
    ```
-
    This creates a concise summary of the conversation to save tokens while maintaining context.
-
 4. **View Context Status**:
-
    ```bash
    /context
    ```
-
    Shows the current status of your context management, including pinned and excluded messages.
-
 5. **Check Token Usage**:
-
    ```bash
    /tokens
    ```
-
    Displays detailed token usage information for each message.
-
 ### Knowledge Base
 Store and retrieve information using a local vector database:
-
 1. **Features**:
    - Persistent storage across sessions
    - Semantic search for relevant information
    - Automatic integration with chat context
    - Vector embeddings for similarity matching
-
 2. **Usage**:
    - Add important information with `/kb add [text]`
    - Search the knowledge base with `/kb search [query]`
    - Enable/disable with `/kb toggle`
    - View status with `/kb status`
-
 3. **Benefits**:
    - Remember important facts between sessions
    - Build a personalized knowledge repository
    - Automatically enhance responses with relevant context
    - Reduce repetitive questions
-
 4. **Adding Documents**:
    - Drag & drop documents directly into the chat
    - Choose to add them to the knowledge base when prompted
    - Documents are automatically chunked for optimal storage
    - Search across all documents with `/kb search [query]`
-
 ### Fine-Tuning
 Fine-tune models using a modular system that supports Unsloth (for NVIDIA GPUs) or MLX (for Apple Silicon):
-
 1. **Features**:
    - Modular architecture for better maintainability and extensibility
    - Automatic hardware detection for optimal framework selection
@@ -559,7 +556,6 @@ Fine-tune models using a modular system that supports Unsloth (for NVIDIA GPUs) 
    - Detailed progress tracking with ETA estimation
    - Job control (pause, resume, delete)
    - Easy export to Ollama
-
 2. **Prerequisites**:
    - For macOS users:
      - Homebrew (`brew`) is required
@@ -567,8 +563,8 @@ Fine-tune models using a modular system that supports Unsloth (for NVIDIA GPUs) 
    - For NVIDIA GPU users:
      - CUDA drivers must be installed
      - `nvidia-smi` should be available in your path
-
 3. **Fine-Tuning Workflow**:
+
    ```
    # Install required dependencies based on your hardware
    /finetune install
@@ -600,13 +596,11 @@ Fine-tune models using a modular system that supports Unsloth (for NVIDIA GPUs) 
    # Remove unused datasets (optional)
    /finetune dataset-remove dataset_id
    ```
-
 4. **Supported Dataset Formats**:
    - JSON: List of objects with "text" field or "prompt"/"completion" fields
    - JSONL: One JSON object per line
    - CSV: With header row and text column
    - TXT: Plain text files (one sample per line)
-
 5. **Framework-Specific Notes**:
    - **MLX (Apple Silicon)**:
      - Uses MLX-LM for efficient fine-tuning on Apple Silicon
@@ -617,7 +611,6 @@ Fine-tune models using a modular system that supports Unsloth (for NVIDIA GPUs) 
      - Uses Unsloth for 2-3x faster fine-tuning on NVIDIA GPUs
      - Supports QLoRA for memory-efficient training
      - Compatible with most Hugging Face models
-
 6. **Testing Your Fine-Tuned Model**:
    ```
    # Switch to your fine-tuned model
@@ -633,48 +626,38 @@ Fine-tune models using a modular system that supports Unsloth (for NVIDIA GPUs) 
    # You can also use the /compare command to test both models side by side
    /compare my_job_name llama3.2:latest "What is the capital of France?"
    ```
-
 ## Supported File Formats
-
 ### Documents
 - 📝 Word Documents (.docx, .doc)
 - 📊 Excel Spreadsheets (.xlsx, .xls)
 - 📄 PDF Files (.pdf)
 - ✍️ Text Files (.txt, .md)
 - 💻 Code Files (.py, .js, .html, .css, .json, .yaml, .yml)
-
 ### Images
 - 🖼️ JPEG/JPG
 - 🎨 PNG
 - 🎭 GIF
 - 🖌️ BMP
 - 🌅 WebP
-
 ### Export Formats
 - 📝 Markdown
 - 🌐 HTML
 - 📑 PDF
-
 ## Dependencies
 - Python 3.8+
 - Ollama with compatible models
 - See `requirements.txt` for full list
-
 ## Installation
-
 1. Clone the repository:
    ```bash
    git clone https://github.com/yourusername/ollama_shell.git
    cd ollama_shell
    ```
-
 2. Run the installation script:
-
    **On macOS/Linux:**
    ```bash
    ./install.sh
    ```
-
    **On Windows:**
    ```bash
    install.bat
@@ -685,14 +668,12 @@ Fine-tune models using a modular system that supports Unsloth (for NVIDIA GPUs) 
    - Set up a virtual environment (if not already present)
    - Install all required dependencies
    - Configure the application for first use
-
 ## Configuration
 Configuration is stored in `config.json` and includes:
 - Default model settings
 - Vision model preferences
 - History and logging preferences
 - UI customization options
-
 ## Tips & Tricks
 - Use `Ctrl+V` to toggle drag & drop mode
 - Combine search and document analysis for comprehensive answers
@@ -703,18 +684,13 @@ Configuration is stored in `config.json` and includes:
 - Use `/summarize` to condense long conversations while maintaining context
 - Use the knowledge base to store and retrieve important information across sessions
 - Add documents to your knowledge base via drag & drop for persistent access to their content
-
 ## User Data and Files
-
 Ollama Shell stores user-specific data in the `Created Files` directory, which is excluded from Git to protect your privacy and prevent accidental sharing of personal data. This includes:
-
 - **Fine-tuning jobs**: All fine-tuning job data, including models and logs
 - **Datasets**: Prepared datasets for fine-tuning
 - **Configuration**: User-specific configuration files
 - **Generated models**: Model files created during fine-tuning
-
 This separation ensures that your personal models, datasets, and configurations remain private and are not accidentally committed to version control.
-
 ## Context Management Commands
 - `/pin [message_number]` - Pin a message to keep it in context
 - `/unpin [message_number]` - Unpin a previously pinned message
@@ -726,13 +702,260 @@ This separation ensures that your personal models, datasets, and configurations 
 - `/help` - Show context management help
 
 ## Knowledge Base Commands
+
 - `/kb status` - Show knowledge base status and statistics
 - `/kb add [text]` - Add text to your knowledge base
 - `/kb search [query]` - Search your knowledge base for relevant information
 - `/kb toggle` - Enable or disable knowledge base integration
 
+## File Creation Commands
+
+Ollama Shell can generate and save content in various file formats directly from the chat. This feature supports intelligent content generation based on your requests.
+
+### Basic Usage
+
+- `/create [filename] [content]` - Create a file with the specified content
+- `/create [request] and save to [filename]` - Generate content based on your request and save it to the specified file
+
+### Supported File Formats
+
+- Text files (`.txt`)
+- Markdown files (`.md`)
+- CSV files (`.csv`)
+- Word documents (`.doc`, `.docx`)
+- Excel spreadsheets (`.xls`, `.xlsx`)
+- PDF files (`.pdf`)
+- Code files (`.py`, `.js`, `.html`, `.css`, `.json`)
+
+### File Creation Examples
+
+```bash
+# Create a text file with specific content
+/create notes.txt This is a simple note with some text content.
+```
+
+```bash
+# Generate content based on a request
+/create a haiku about redwood forests and save to redwood.txt
+```
+
+```bash
+# Create a structured document
+/create sample.docx Write a formal business letter to ABC Corp requesting a product catalog.
+```
+
+```bash
+# Generate a spreadsheet
+/create sales_data.xlsx Create a spreadsheet with quarterly sales data for 2024.
+```
+
+## Agentic Task Completion
+
+Ollama Shell provides powerful agentic task completion capabilities using local LLMs. This feature allows you to execute complex tasks through natural language commands without relying on external services.
+
+### Setup and Configuration
+
+1. **Installation**:
+
+   - Install Agentic Mode directly from Ollama Shell:
+
+   ```bash
+   /agentic --install
+   ```
+
+   - Choose your preferred installation method (uv or conda)
+   - If Agentic Mode is already installed, the system will automatically update it instead
+   - The installation process will:
+     - Install all required dependencies (including langchain, toml, and requests)
+     - Create the necessary configuration files for Ollama integration
+     - Set up proper Python module structure for importing
+
+### Using Agentic Mode with Ollama
+
+Ollama Shell seamlessly integrates with Agentic Mode to use local Ollama models:
+
+- The integration automatically configures the system to work with Ollama models
+- No API keys are required - everything works locally
+- Both regular and vision-capable models are supported
+- The system will automatically detect and fix any configuration issues
+- All required dependencies are automatically installed when needed
+
+1. **Configuration**:
+
+   - Configure Agentic Mode to work with your Ollama models:
+
+   ```bash
+   /agentic --configure
+   ```
+
+   - This will use your default model from Ollama Shell configuration
+   - Or specify a particular model:
+
+   ```bash
+   /agentic --configure --model llama3.2
+   ```
+
+   - You can also configure Agentic Mode through the Settings menu:
+
+   ```bash
+   /settings
+   ```
+
+   - This creates a configuration file that connects to your local Ollama instance
+
+### Usage
+
+1. **Single Task Execution**:
+
+   - Execute a one-off task using natural language:
+
+   ```bash
+   /agentic Create a Python script that downloads images from a website
+   ```
+
+   - The agent will break down the task, create necessary files, and execute the required steps
+
+2. **Interactive Mode**:
+
+   - Enter an interactive session with the agent:
+
+   ```bash
+   /agentic --mode
+   ```
+
+   - This allows for multi-turn conversations and complex task execution
+
+3. **Specifying Models**:
+
+   - By default, Agentic Mode will use your default model from Ollama Shell configuration
+   - Optionally specify a different model for task execution:
+
+
+   ```bash
+   /agentic --model codellama Find all Python files in my project and analyze their complexity
+   ```
+
+### Agentic Assistant
+
+The Agentic Assistant provides a user-friendly interface for executing complex tasks through natural language instructions:
+
+1. **Basic Usage**:
+
+   ```bash
+   # From the main menu, select the "Agentic Assistant" option
+   # Or use the command line
+   ollama_shell.py assistant
+   ```
+
+2. **Example Tasks**:
+
+   - Create files with specific content:
+
+     ```bash
+     # In the Agentic Assistant mode
+     > Create a Python script that calculates prime numbers and save it to primes.py
+     ```
+
+   - Analyze images:
+
+     ```bash
+     # In the Agentic Assistant mode
+     > Analyze the image sunset.jpg and describe what you see
+     ```
+
+   - General task assistance:
+
+     ```bash
+     # In the Agentic Assistant mode
+     > Help me write a regular expression to match email addresses
+     ```
+
+3. **Features**:
+
+   - Intelligent task recognition and routing
+   - Support for file creation with natural language descriptions
+   - Image analysis capabilities
+   - Step-by-step guidance for complex tasks
+   - Integration with existing Ollama models
+
+### Capabilities
+
+The Agentic Mode and Agentic Assistant enable a wide range of complex tasks:
+
+1. **File Operations**:
+
+   - Create, read, update, and delete files
+   - Search for files with specific patterns
+   - Organize and categorize files
+
+2. **Code Generation and Analysis**:
+
+   - Generate code in various programming languages
+   - Debug existing code
+   - Refactor and optimize code
+
+3. **Data Processing**:
+
+   - Extract data from various formats (CSV, JSON, etc.)
+   - Transform and analyze data
+   - Generate reports and visualizations
+
+4. **System Automation**:
+
+   - Execute system commands
+   - Monitor processes
+   - Schedule tasks
+
+### Examples
+
+```bash
+# Generate a Python script for web scraping
+/agentic Create a Python script that scrapes news headlines from CNN
+
+# Analyze and organize files
+/agentic Find all PDF files in my Downloads folder and organize them by topic
+
+# Data analysis task
+/agentic Analyze the data in sales.csv and create a summary report
+
+# Code refactoring
+/agentic Refactor my Python script to use async functions
+```
+
+### Best Practices
+
+1. **Be Specific**: Provide clear and detailed instructions for best results
+
+2. **Start Simple**: Begin with straightforward tasks before attempting more complex ones
+
+3. **Use Interactive Mode**: For multi-step tasks, interactive mode provides better context
+
+4. **Model Selection**: Different models excel at different tasks; experiment to find the best fit
+
+### Troubleshooting
+
+1. **Installation Issues**:
+
+   - Ensure Python 3.10+ is installed
+   - Try alternative installation method (uv/conda)
+   - Check system dependencies
+
+2. **Configuration Problems**:
+
+   - Verify Ollama is running
+   - Ensure the specified model is downloaded
+   - Check the configuration file for correct settings
+
+3. **Task Execution Errors**:
+
+   - Break complex tasks into smaller steps
+   - Provide more detailed instructions
+   - Try a different model
+
 ## Contributing
+
 Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
+
 MIT License - See LICENSE file for details
