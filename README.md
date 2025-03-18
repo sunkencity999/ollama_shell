@@ -30,6 +30,7 @@ Contact: [contact@christopherdanielbradford.com](mailto:contact@christopherdanie
 - 🧠 **Context Management**: Intelligent management of conversation context
 - 📚 **Knowledge Base**: Local vector database for persistent information storage
 - 🔧 **Fine-Tuning**: Fine-tune models with Unsloth (NVIDIA) or MLX (Apple Silicon)
+- 📝 **Enhanced File Creation**: Create files with natural language commands using intelligent filename extraction and content generation
 
 ## Quick Start
 

@@ -239,6 +239,7 @@ class AgenticOllama:
             return {
                 "success": True,
                 "result": completion,
+                "response": completion,  # Include both keys for backward compatibility
                 "task": prompt
             }
         except Exception as e:
@@ -1855,6 +1856,12 @@ class AgenticOllama:
             if '.' not in filename:
                 filename += '.txt'  # Default to .txt if no extension
             
+            # Check if the path is relative (no leading / or ~)
+            if not os.path.isabs(filename) and not filename.startswith('~'):
+                # Use the Documents folder as the default location
+                documents_folder = os.path.expanduser("~/Documents")
+                filename = os.path.join(documents_folder, filename)
+            
             # Get the file extension
             file_ext = os.path.splitext(filename)[1].lower()
             
@@ -1865,12 +1872,30 @@ class AgenticOllama:
                 content = request
             elif len(request.split()) > 3 and not request.startswith('{'): 
                 # This looks like a request for content generation rather than raw content
-                content_prompt = f"Generate content for a{file_ext} file based on this request: {request}"
+                # Create a detailed system prompt for content generation
+                system_prompt = f"""You are a creative content generator. Your task is to create high-quality content based on the user's request.
+                The content will be saved to a{file_ext} file.
                 
-                # Generate content using Ollama
-                response = await self._generate_completion(content_prompt)
+                Follow these guidelines:
+                1. Create original, well-structured content that directly addresses the user's request
+                2. Include appropriate formatting for the file type
+                3. Be comprehensive but concise
+                4. For creative writing, include proper narrative elements (characters, setting, plot, etc.)
+                5. For informational content, be accurate and well-organized
+                
+                Respond ONLY with the content that should be saved to the file. Do not include any explanations, introductions, or metadata.
+                """
+                
+                # Generate content using Ollama with the system prompt
+                response = await self._generate_completion(request, system_prompt)
                 if response.get("success", False):
-                    content = response.get("response", "")
+                    content = response.get("result", "")
+                    if not content.strip():
+                        # Fallback if the result is empty
+                        logger.warning("Generated content was empty, trying alternative approach")
+                        alt_prompt = f"Write {request} for a{file_ext} file."
+                        alt_response = await self._generate_completion(alt_prompt)
+                        content = alt_response.get("result", "No content could be generated.")
                 else:
                     return {
                         "success": False,
@@ -1982,11 +2007,15 @@ class AgenticOllama:
                 # Default to text file for unknown extensions
                 result = self._save_text_file(filename, content)
             
+            # Prepare a content preview that's not too long
+            content_preview = content[:300] + "..." if len(content) > 300 else content
+            
             return {
                 "success": "Failed" not in result,
                 "message": result,
                 "filename": filename,
-                "content_preview": content[:100] + "..." if len(content) > 100 else content
+                "content": content,  # Include the full content
+                "content_preview": content_preview
             }
                 
         except Exception as e:
