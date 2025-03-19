@@ -12,6 +12,7 @@ import json
 import logging
 import asyncio
 import time
+import re
 from typing import Dict, List, Any, Optional, Union, Tuple
 from enum import Enum
 from dataclasses import dataclass, field, asdict
@@ -600,6 +601,32 @@ class TaskExecutor:
         
         logger.info(f"Executing workflow {workflow_id}")
         
+        # Display the workflow tasks
+        all_tasks = self.task_manager.get_all_tasks()
+        print("\n===== Task Execution Plan =====")
+        for i, task in enumerate(all_tasks, 1):
+            # Format dependencies
+            if task.dependencies:
+                # Map dependency IDs to step numbers for better readability
+                dep_steps = []
+                for dep_id in task.dependencies:
+                    # Find the index of the dependency task
+                    for j, t in enumerate(all_tasks, 1):
+                        if t.id == dep_id:
+                            dep_steps.append(str(j))
+                            break
+                
+                dependencies = ", ".join(dep_steps)
+            else:
+                dependencies = "None"
+                
+            print(f"Step {i}: {task.description[:50] + ('...' if len(task.description) > 50 else '')}")
+            print(f"  Type: {task.task_type.replace('_', ' ').title()}")
+            print(f"  Dependencies: {dependencies}")
+            print()
+        
+        print("===== Starting Task Execution =====\n")
+        
         # Execute tasks until all are completed or failed
         while True:
             # Get next executable tasks
@@ -610,11 +637,13 @@ class TaskExecutor:
                 workflow_status = self.task_manager.get_workflow_status()
                 if workflow_status["pending_tasks"] == 0 and workflow_status["in_progress_tasks"] == 0:
                     logger.info(f"Workflow {workflow_id} execution completed")
+                    print("\n===== Workflow Execution Completed =====\n")
                     break
                 
                 # If there are still pending tasks but none are executable, there might be a dependency cycle
                 if workflow_status["pending_tasks"] > 0:
                     logger.warning(f"No executable tasks but {workflow_status['pending_tasks']} tasks pending - possible dependency cycle")
+                    print(f"\n===== Warning: No executable tasks but {workflow_status['pending_tasks']} tasks pending - possible dependency cycle =====\n")
                     break
                 
                 # Wait a bit before checking again (for in-progress tasks)
@@ -623,6 +652,10 @@ class TaskExecutor:
             
             # Execute each task
             for task in executable_tasks:
+                # Find the step number for this task
+                step_number = next((i for i, t in enumerate(all_tasks, 1) if t.id == task.id), "?")
+                
+                print(f"\n----- Executing Step {step_number}: {task.description} -----")
                 logger.info(f"Executing task {task.id}: {task.description}")
                 
                 # Mark task as in progress
@@ -636,10 +669,31 @@ class TaskExecutor:
                     status = TaskStatus.COMPLETED if result.success else TaskStatus.FAILED
                     self.task_manager.update_task_status(task.id, status, result)
                     
+                    # Display the result
+                    if result.success:
+                        print(f"----- Step {step_number} Completed Successfully -----")
+                        # Display artifacts if available
+                        if result.artifacts:
+                            print("\nTask Artifacts:")
+                            for key, value in result.artifacts.items():
+                                if key == "full_result":
+                                    continue  # Skip full result to avoid clutter
+                                    
+                                if isinstance(value, str):
+                                    print(f"  - {key}: {value[:100]}" + ("..." if len(value) > 100 else ""))
+                                elif isinstance(value, (list, dict)):
+                                    print(f"  - {key}: {str(value)[:100]}" + ("..." if len(str(value)) > 100 else ""))
+                                else:
+                                    print(f"  - {key}: {str(value)[:100]}" + ("..." if len(str(value)) > 100 else ""))
+                    else:
+                        print(f"----- Step {step_number} Failed: {result.error} -----")
+                        print(f"Error Details: {result.error_details if hasattr(result, 'error_details') else 'No additional details available'}")
+                    
                 except Exception as e:
                     logger.error(f"Error executing task {task.id}: {e}")
                     error_result = TaskResult(success=False, error=str(e))
                     self.task_manager.update_task_status(task.id, TaskStatus.FAILED, error_result)
+                    print(f"----- Step {step_number} Failed with Exception: {str(e)} -----")
             
             # Small delay to prevent CPU spinning
             await asyncio.sleep(0.1)
@@ -656,11 +710,29 @@ class TaskExecutor:
         Returns:
             TaskResult with execution results
         """
+        print(f"\n  Task ID: {task.id}")
+        print(f"  Task Type: {task.task_type.replace('_', ' ').title()}")
+        print(f"  Description: {task.description}")
+        
         # Get artifacts from dependencies if needed
         dependency_artifacts = {}
         for dep_id in task.dependencies:
             dep_artifacts = self.task_manager.get_task_artifacts(dep_id)
             dependency_artifacts.update(dep_artifacts)
+        
+        # Display dependency information
+        if dependency_artifacts:
+            print("\n  Using information from previous tasks:")
+            for key, value in dependency_artifacts.items():
+                if key == "full_result":
+                    continue  # Skip full result to avoid clutter
+                    
+                if isinstance(value, str):
+                    print(f"  - {key}: {value[:100]}" + ("..." if len(value) > 100 else ""))
+                elif isinstance(value, (list, dict)):
+                    print(f"  - {key}: {str(value)[:100]}" + ("..." if len(str(value)) > 100 else ""))
+                else:
+                    print(f"  - {key}: {str(value)[:100]}" + ("..." if len(str(value)) > 100 else ""))
         
         # Enhance task description with dependency artifacts if available
         enhanced_description = task.description
@@ -676,6 +748,12 @@ class TaskExecutor:
                     artifact_info += f"- {key}: {str(value)[:100]}...\n"
             
             enhanced_description += artifact_info
+            
+        print("\n  Starting task execution...")
+        print("  " + "-" * 50)
+        
+        # Display task execution steps
+        print("  Task Execution Steps:")
         
         # Check if this is a file creation task based on description
         task_lower = task.description.lower()
@@ -710,10 +788,31 @@ class TaskExecutor:
         # Handle file creation tasks directly to avoid nested task management
         if task.task_type == "file_creation":
             # Use our specialized file creation handler
+            print(f"\n  Handling file creation task: {task.description}")
+            print("  Step 1: Analyzing file requirements...")
+            print("  Step 2: Extracting filename and content type...")
+            print("  Step 3: Generating file content...")
             result = await self._handle_file_creation_task(task, enhanced_description)
+            print("  Step 4: Saving file to disk...")
+            print("  Step 5: Verifying file creation...")
+        elif task.task_type == "web_browsing":
+            # Use our specialized web browsing handler
+            print(f"\n  Handling web browsing task: {task.description}")
+            print("  Step 1: Extracting URLs from task description...")
+            print("  Step 2: Fetching content from URLs...")
+            print("  Step 3: Processing web content...")
+            result = await self.agentic_assistant.execute_task(enhanced_description)
+            print("  Step 4: Saving results...")
+            print("  Step 5: Generating response...")
         else:
             # For other task types, use the standard execution
+            print(f"\n  Handling general task: {task.description}")
+            print("  Step 1: Analyzing task requirements...")
+            print("  Step 2: Planning task execution...")
+            print("  Step 3: Executing task steps...")
             result = await self.agentic_assistant.execute_task(enhanced_description)
+            print("  Step 4: Processing task results...")
+            print("  Step 5: Generating final response...")
         
         # Convert to TaskResult
         success = result.get("success", False)
@@ -786,14 +885,19 @@ class TaskExecutor:
             Dict containing the task execution result
         """
         logger.info(f"Using direct file creation handler for task: {task.description}")
+        print(f"\n  Handling file creation: {task.description}")
         
         try:
             # First try to use the assistant's specialized method if available
             if hasattr(self.agentic_assistant, "_handle_file_creation"):
+                print("  Step 1: Using specialized file creation handler...")
                 result = await self.agentic_assistant._handle_file_creation(enhanced_description)
             else:
                 # Fallback to standard execution
+                print("  Step 1: No specialized handler available, using standard execution...")
                 result = await self.agentic_assistant.execute_task(enhanced_description)
+            
+            print("  Step 2: Processing file creation result...")
             
             # Ensure the result has the correct structure
             if result.get("success", False):

@@ -17,6 +17,9 @@ import urllib.parse
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple, Union
 
+# Import the WebBrowser class
+from web_browsing import WebBrowser
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,6 +45,9 @@ class AgenticOllama:
         self.vision_model = self._get_available_vision_model()
         self.max_tokens = 4096
         self.temperature = 0.7
+        
+        # Initialize the WebBrowser
+        self.web_browser = WebBrowser(self)
         
         # Log initialization
         logger.info(f"Initialized Agentic Ollama with model: {self.model}")
@@ -1686,6 +1692,18 @@ class AgenticOllama:
         Returns:
             Message indicating the result of the operation
         """
+        
+    async def browse_web(self, task_description: str) -> Dict[str, Any]:
+        """
+        Browse the web based on the task description.
+        
+        Args:
+            task_description: Natural language description of the web browsing task
+            
+        Returns:
+            Dict containing the web browsing results
+        """
+        return await self.web_browser.browse_web(task_description)
         
     async def analyze_image(self, image_path: str, custom_prompt: Optional[str] = None) -> Dict[str, Any]:
         """
