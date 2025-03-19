@@ -170,6 +170,37 @@ class WebBrowser:
                     # Extract search results
                     search_results = self._extract_search_results(soup, domain)
                     
+                    # If no search results from primary search engine, try DuckDuckGo as fallback
+                    if not search_results and domain != "duckduckgo.com":
+                        print(f"  No search results found from {domain}. Trying DuckDuckGo as fallback...")
+                        try:
+                            # Create DuckDuckGo search URL
+                            ddg_url = f"https://html.duckduckgo.com/html/?q={formatted_query}"
+                            
+                            # Set up headers for DuckDuckGo request
+                            ddg_headers = {
+                                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                                'Accept-Language': 'en-US,en;q=0.9'
+                            }
+                            
+                            # Make the request
+                            ddg_response = requests.get(ddg_url, headers=ddg_headers, timeout=15)
+                            ddg_response.raise_for_status()
+                            
+                            # Parse the HTML content
+                            ddg_soup = BeautifulSoup(ddg_response.content, 'html.parser')
+                            
+                            # Extract search results
+                            search_results = self._extract_search_results(ddg_soup, "duckduckgo.com")
+                            print(f"  Found {len(search_results)} results from DuckDuckGo")
+                            
+                            # Update response text to indicate DuckDuckGo was used
+                            if search_results:
+                                response_text = f"Search results for '{search_query}' from DuckDuckGo (fallback):\n\n"
+                        except Exception as e:
+                            print(f"  Error fetching from DuckDuckGo: {str(e)}")
+                    
                     if search_results:
                         for i, result in enumerate(search_results[:10], 1):
                             response_text += f"{i}. {result['title']}\n"
@@ -177,8 +208,25 @@ class WebBrowser:
                                 response_text += f"   URL: {result['url']}\n"
                             if 'snippet' in result:
                                 response_text += f"   {result['snippet']}\n\n"
+                                
+                        # Follow the top links and analyze their content
+                        print(f"  Analyzing top search results for '{search_query}'...")
+                        detailed_analysis = self._follow_and_analyze_links(search_results, search_query)
+                        
+                        if detailed_analysis:
+                            # Preserve the markers in the response text
+                            if "!!DETAILED_ANALYSIS_SECTION_START!!" in detailed_analysis and "!!DETAILED_ANALYSIS_SECTION_END!!" in detailed_analysis:
+                                # The detailed analysis already has markers, so add it directly
+                                response_text += "\n\n" + detailed_analysis
+                            else:
+                                # Add markers around the detailed analysis
+                                response_text += "\n\n!!DETAILED_ANALYSIS_SECTION_START!!\n## Detailed Analysis from Top Sources:\n\n"
+                                response_text += detailed_analysis
+                                response_text += "\n!!DETAILED_ANALYSIS_SECTION_END!!"
                     else:
-                        # Fallback to headlines and main content
+                        # Fallback to headlines and main content if no results from any search engine
+                        print("  No search results found from any search engine. Falling back to headlines and main content.")
+                        response_text += "No search results found. Here are some relevant headlines from the page:\n\n"
                         for i, headline in enumerate(headlines[:5], 1):
                             response_text += f"{i}. {headline}\n"
                         
@@ -195,6 +243,8 @@ class WebBrowser:
                 
                 # Add a note about the source
                 response_text += f"\n\nSource: {url} (fetched on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})\n"
+                
+                # We've already followed links earlier in the code if search_results exist
                 
                 print(f"  Successfully fetched content from {url}")
             except Exception as e:
@@ -342,6 +392,9 @@ class WebBrowser:
                         # Add this file to the artifacts
                         artifacts[f"additional_file_{output_file}"] = file_path
             
+            # Add the full response text to the artifacts to ensure detailed analysis is preserved
+            artifacts["full_content"] = response_text
+            
             return {
                 "success": True,
                 "task_type": "web_browsing",
@@ -383,6 +436,394 @@ class WebBrowser:
         domain_pattern = re.compile(r'https?://(?:www\.)?([^/]+)', re.IGNORECASE)
         match = domain_pattern.search(url)
         return match.group(1) if match else "unknown"
+        
+    def _follow_and_analyze_links(self, search_results: List[Dict[str, str]], search_query: str) -> str:
+        """
+        Follow the top links from search results and analyze their content.
+        
+        Args:
+            search_results: List of search results containing URLs to follow
+            search_query: The original search query
+            
+        Returns:
+            Detailed analysis of the content from the links
+        """
+        try:
+            print(f"  Following and analyzing links for search query: '{search_query}'")
+            detailed_content = ""
+            followed_links = []
+            successful_links = 0
+            max_links_to_follow = 5  # Increased from 3 to 5 for better coverage
+            
+            # Set up headers for requests
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            # First, filter and clean the search results
+            filtered_results = []
+            for result in search_results:
+                if 'url' not in result or not result['url']:
+                    continue
+                    
+                url = result['url']
+                
+                # Skip if we've already seen this URL
+                if url in followed_links:
+                    continue
+                    
+                # Fix URL if needed
+                if url.startswith('/url?') and 'q=' in url:
+                    # Extract the actual URL from Google's redirect
+                    actual_url = re.search(r'q=([^&]+)', url)
+                    if actual_url:
+                        url = actual_url.group(1)
+                        result['url'] = url
+                
+                # Fix DuckDuckGo URLs if needed
+                if 'duckduckgo.com/l/' in url:
+                    try:
+                        from urllib.parse import unquote
+                        # Extract the actual URL from DuckDuckGo's redirect
+                        actual_url = re.search(r'uddg=([^&]+)', url)
+                        if actual_url:
+                            url = unquote(actual_url.group(1))
+                            result['url'] = url
+                            print(f"  Fixed DuckDuckGo URL: {url}")
+                    except Exception as e:
+                        print(f"  Error decoding DuckDuckGo URL: {str(e)}")
+                
+                # URL decode if needed
+                if '%' in url:
+                    try:
+                        from urllib.parse import unquote
+                        url = unquote(url)
+                        result['url'] = url
+                    except:
+                        pass
+                
+                # Skip if it's not a valid URL
+                if not url.startswith('http'):
+                    continue
+                
+                # Skip common non-content sites
+                skip_domains = ['facebook.com', 'twitter.com', 'instagram.com', 'youtube.com', 'linkedin.com']
+                if any(domain in url for domain in skip_domains):
+                    continue
+                    
+                filtered_results.append(result)
+            
+            print(f"  Found {len(filtered_results)} valid links to follow")
+            
+            # If no valid links were found, try DuckDuckGo as a fallback
+            if not filtered_results:
+                print("  No valid links found from primary search. Trying DuckDuckGo as fallback...")
+                try:
+                    # Create DuckDuckGo search URL
+                    ddg_url = f"https://html.duckduckgo.com/html/?q={search_query.replace(' ', '+')}"
+                    
+                    # Set up headers for DuckDuckGo request
+                    ddg_headers = {
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.9'
+                    }
+                    
+                    # Make the request
+                    ddg_response = requests.get(ddg_url, headers=ddg_headers, timeout=20)
+                    ddg_response.raise_for_status()
+                    
+                    # Parse the HTML content
+                    ddg_soup = BeautifulSoup(ddg_response.content, 'html.parser')
+                    
+                    # Extract search results
+                    ddg_results = self._extract_search_results(ddg_soup, "duckduckgo.com")
+                    print(f"  Found {len(ddg_results)} results from DuckDuckGo")
+                    
+                    # If we found results, use them instead
+                    if ddg_results:
+                        filtered_results = []
+                        for result in ddg_results:
+                            if 'url' not in result or not result['url']:
+                                continue
+                                
+                            url = result['url']
+                            
+                            # Fix URL if needed - DuckDuckGo often has redirects
+                            if 'duckduckgo.com/l/' in url:
+                                try:
+                                    from urllib.parse import unquote
+                                    # Extract the actual URL from DuckDuckGo's redirect
+                                    actual_url = re.search(r'uddg=([^&]+)', url)
+                                    if actual_url:
+                                        url = unquote(actual_url.group(1))
+                                        result['url'] = url
+                                        print(f"  Fixed DuckDuckGo URL: {url}")
+                                except Exception as e:
+                                    print(f"  Error decoding DuckDuckGo URL: {str(e)}")
+                            
+                            # Skip common non-content sites
+                            skip_domains = ['facebook.com', 'twitter.com', 'instagram.com', 'youtube.com', 'linkedin.com']
+                            if any(domain in url for domain in skip_domains):
+                                continue
+                                
+                            filtered_results.append(result)
+                            
+                        print(f"  Found {len(filtered_results)} valid links from DuckDuckGo to follow")
+                except Exception as e:
+                    print(f"  Error fetching from DuckDuckGo: {str(e)}")
+            
+            # If we still don't have any valid links, return an error message
+            if not filtered_results:
+                print("  No valid links found to follow from any search engine. Check search results extraction.")
+                return "No valid links found to analyze. Please try a different search query or check your internet connection."
+            
+            # Store all extracted information for later organization
+            extracted_data = []
+            
+            # Follow each link and extract content
+            for i, result in enumerate(filtered_results, 1):
+                if successful_links >= max_links_to_follow:
+                    break
+                    
+                url = result['url']
+                followed_links.append(url)
+                
+                try:
+                    print(f"  Following link {i}: {url}")
+                    response = requests.get(url, headers=headers, timeout=20)  # Increased timeout
+                    response.raise_for_status()
+                    
+                    # Parse the HTML content
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    
+                    # Extract the main content
+                    title = soup.title.string if soup.title else result.get('title', 'Unknown Title')
+                    if title:
+                        title = title.strip()
+                    else:
+                        title = result.get('title', 'Unknown Title')
+                    
+                    # Get main content using multiple methods
+                    main_content = self._extract_main_content_from_html(soup)
+                    
+                    # If main content is too short, try to get more content
+                    if len(main_content) < 300:  # Increased threshold
+                        # Try to get content from article or main tags
+                        for tag in ['article', 'main', 'div.content', '.post-content', '.entry-content', '.article-content', '#content', '.page-content']:
+                            elements = soup.select(tag)
+                            if elements:
+                                for element in elements:
+                                    content = element.get_text(separator='\n', strip=True)
+                                    if len(content) > len(main_content):
+                                        main_content = content
+                                        break
+                    
+                    # If still too short, try paragraphs
+                    if len(main_content) < 300:
+                        paragraphs = soup.find_all('p')
+                        combined_content = '\n\n'.join([p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 30])
+                        if len(combined_content) > len(main_content):
+                            main_content = combined_content
+                    
+                    # Extract headings for structure
+                    headings = []
+                    for heading in soup.find_all(['h1', 'h2', 'h3']):
+                        heading_text = heading.get_text(strip=True)
+                        if heading_text and len(heading_text) > 5 and len(heading_text) < 100:
+                            headings.append(heading_text)
+                    
+                    # Extract key points (bullet points, numbered lists)
+                    key_points = []
+                    for list_item in soup.find_all('li'):
+                        item_text = list_item.get_text(strip=True)
+                        if item_text and len(item_text) > 15 and len(item_text) < 300:  # Adjusted thresholds
+                            key_points.append(item_text)
+                    
+                    # Clean up the content
+                    main_content = re.sub(r'\s+', ' ', main_content).strip()
+                    
+                    # Extract any code blocks if present (for technical content)
+                    code_blocks = []
+                    for code in soup.select('pre, code, .highlight, .code'):
+                        code_text = code.get_text(strip=True)
+                        if code_text and len(code_text) > 10:
+                            code_blocks.append(code_text)
+                    
+                    # Store the extracted data
+                    extracted_data.append({
+                        'source_num': i,
+                        'title': title,
+                        'url': url,
+                        'content': main_content,
+                        'headings': headings[:7],  # Increased from 5 to 7
+                        'key_points': key_points[:7],  # Increased from 5 to 7
+                        'code_blocks': code_blocks[:3] if code_blocks else []
+                    })
+                    
+                    successful_links += 1
+                    print(f"  Successfully extracted content from {url}")
+                    
+                except Exception as e:
+                    print(f"  Error following link {url}: {str(e)}")
+                    extracted_data.append({
+                        'source_num': i,
+                        'title': result.get('title', 'Unknown Title'),
+                        'url': url,
+                        'error': f"Could not retrieve content - {str(e)}"
+                    })
+            
+            # If we couldn't follow any links, return informative message
+            if successful_links == 0:
+                print("  Could not successfully follow any links")
+                return "Could not retrieve content from any of the search results. Please try a different search query or check your internet connection."
+            
+            print(f"  Successfully followed {successful_links} links. Organizing content...")
+            
+            # Organize the extracted data into a well-structured report
+            detailed_content = f"# {search_query.title()} - Detailed Analysis\n\n"
+            
+            # Add a summary section
+            detailed_content += "## Summary of Sources\n\n"
+            for data in extracted_data:
+                if 'error' not in data:
+                    detailed_content += f"* **{data['title']}** - {data['url']}\n"
+            
+            detailed_content += "\n!!DETAILED_ANALYSIS_SECTION_START!!\n## Detailed Analysis from Top Sources:\n\n"
+            
+            # Add detailed content from each source
+            for data in extracted_data:
+                detailed_content += f"### Source {data['source_num']}: {data['title']}\n"
+                detailed_content += f"URL: {data['url']}\n\n"
+                
+                if 'error' in data:
+                    detailed_content += f"Error: {data['error']}\n\n"
+                    continue
+                
+                # Add headings if available
+                if data['headings']:
+                    detailed_content += "#### Key Headings\n\n"
+                    for heading in data['headings']:
+                        detailed_content += f"* {heading}\n"
+                    detailed_content += "\n"
+                
+                # Add key points if available
+                if data['key_points']:
+                    detailed_content += "#### Key Points\n\n"
+                    for point in data['key_points']:
+                        detailed_content += f"* {point}\n"
+                    detailed_content += "\n"
+                
+                # Add code blocks if available (for technical content)
+                if 'code_blocks' in data and data['code_blocks']:
+                    detailed_content += "#### Code Examples\n\n"
+                    for i, code in enumerate(data['code_blocks'], 1):
+                        detailed_content += f"Code Example {i}:\n```\n{code[:500]}\n```\n\n"
+                
+                # Add full content instead of just a preview
+                detailed_content += "#### Full Content\n\n"
+                # Format the content for better readability
+                formatted_content = data['content']
+                # Break into paragraphs if needed
+                if len(formatted_content) > 500 and '\n' not in formatted_content:
+                    # Try to break into paragraphs at sentence boundaries
+                    formatted_content = re.sub(r'([.!?])\s+', r'\1\n\n', formatted_content)
+                detailed_content += f"{formatted_content}\n\n"
+            
+            # Add a section for related topics
+            detailed_content += "\n## Related Topics\n\n"
+            related_topics = self._extract_related_topics(search_query, extracted_data)
+            for topic in related_topics:
+                detailed_content += f"* {topic}\n"
+            
+            # Add the end marker after the related topics
+            detailed_content += "\n!!DETAILED_ANALYSIS_SECTION_END!!"
+            
+            # Add a conclusion section
+            detailed_content += "\n## Conclusion\n\n"
+            detailed_content += f"This analysis provides information about {search_query} based on {successful_links} sources. "
+            detailed_content += "The content has been extracted and organized to provide a comprehensive overview of the topic. "
+            detailed_content += "For more detailed information, please visit the original sources linked above.\n\n"
+            
+            # Add a dedicated sources section with the actual links that were followed
+            detailed_content += "# Sources\n\n"
+            for i, data in enumerate(extracted_data, 1):
+                if 'error' not in data:
+                    detailed_content += f"{i}. [{data['title']}]({data['url']})\n"
+            
+            # Add the original search query URL
+            search_url = f"https://www.google.com/search?q={search_query.replace(' ', '+')}"
+            detailed_content += f"\nMain search: {search_url}\n"
+            
+            print(f"  Completed analysis of {successful_links} sources for '{search_query}'")
+            return detailed_content
+            
+        except Exception as e:
+            print(f"  Error analyzing links: {str(e)}")
+            traceback_str = traceback.format_exc()
+            print(f"  Traceback: {traceback_str}")
+            return f"Error analyzing links: {str(e)}\n\nPlease try a different search query or check your internet connection."
+    
+    def _extract_related_topics(self, search_query: str, extracted_data: List[Dict]) -> List[str]:
+        """
+        Extract related topics from the extracted data.
+        
+        Args:
+            search_query: The original search query
+            extracted_data: List of dictionaries containing extracted data from each source
+            
+        Returns:
+            List of related topics
+        """
+        # Start with some common related topics based on the search query
+        related_topics = []
+        
+        # Extract potential related topics from the content
+        all_content = ""
+        for data in extracted_data:
+            if 'content' in data:
+                all_content += data['content'] + " "
+        
+        # Look for common patterns that might indicate related topics
+        # For technology-related queries
+        if any(term in search_query.lower() for term in ["technology", "computing", "software", "hardware", "ai", "artificial intelligence", "quantum"]):
+            tech_topics = [
+                "Latest advancements", "Future applications", "Current limitations", 
+                "Research directions", "Industry adoption", "Ethical considerations"
+            ]
+            related_topics.extend(tech_topics)
+        
+        # For science-related queries
+        elif any(term in search_query.lower() for term in ["science", "physics", "chemistry", "biology", "research", "study", "experiment"]):
+            science_topics = [
+                "Recent discoveries", "Experimental methods", "Theoretical foundations", 
+                "Practical applications", "Academic perspectives", "Future research directions"
+            ]
+            related_topics.extend(science_topics)
+        
+        # For news or current events
+        elif any(term in search_query.lower() for term in ["news", "current", "recent", "latest", "update", "development"]):
+            news_topics = [
+                "Historical context", "Expert opinions", "Public reaction", 
+                "Policy implications", "International perspectives", "Future outlook"
+            ]
+            related_topics.extend(news_topics)
+        
+        # Add some general related topics
+        general_topics = [
+            f"{search_query} history", 
+            f"{search_query} future trends", 
+            f"{search_query} practical applications"
+        ]
+        related_topics.extend(general_topics)
+        
+        # Remove duplicates and limit to 10 topics
+        unique_topics = []
+        for topic in related_topics:
+            if topic not in unique_topics:
+                unique_topics.append(topic)
+        
+        return unique_topics[:10]
     
     def _extract_search_query(self, task_description: str) -> Optional[str]:
         """
@@ -394,6 +835,20 @@ class WebBrowser:
         Returns:
             Extracted search query or None if not found
         """
+        # First, check for specific search query patterns with file creation components
+        hybrid_task_patterns = [
+            r"search\s+(?:for|about)?\s+information\s+(?:about|on|regarding)\s+the\s+latest\s+advancements\s+in\s+([^,\.]+)\s+and\s+(?:create|save|write)",
+            r"search\s+(?:for|about)?\s+information\s+(?:about|on|regarding)\s+([^,\.]+)\s+and\s+(?:create|save|write)",
+            r"search\s+(?:for|about)?\s+([^,\.]+)\s+and\s+(?:create|save|write)",
+            r"find\s+information\s+(?:about|on|regarding)\s+([^,\.]+)\s+and\s+(?:create|save|write)",
+            r"research\s+(?:about|on)?\s+([^,\.]+)\s+and\s+(?:create|save|write)"
+        ]
+        
+        for pattern in hybrid_task_patterns:
+            match = re.search(pattern, task_description, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+        
         # Try to extract the search query from the task description
         search_patterns = [
             r"search\s+(?:for|about)?\s+([\w\s\d\-\+]+)\s+(?:on|in|at)",  # search for X on
@@ -403,19 +858,59 @@ class WebBrowser:
             r"solutions\s+(?:to|for)\s+(?:the)?\s+([\w\s\d\-\+]+)\s+(?:error|problem|issue)",  # solutions to the X error
             r"information\s+(?:about|on)\s+([\w\s\d\-\+]+)",  # information about X
             r"articles\s+(?:about|on)\s+([\w\s\d\-\+]+)",  # articles about X
-            r"research\s+(?:about|on)?\s+([\w\s\d\-\+]+)"  # research X
+            r"research\s+(?:about|on)?\s+([\w\s\d\-\+]+)",  # research X
+            r"latest\s+(?:information|news|updates|developments)\s+(?:about|on|regarding)\s+([\w\s\d\-\+]+)",  # latest information about X
+            r"current\s+(?:information|news|updates|developments)\s+(?:about|on|regarding)\s+([\w\s\d\-\+]+)",  # current information about X
+            r"recent\s+(?:information|news|updates|developments)\s+(?:about|on|regarding)\s+([\w\s\d\-\+]+)",  # recent information about X
+            r"advancements\s+(?:in|on|regarding)\s+([\w\s\d\-\+]+)",  # advancements in X
+            r"developments\s+(?:in|on|regarding)\s+([\w\s\d\-\+]+)"  # developments in X
         ]
         
         for pattern in search_patterns:
             match = re.search(pattern, task_description, re.IGNORECASE)
             if match:
-                return match.group(1).strip()
+                query = match.group(1).strip()
+                # Clean up the query by removing file-related parts
+                file_patterns = [
+                    r"and\s+(?:save|create|write)\s+(?:a|an|the)\s+(?:file|summary|report).*",
+                    r"and\s+save\s+(?:it|them|the\s+results)\s+to\s+.*",
+                    r"and\s+output\s+to\s+.*"
+                ]
+                for file_pattern in file_patterns:
+                    query = re.sub(file_pattern, "", query, flags=re.IGNORECASE).strip()
+                return query
         
         # Look for error codes or specific technical terms
         error_code_pattern = r"(?:error|code|hresult)\s*:\s*([\w\d]+)"
         match = re.search(error_code_pattern, task_description, re.IGNORECASE)
         if match:
             return match.group(1).strip()
+        
+        # If no pattern matches, try to extract key phrases from the task description
+        task_lower = task_description.lower()
+        
+        # Look for key phrases that might indicate the search topic
+        key_phrases = [
+            "quantum computing", "artificial intelligence", "machine learning", "deep learning", 
+            "neural networks", "blockchain", "cryptocurrency", "climate change", "renewable energy", 
+            "sustainable development", "space exploration", "mars mission", "covid-19", "coronavirus", 
+            "vaccine development", "genetic engineering", "crispr", "nanotechnology", "robotics", 
+            "autonomous vehicles", "virtual reality", "augmented reality", "internet of things", 
+            "big data", "cloud computing", "edge computing", "cybersecurity", "data privacy", 
+            "5g technology", "quantum supremacy", "quantum entanglement", "quantum teleportation"
+        ]
+        
+        for phrase in key_phrases:
+            if phrase in task_lower:
+                return phrase
+        
+        # As a last resort, try to extract a noun phrase from the task description
+        words = task_description.split()
+        if len(words) > 3:
+            # Try to extract a meaningful phrase from the middle of the task
+            middle_index = len(words) // 2
+            potential_query = " ".join(words[middle_index-2:middle_index+3])
+            return potential_query
         
         return None
     
@@ -623,32 +1118,74 @@ class WebBrowser:
         # Try to find the main content container
         main_content = ""
         
-        # 1. Look for main content containers
-        content_elements = [
-            soup.find('main'),
-            soup.find(id=lambda i: i and 'content' in i.lower()),
-            soup.find(class_=lambda c: c and 'content' in c.lower()),
-            soup.find(id=lambda i: i and 'main' in i.lower()),
-            soup.find(class_=lambda c: c and 'main' in c.lower()),
-            soup.find('article')
+        # Remove unwanted elements that typically contain non-content
+        for element in soup.find_all(['nav', 'header', 'footer', 'aside', 'script', 'style', 'noscript', 'iframe']):
+            element.decompose()
+            
+        # Remove common ad and navigation containers
+        for element in soup.select('.ad, .ads, .advertisement, .sidebar, .navigation, .menu, .comment, .comments, .cookie-notice'):
+            element.decompose()
+        
+        # 1. Try to find content by common content selectors
+        content_selectors = [
+            'main', 'article', '.post-content', '.entry-content', '.content-area', '.main-content',
+            '#content', '.content', '#main', '.main', '.post', '.entry', '.article'
         ]
         
-        # Use the first non-None element that has substantial content
-        for element in content_elements:
-            if element:
+        for selector in content_selectors:
+            elements = soup.select(selector)
+            for element in elements:
                 text = element.get_text(separator='\n', strip=True)
                 if len(text) > 200:  # Ensure it has substantial content
                     main_content = text
                     break
+            if main_content:
+                break
         
-        # If no main content found, extract paragraphs from the body
+        # 2. Try to find by ID or class containing content-related terms
         if not main_content:
-            paragraphs = [p.get_text().strip() for p in soup.find_all('p') if len(p.get_text().strip()) > 50]
-            main_content = '\n\n'.join(paragraphs[:5])  # Get up to 5 substantial paragraphs
+            content_elements = [
+                soup.find(id=lambda i: i and any(term in i.lower() for term in ['content', 'main', 'article', 'post', 'entry'])),
+                soup.find(class_=lambda c: c and any(term in c.lower() for term in ['content', 'main', 'article', 'post', 'entry']))
+            ]
+            
+            for element in content_elements:
+                if element:
+                    text = element.get_text(separator='\n', strip=True)
+                    if len(text) > 200:  # Ensure it has substantial content
+                        main_content = text
+                        break
         
-        # Limit the length of the main content
-        if len(main_content) > 1000:
-            main_content = main_content[:997] + '...'
+        # 3. If still no main content found, try to extract all paragraphs
+        if not main_content:
+            # Get all paragraphs with substantial content
+            paragraphs = [p.get_text().strip() for p in soup.find_all('p') if len(p.get_text().strip()) > 30]
+            
+            # If we have enough paragraphs, use them
+            if len(paragraphs) >= 3:
+                main_content = '\n\n'.join(paragraphs)
+            else:
+                # As a last resort, try to get text from the body
+                body = soup.find('body')
+                if body:
+                    main_content = body.get_text(separator='\n', strip=True)
+                    
+                    # Clean up the content by removing excessive whitespace
+                    main_content = re.sub(r'\s+', ' ', main_content).strip()
+        
+        # 4. Clean up the content
+        # Remove URLs
+        main_content = re.sub(r'https?://\S+', '', main_content)
+        # Remove excessive whitespace
+        main_content = re.sub(r'\s+', ' ', main_content).strip()
+        # Remove very short lines (likely navigation or other non-content)
+        lines = [line.strip() for line in main_content.split('\n') if len(line.strip()) > 20]
+        main_content = '\n'.join(lines)
+        
+        # 5. Limit the length of the main content for practical use
+        if len(main_content) > 2000:
+            # Get the first 1000 characters and last 1000 characters
+            main_content = main_content[:1000] + '\n\n[...content truncated...]\n\n' + main_content[-1000:]
         
         return main_content
         
@@ -720,6 +1257,7 @@ class WebBrowser:
             List of search results as dictionaries with title, url, and snippet
         """
         search_results = []
+        print(f"  Extracting search results from {domain}...")
         
         # Handle different search engines
         if domain == "stackoverflow.com":
@@ -747,22 +1285,147 @@ class WebBrowser:
                 if snippet_element:
                     result['snippet'] = snippet_element.get_text().strip()
                 
-                if 'title' in result:
+                if 'title' in result and 'url' in result:
                     search_results.append(result)
-        elif domain in ["google.com", "bing.com", "duckduckgo.com"]:
-            # Generic search result extraction for Google, Bing, DuckDuckGo
-            # Look for common search result patterns
-            result_elements = soup.select('div.g, .result, .web-result, .result__body')
+        elif domain == "google.com":
+            # Google-specific extraction - using multiple approaches to handle different Google layouts
+            # Google frequently changes their HTML structure, so we need to try multiple selectors
             
-            if not result_elements:
-                # Try alternative selectors
-                result_elements = soup.select('div[data-hveid], div.rc, div.result, article')
+            # Approach 1: Modern Google search results (2023-2025 layout)
+            result_elements = soup.select('div.g, div.MjjYud, div.Gx5Zad, div.egMi0, div[data-sokoban-container]')
+            
+            if result_elements:
+                for element in result_elements:
+                    result = {}
+                    
+                    # Extract title - try multiple possible selectors
+                    title_element = element.select_one('h3, a > h3, div.DKV0Md, div.vvjwJb')
+                    if title_element:
+                        result['title'] = title_element.get_text().strip()
+                        
+                        # Find the closest <a> tag that contains the URL
+                        parent_link = title_element.find_parent('a')
+                        if parent_link and parent_link.get('href'):
+                            href = parent_link.get('href')
+                            if href.startswith('/url?') and 'q=' in href:
+                                # Extract the actual URL from Google's redirect
+                                actual_url = re.search(r'q=([^&]+)', href)
+                                if actual_url:
+                                    result['url'] = actual_url.group(1)
+                            elif href.startswith('http'):
+                                result['url'] = href
+                    
+                    # If we couldn't find the URL from the title's parent link, try other links
+                    if 'url' not in result or not result['url']:
+                        # Try to find any link in this result container
+                        link_elements = element.select('a[href^="/url?"], a[href^="http"]')
+                        for link_element in link_elements:
+                            href = link_element.get('href')
+                            if href and len(href) > 10:  # Skip very short URLs
+                                if href.startswith('/url?') and 'q=' in href:
+                                    actual_url = re.search(r'q=([^&]+)', href)
+                                    if actual_url:
+                                        url = actual_url.group(1)
+                                        # Skip Google's own domains
+                                        if 'google.com' not in url:
+                                            result['url'] = url
+                                            break
+                                elif href.startswith('http') and 'google.com' not in href:
+                                    result['url'] = href
+                                    break
+                    
+                    # Extract snippet - try multiple possible selectors
+                    snippet_candidates = element.select('div.VwiC3b, span.aCOpRe, div.s, div.IsZvec, div.lEBKkf, div.lyLwlc, div.kb0PBd')
+                    for candidate in snippet_candidates:
+                        text = candidate.get_text().strip()
+                        if text and len(text) > 20:  # Skip very short snippets
+                            result['snippet'] = text
+                            break
+                    
+                    # If we have both title and URL, add this result
+                    if 'title' in result and result['title'] and 'url' in result and result['url']:
+                        search_results.append(result)
+            
+            # Approach 2: If we couldn't find results using the standard approach, try a more aggressive approach
+            if not search_results:
+                print("  Using aggressive approach to extract Google search results...")
+                
+                # Try to find search results by looking for common patterns in Google's HTML
+                # First, look for all divs that might contain search results
+                potential_containers = soup.select('div.tF2Cxc, div.yuRUbf, div.kCrYT, div.ZINbbc, div.Gx5Zad, div.g, div[jscontroller]')
+                
+                for container in potential_containers:
+                    result = {}
+                    
+                    # Look for links within these containers
+                    links = container.select('a[href]')
+                    for link in links:
+                        href = link.get('href')
+                        if not href:
+                            continue
+                            
+                        # Process links that look like Google search result links
+                        if href.startswith('/url?') and 'q=' in href:
+                            actual_url = re.search(r'q=([^&]+)', href)
+                            if actual_url:
+                                url = actual_url.group(1)
+                                # Skip Google's own domains and common navigation links
+                                if 'google.com' in url or any(nav in url for nav in ['accounts', 'login', 'signin', 'settings']):
+                                    continue
+                                    
+                                result['url'] = url
+                                
+                                # Try to find a title near this link
+                                # First check if the link itself has good text content
+                                link_text = link.get_text().strip()
+                                if link_text and len(link_text) > 10:
+                                    result['title'] = link_text
+                                else:
+                                    # Look for heading elements or strong text near this link
+                                    title_candidates = container.select('h3, h4, strong, b, div.DKV0Md')
+                                    for title_elem in title_candidates:
+                                        title_text = title_elem.get_text().strip()
+                                        if title_text and len(title_text) > 5:
+                                            result['title'] = title_text
+                                            break
+                                
+                                # Try to find a snippet near this link
+                                snippet_candidates = container.select('div.VwiC3b, span.aCOpRe, div.s, div.IsZvec, div.lEBKkf, div.lyLwlc')
+                                for snippet_elem in snippet_candidates:
+                                    snippet_text = snippet_elem.get_text().strip()
+                                    if snippet_text and len(snippet_text) > 30:
+                                        result['snippet'] = snippet_text
+                                        break
+                                        
+                                # If we couldn't find a good snippet, use any text in the container
+                                if 'snippet' not in result:
+                                    container_text = container.get_text().strip()
+                                    # Remove the title from the container text to avoid duplication
+                                    if 'title' in result:
+                                        container_text = container_text.replace(result['title'], '')
+                                    if container_text and len(container_text) > 30:
+                                        result['snippet'] = container_text
+                                
+                                # If we have both title and URL, add this result
+                                if 'url' in result and ('title' in result or 'snippet' in result):
+                                    # If we don't have a title but have a snippet, use the first part of the snippet as title
+                                    if 'title' not in result and 'snippet' in result:
+                                        result['title'] = result['snippet'][:50] + '...'
+                                    # If we don't have a snippet, create a generic one
+                                    if 'snippet' not in result:
+                                        result['snippet'] = f"Result from search: {result['title']}"
+                                        
+                                    search_results.append(result)
+                                    break  # Move to the next container once we've found a valid result
+        elif domain in ["bing.com", "duckduckgo.com"]:
+            # Generic search result extraction for Bing, DuckDuckGo
+            result_elements = soup.select('div.b_algo, .result, .web-result, .result__body')
             
             for element in result_elements:
                 result = {}
                 
-                # Extract title - try different patterns
-                title_element = element.select_one('h3, .result__title, .title')
+                # Extract title
+                title_element = element.select_one('h2, .result__title, .title')
                 if title_element:
                     result['title'] = title_element.get_text().strip()
                     
@@ -776,58 +1439,117 @@ class WebBrowser:
                             result['url'] = href
                 
                 # Extract snippet
-                snippet_element = element.select_one('.snippet, .result__snippet, .snippet-item, .abstract')
+                snippet_element = element.select_one('.b_caption, .result__snippet, .snippet-item')
                 if snippet_element:
                     result['snippet'] = snippet_element.get_text().strip()
-                else:
-                    # Try to find any paragraph or div that might contain the snippet
-                    snippet_candidates = element.select('p, div.s, span.st, div.snippet-content')
-                    for candidate in snippet_candidates:
-                        text = candidate.get_text().strip()
-                        if text and len(text) > 50 and len(text) < 300:
-                            result['snippet'] = text
-                            break
                 
-                if 'title' in result:
+                if 'title' in result and 'url' in result:
                     search_results.append(result)
         
-        # If we couldn't extract any search results, create some generic ones
+        # Final fallback: If we still couldn't extract any search results, use a more aggressive approach with all links
         if not search_results:
-            # Extract any links and text that might be search results
-            links = soup.find_all('a')
-            for link in links:
+            print("  Falling back to generic link extraction...")
+            
+            # First, try to find links that look like search results
+            all_links = soup.find_all('a')
+            valid_links = []
+            
+            # Process all links to find valid external URLs
+            for link in all_links:
                 href = link.get('href')
                 text = link.get_text().strip()
                 
-                # Skip empty or very short links/text
-                if not href or not text or len(text) < 10:
+                # Skip links without href or with very short text
+                if not href or not text:
                     continue
                     
-                # Skip navigation links
-                if any(nav_term in text.lower() for nav_term in ['sign in', 'log in', 'register', 'home', 'about', 'contact']):
-                    continue
+                # Process Google redirect links
+                if href.startswith('/url?') and 'q=' in href:
+                    actual_url = re.search(r'q=([^&]+)', href)
+                    if actual_url:
+                        url = actual_url.group(1)
+                        # Skip Google's own domains and common navigation links
+                        if ('google.com' in url or 
+                            any(nav in url.lower() for nav in ['accounts', 'login', 'signin', 'settings', 'support', 'policies'])):
+                            continue
+                        valid_links.append({
+                            'text': text,
+                            'url': url,
+                            'is_redirect': True
+                        })
+                # Process direct external links
+                elif href.startswith('http') and domain not in href:
+                    # Skip common navigation and social media links
+                    if (len(text) < 10 or
+                        any(nav_term in text.lower() for nav_term in ['sign in', 'log in', 'register', 'home', 'about', 'contact', 'privacy', 'terms']) or
+                        any(social in href.lower() for social in ['facebook.com', 'twitter.com', 'instagram.com', 'linkedin.com', 'youtube.com'])):
+                        continue
+                    valid_links.append({
+                        'text': text,
+                        'url': href,
+                        'is_redirect': False
+                    })
+            
+            # Sort links by text length (longer text is usually more informative)
+            valid_links.sort(key=lambda x: len(x['text']), reverse=True)
+            
+            # Take the top 10 most promising links
+            for i, link_data in enumerate(valid_links[:10]):
+                # Try to find a better title and snippet for this link
+                parent_elem = None
+                link_element = None
                 
-                result = {
-                    'title': text
-                }
+                # Try to find the link element in the soup
+                if link_data['is_redirect']:
+                    # For redirect links, we need to find the link with the /url? pattern
+                    for a in soup.find_all('a'):
+                        if a.get('href') and '/url?' in a.get('href') and f"q={link_data['url']}" in a.get('href').replace('%3A', ':').replace('%2F', '/'):
+                            link_element = a
+                            break
+                else:
+                    # For direct links, we can search directly
+                    link_element = soup.find('a', href=link_data['url'])
                 
-                if href.startswith('http'):
-                    result['url'] = href
-                elif href.startswith('/'):
-                    result['url'] = f"https://{domain}{href}"
+                # If we found the link element, look for a good parent container
+                if link_element:
+                    for parent in link_element.parents:
+                        if parent.name in ['div', 'li', 'section'] and len(parent.get_text().strip()) > 50:
+                            parent_elem = parent
+                            break
                 
-                # Try to find a snippet near this link
-                parent = link.parent
-                if parent:
-                    # Get all text nodes that are siblings of this link
-                    siblings = list(parent.contents)
-                    for sibling in siblings:
-                        if sibling != link and hasattr(sibling, 'get_text'):
-                            sibling_text = sibling.get_text().strip()
-                            if sibling_text and len(sibling_text) > 30:
-                                result['snippet'] = sibling_text
-                                break
+                title = link_data['text']
+                snippet = ""
                 
-                search_results.append(result)
+                # If we found a good parent element, try to extract a better snippet
+                if parent_elem:
+                    # Get all text from the parent element
+                    parent_text = parent_elem.get_text().strip()
+                    # Remove the link text to avoid duplication
+                    parent_text = parent_text.replace(title, '')
+                    if parent_text and len(parent_text) > 30:
+                        snippet = parent_text[:200] + '...' if len(parent_text) > 200 else parent_text
+                
+                # If we couldn't find a good snippet, create a generic one
+                if not snippet:
+                    snippet = f"Found in search results: {title}"
+                
+                search_results.append({
+                    'title': title,
+                    'url': link_data['url'],
+                    'snippet': snippet
+                })
+                
+                # If we've found at least 5 good results, that's enough for a fallback
+                if len(search_results) >= 5:
+                    break
         
-        return search_results
+        # Deduplicate results based on URL
+        unique_results = []
+        seen_urls = set()
+        for result in search_results:
+            if 'url' in result and result['url'] not in seen_urls:
+                seen_urls.add(result['url'])
+                unique_results.append(result)
+        
+        print(f"  Extracted {len(unique_results)} search results")
+        return unique_results

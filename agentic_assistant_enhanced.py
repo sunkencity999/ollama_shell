@@ -487,32 +487,110 @@ class EnhancedAgenticAssistant(AgenticAssistant):
             if 'artifacts' in web_result:
                 artifacts = web_result['artifacts']
                 
-                # Get the headlines if available
-                if 'headlines' in artifacts and artifacts['headlines']:
-                    web_content += "Headlines:\n"
-                    for i, headline in enumerate(artifacts['headlines'][:10], 1):
-                        web_content += f"{i}. {headline}\n"
-                    web_content += "\n"
-                
-                # Get the main content if available
-                if 'content_preview' in artifacts:
-                    web_content += "Content:\n"
-                    web_content += artifacts.get('content_preview', '')
-                    web_content += "\n\n"
+                # Use the full_content if available (this will include detailed analysis section with markers)
+                if 'full_content' in artifacts:
+                    web_content = artifacts['full_content']
+                    print(f"  Using full content from artifacts ({len(web_content)} chars)")
+                    print(f"  DEBUG: Full content has detailed analysis markers: {'!!DETAILED_ANALYSIS_SECTION_START!!' in web_content and '!!DETAILED_ANALYSIS_SECTION_END!!' in web_content}")
+                else:
+                    # Fall back to constructing content from other artifacts
+                    print("  Full content not available, constructing from other artifacts")
+                    
+                    # Get the headlines if available
+                    if 'headlines' in artifacts and artifacts['headlines']:
+                        web_content += "Headlines:\n"
+                        for i, headline in enumerate(artifacts['headlines'][:10], 1):
+                            web_content += f"{i}. {headline}\n"
+                        web_content += "\n"
+                    
+                    # Get the main content if available
+                    if 'content_preview' in artifacts:
+                        web_content += "Content:\n"
+                        web_content += artifacts.get('content_preview', '')
+                        web_content += "\n\n"
                 
                 # Get the URL if available
                 if 'url' in artifacts:
                     web_content += f"Source: {artifacts.get('url', '')}\n"
             
-            # Determine if we should directly save the web content or use the LLM to process it
-            should_process_content = any(term in task_description.lower() for term in [
-                "summarize", "analyze", "extract key points", "create a summary", 
-                "compile", "generate a report", "create an analysis"
-            ])
+            # Check if the web content already has a well-structured format from our enhanced link analysis
+            has_detailed_analysis = "# " in web_content and "## " in web_content
+            has_markdown_structure = web_content.count("###") > 0 or web_content.count("##") > 2
             
-            if should_process_content:
-                # Create a prompt for the file creation
-                prompt = f"Based on the following web content, create a file as requested in the task: '{task_description}'\n\n{web_content}"
+            # Store the original detailed analysis to ensure it's preserved
+            original_detailed_analysis = ""
+            if "Detailed Analysis from Top Sources:" in web_content:
+                # Extract the detailed analysis section
+                analysis_start = web_content.find("Detailed Analysis from Top Sources:")
+                original_detailed_analysis = web_content[analysis_start:]
+            
+            # If the content is already well-structured with markdown headings from our enhanced link analysis,
+            # we can use it directly without LLM processing
+            if has_detailed_analysis and has_markdown_structure and len(web_content) > 1000:
+                # The content is already well-structured, use it directly
+                content = web_content
+                
+                # Add a title if not present
+                if not web_content.startswith("# "):
+                    title = task_description.replace("Search for", "").replace("information about", "").strip()
+                    title = title.split(" and create")[0].strip().title()
+                    content = f"# {title}\n\n{content}"
+                
+                # Make sure the sources section is preserved
+                if "# Sources" not in content and "Sources:" not in content:
+                    # Extract URLs from artifacts if available
+                    sources_section = "\n# Sources\n\n"
+                    
+                    # Add the main URL if available
+                    if 'url' in artifacts:
+                        sources_section += f"- {artifacts['url']}\n"
+                    
+                    # Look for any additional URLs in the artifacts
+                    for key, value in artifacts.items():
+                        if key != 'url' and isinstance(value, str) and value.startswith('http'):
+                            sources_section += f"- {value}\n"
+                    
+                    # Add the search query URL if we can extract it
+                    search_terms = task_description.lower()
+                    search_terms = search_terms.replace('search for', '')
+                    search_terms = search_terms.replace('information about', '')
+                    search_terms = search_terms.replace('find information on', '')
+                    search_terms = search_terms.replace('research', '')
+                    search_terms = search_terms.split(' and ')[0].strip()
+                    
+                    if search_terms:
+                        search_url = f"https://www.google.com/search?q={search_terms.replace(' ', '+')}"
+                        sources_section += f"\nMain search: {search_url}\n"
+                    
+                    content += sources_section
+            else:
+                # Create an appropriate prompt based on the task and available content
+                if "Detailed Analysis" in web_content or "Source" in web_content:
+                    prompt = f"You are tasked with analyzing and summarizing web content about: '{task_description}'\n\n"
+                    prompt += "The following content includes search results and detailed information from multiple sources.\n\n"
+                    prompt += f"{web_content}\n\n"
+                    prompt += "Based on this information, please provide a comprehensive analysis that includes:\n"
+                    prompt += "1. A summary of the key information\n"
+                    prompt += "2. Main points from each source\n"
+                    prompt += "3. Any important technical details or steps\n"
+                    prompt += "4. A conclusion with recommendations if applicable\n"
+                    prompt += "5. A 'Sources' section that lists all the actual URLs you analyzed (not just the search query URL)\n"
+                    prompt += "Format your response in a clear, well-structured manner with markdown headings suitable for saving to a file.\n"
+                    prompt += "IMPORTANT: If the content contains a 'Detailed Analysis from Top Sources' section, PRESERVE THIS SECTION COMPLETELY in your response. This section contains valuable detailed information that must be included.\n"
+                    prompt += "IMPORTANT: Make sure to include a 'Sources' section at the end that lists all the actual URLs you analyzed, not just the search query URL."
+                else:
+                    # Create a prompt for simpler content analysis
+                    prompt = f"Based on the following web search results, create a comprehensive file about: '{task_description}'\n\n"
+                    prompt += f"{web_content}\n\n"
+                    prompt += "Please analyze these search results and provide:\n"
+                    prompt += "1. A summary of the available information\n"
+                    prompt += "2. Key points that address the query\n"
+                    prompt += "3. Any relevant technical details\n"
+                    prompt += "4. A conclusion or recommendations\n"
+                    prompt += "5. A 'Sources' section that lists all the actual URLs you analyzed (not just the search query URL)\n\n"
+                    prompt += "IMPORTANT: If the content contains a 'Detailed Analysis from Top Sources' section, PRESERVE THIS SECTION COMPLETELY in your response. This section contains valuable detailed information that must be included.\n"
+                    prompt += "IMPORTANT: Make sure to include a 'Sources' section at the end that lists all the actual URLs you analyzed, not just the search query URL.\n\n"
+                    prompt += "Format your response in a clear, well-structured manner with markdown headings."
                 
                 # Generate the file content using the LLM
                 completion_result = await self.agentic_ollama._generate_completion(prompt)
@@ -520,13 +598,123 @@ class EnhancedAgenticAssistant(AgenticAssistant):
                     raise Exception(completion_result.get("error", "Failed to generate content"))
                     
                 content = completion_result.get("result", "")
-            else:
-                # Directly save the web content to the file
-                content = f"Web content from search: '{task_description}'\n\n{web_content}"
                 
-                # Add a note about the source
-                if 'artifacts' in web_result and 'url' in web_result['artifacts']:
-                    content += f"\nSource: {web_result['artifacts']['url']}\n"
+                # Extract the specially marked detailed analysis section
+                detailed_analysis = ""
+                if "DETAILED_ANALYSIS_SECTION_START" in web_content and "DETAILED_ANALYSIS_SECTION_END" in web_content:
+                    start_marker = "DETAILED_ANALYSIS_SECTION_START"
+                    end_marker = "DETAILED_ANALYSIS_SECTION_END"
+                    start_pos = web_content.find(start_marker)
+                    end_pos = web_content.find(end_marker)
+                    
+                    if start_pos >= 0 and end_pos > start_pos:
+                        # Extract the section including the markers
+                        section_with_markers = web_content[start_pos:end_pos + len(end_marker)]
+                        
+                        # Clean up the markers for display
+                        detailed_analysis = section_with_markers.replace(start_marker, "").replace(end_marker, "")
+                        
+                        # Make sure the section starts with a proper heading
+                        if not detailed_analysis.strip().startswith("##"):
+                            detailed_analysis = "## Detailed Analysis from Top Sources:\n\n" + detailed_analysis.strip()
+                        
+                        print(f"  Found marked detailed analysis section ({len(detailed_analysis)} chars)")
+                
+                # If we didn't find the marked section, try other methods
+                if not detailed_analysis and "## Detailed Analysis from Top Sources:" in web_content:
+                    analysis_start = web_content.find("## Detailed Analysis from Top Sources:")
+                    next_section = re.search(r'\n## [^\n]+\n', web_content[analysis_start+10:])
+                    if next_section:
+                        analysis_end = analysis_start + 10 + next_section.start()
+                        detailed_analysis = web_content[analysis_start:analysis_end]
+                    else:
+                        detailed_analysis = web_content[analysis_start:]
+                    
+                    print(f"  Found unmarked detailed analysis section ({len(detailed_analysis)} chars)")
+                
+                # If we have detailed analysis and it's not already in the content, add it
+                if detailed_analysis and "Detailed Analysis from Top Sources:" not in content:
+                    # Add the detailed analysis after the main content but before the sources
+                    if "# Sources" in content:
+                        # Insert before the sources section
+                        sources_index = content.find("# Sources")
+                        content = content[:sources_index] + "\n\n" + detailed_analysis + "\n\n" + content[sources_index:]
+                    else:
+                        # Append to the end
+                        content += "\n\n" + detailed_analysis
+            
+            # Add a note about the sources
+            content += "\n\nSources:\n"
+            if 'artifacts' in web_result:
+                if 'url' in web_result['artifacts']:
+                    content += f"- Main search: {web_result['artifacts']['url']}\n"
+                
+                # Add any URLs from the detailed analysis
+                if has_detailed_analysis:
+                    # Extract URLs from the detailed analysis section
+                    url_pattern = re.compile(r'URL: (https?://[^\s\n]+)', re.IGNORECASE)
+                    urls = url_pattern.findall(web_content)
+                    for url in urls:
+                        content += f"- {url}\n"
+            
+            # Extract the detailed analysis section with special markers before processing with LLM
+            detailed_analysis_section = ""
+            preserved_detailed_analysis = ""
+            
+            print(f"  DEBUG: Web content length: {len(web_content)} chars")
+            print(f"  DEBUG: Start marker '!!DETAILED_ANALYSIS_SECTION_START!!' present: {'!!DETAILED_ANALYSIS_SECTION_START!!' in web_content}")
+            print(f"  DEBUG: End marker '!!DETAILED_ANALYSIS_SECTION_END!!' present: {'!!DETAILED_ANALYSIS_SECTION_END!!' in web_content}")
+            
+            # Extract the detailed analysis section before LLM processing
+            if "!!DETAILED_ANALYSIS_SECTION_START!!" in web_content and "!!DETAILED_ANALYSIS_SECTION_END!!" in web_content:
+                start_marker = "!!DETAILED_ANALYSIS_SECTION_START!!"
+                end_marker = "!!DETAILED_ANALYSIS_SECTION_END!!"
+                start_pos = web_content.find(start_marker)
+                end_pos = web_content.find(end_marker) + len(end_marker)
+                print(f"  DEBUG: Start marker position: {start_pos}, End marker position: {end_pos}")
+                
+                if start_pos >= 0 and end_pos > start_pos:
+                    # Extract the entire section including markers
+                    preserved_detailed_analysis = web_content[start_pos:end_pos]
+                    
+                    # Also extract just the content for our formatted section
+                    section_content = web_content[start_pos + len(start_marker):end_pos - len(end_marker)].strip()
+                    detailed_analysis_section = "\n\n## Detailed Analysis from Top Sources\n\n" + section_content
+                    
+                    print(f"  Extracted detailed analysis section with markers ({len(preserved_detailed_analysis)} chars)")
+                    print(f"  DEBUG: Section content preview: {section_content[:100]}...")
+                    
+                    # Remove the detailed analysis section from the web content to prevent duplication
+                    # when the LLM processes it, we'll add it back later
+                    web_content = web_content[:start_pos] + web_content[end_pos:]
+                    
+                    # Debug: Show the modified web content length
+                    print(f"  DEBUG: Modified web content length (after removing detailed analysis): {len(web_content)} chars")
+            
+            # If we have a detailed analysis section and it's not already in the content, add it
+            if preserved_detailed_analysis and "Detailed Analysis from Top Sources" not in content:
+                # Find where to insert it - before sources or at the end
+                if "## Sources" in content or "# Sources" in content:
+                    sources_marker = "## Sources" if "## Sources" in content else "# Sources"
+                    sources_index = content.find(sources_marker)
+                    # Use the preserved detailed analysis with original markers
+                    content = content[:sources_index] + "\n\n" + preserved_detailed_analysis + "\n\n" + content[sources_index:]
+                else:
+                    # Append to the end before we add our own sources
+                    content = content.rstrip() + "\n\n" + preserved_detailed_analysis
+                    
+                print("  Added preserved detailed analysis section with original markers to final content")
+            elif detailed_analysis_section and "Detailed Analysis from Top Sources" not in content:
+                # Fallback to using the formatted section without markers if preserved version is not available
+                if "## Sources" in content or "# Sources" in content:
+                    sources_marker = "## Sources" if "## Sources" in content else "# Sources"
+                    sources_index = content.find(sources_marker)
+                    content = content[:sources_index] + detailed_analysis_section + "\n\n" + content[sources_index:]
+                else:
+                    # Append to the end before we add our own sources
+                    content = content.rstrip() + "\n\n" + detailed_analysis_section
+                    
+                print("  Added formatted detailed analysis section to final content (no markers)")
             
             # Save the content to a file
             documents_dir = os.path.expanduser("~/Documents")
