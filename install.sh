@@ -74,13 +74,23 @@ fi
 # Create necessary directories for user data
 echo -e "${GREEN}Creating user data directories...${NC}"
 
-# Create the Created Files directory and its subdirectories using both methods
-# 1. Using mkdir (for bash environments)
-mkdir -p "Created Files/jobs" "Created Files/datasets" "Created Files/models" "Created Files/exports"
+# Using mkdir (for bash environments)
+mkdir -p "Created Files/jobs" "Created Files/datasets" "Created Files/models" "Created Files/exports" "Created Files/config"
+
+# Create a .gitkeep file in each directory to ensure they're preserved in git
+touch "Created Files/jobs/.gitkeep" "Created Files/datasets/.gitkeep" "Created Files/models/.gitkeep" "Created Files/exports/.gitkeep" "Created Files/config/.gitkeep"
 
 # Install Filesystem MCP Protocol dependencies
 echo -e "${GREEN}Installing Filesystem MCP Protocol dependencies...${NC}"
-python install_filesystem_mcp_protocol.py
+if [ -f "install_filesystem_mcp_protocol.py" ]; then
+    python3 install_filesystem_mcp_protocol.py || {
+        echo -e "${YELLOW}Warning: Failed to install Filesystem MCP Protocol dependencies.${NC}"
+        echo -e "${YELLOW}This is non-critical and you can continue using Ollama Shell.${NC}"
+    }
+else
+    echo -e "${YELLOW}Warning: Filesystem MCP Protocol installer not found.${NC}"
+    echo -e "${YELLOW}This is non-critical and you can continue using Ollama Shell.${NC}"
+fi
 
 # Set up Selenium WebDriver container for enhanced web browsing
 if command -v docker &> /dev/null; then
@@ -113,8 +123,13 @@ else
     echo -e "${YELLOW}Docker is not installed. Enhanced web browsing capabilities will be limited.${NC}"
 fi
 
-# 2. Using Python script (for cross-platform compatibility)
-python3 create_directories.py
+# Also try using Python script (for cross-platform compatibility)
+if [ -f "create_directories.py" ]; then
+    python3 create_directories.py || {
+        echo -e "${YELLOW}Warning: Failed to run directory creation script.${NC}"
+        echo -e "${YELLOW}This is non-critical as directories were already created using mkdir.${NC}"
+    }
+fi
 
 # Install the Enhanced Agentic Assistant with fixed file creation handling
 echo -e "${GREEN}Installing Enhanced Agentic Assistant with improved file creation handling...${NC}"
@@ -351,33 +366,101 @@ EOL
         cp "$template_file" "$config_file"
         echo -e "${GREEN}Created Confluence configuration file: $config_file${NC}"
     fi
-        
-        echo -e "${YELLOW}Please edit the configuration file at $config_file with your Confluence details.${NC}"
-        echo -e "${YELLOW}You will need to provide:${NC}"
-        echo -e "  - Confluence URL"
-        echo -e "  - Your email/username"
-        echo -e "  - Your Personal Access Token (PAT) or API token"
-        echo -e "  - (Optional) Confluence analysis model (default: llama3.2:latest)"
-        
-        # Ask if they want to open the file now
-        echo -e "${YELLOW}Would you like to open the configuration file now? (y/n)${NC}"
-        read -r open_config
-        
-        if [ "$open_config" = "y" ]; then
-            # Try to open with the default editor
-            if [ -n "$EDITOR" ]; then
-                $EDITOR "$config_file"
-            elif command -v nano &> /dev/null; then
-                nano "$config_file"
-            elif command -v vim &> /dev/null; then
-                vim "$config_file"
-            else
-                echo -e "${YELLOW}No text editor found. Please open $config_file manually.${NC}"
-            fi
+    
+    echo -e "${YELLOW}Please edit the configuration file at $config_file with your Confluence details.${NC}"
+    echo -e "${YELLOW}You will need to provide:${NC}"
+    echo -e "  - Confluence URL"
+    echo -e "  - Your email/username"
+    echo -e "  - Your Personal Access Token (PAT) or API token"
+    echo -e "  - (Optional) Confluence analysis model (default: llama3.2:latest)"
+    
+    # Ask if they want to open the file now
+    echo -e "${YELLOW}Would you like to open the configuration file now? (y/n)${NC}"
+    read -r open_config
+    
+    if [ "$open_config" = "y" ]; then
+        # Try to open with the default editor
+        if [ -n "$EDITOR" ]; then
+            $EDITOR "$config_file"
+        elif command -v nano &> /dev/null; then
+            nano "$config_file"
+        elif command -v vim &> /dev/null; then
+            vim "$config_file"
+        else
+            echo -e "${YELLOW}No text editor found. Please open $config_file manually.${NC}"
         fi
-    else
-        echo -e "${YELLOW}Confluence configuration template not found. Please run the setup script again.${NC}"
     fi
+else
+    echo -e "${GREEN}Skipping Confluence integration setup.${NC}"
+    echo -e "${YELLOW}You can set it up later by running:${NC}"
+    echo -e "  ${YELLOW}./ollama_shell.py confluence --configure${NC}"
+fi
+
+# Guide users through optional Jira integration setup
+echo -e "\n${YELLOW}Would you like to set up the Jira integration? (y/n)${NC}"
+read -r setup_jira
+
+if [ "$setup_jira" = "y" ]; then
+    echo -e "${GREEN}Setting up Jira integration...${NC}"
+    
+    # Create config directory if it doesn't exist
+    mkdir -p "Created Files/config"
+    
+    # Define template and config files
+    template_file="Created Files/config/jira_config_template.env"
+    config_file="Created Files/jira_config.env"
+    
+    # Create template file if it doesn't exist
+    if [ ! -f "$template_file" ]; then
+        cat > "$template_file" << EOL
+# Jira Configuration
+# Fill in your Jira details below
+
+# Required settings
+JIRA_URL=https://your-instance.atlassian.net
+JIRA_EMAIL=your.email@example.com
+JIRA_API_TOKEN=your_api_token_here
+
+# Optional settings
+JIRA_AUTH_METHOD=pat
+JIRA_ANALYSIS_MODEL=llama3.2:latest
+EOL
+        echo -e "${GREEN}Created Jira configuration template: $template_file${NC}"
+    fi
+    
+    # Copy the template to the actual config file if it doesn't exist
+    if [ ! -f "$config_file" ]; then
+        cp "$template_file" "$config_file"
+        echo -e "${GREEN}Created Jira configuration file: $config_file${NC}"
+    fi
+    
+    echo -e "${YELLOW}Please edit the configuration file at $config_file with your Jira details.${NC}"
+    echo -e "${YELLOW}You will need to provide:${NC}"
+    echo -e "  - Jira URL"
+    echo -e "  - Your email/username"
+    echo -e "  - Your Personal Access Token (PAT) or API token"
+    echo -e "  - (Optional) Jira analysis model (default: llama3.2:latest)"
+    
+    # Ask if they want to open the file now
+    echo -e "${YELLOW}Would you like to open the configuration file now? (y/n)${NC}"
+    read -r open_config
+    
+    if [ "$open_config" = "y" ]; then
+        # Try to open with the default editor
+        if [ -n "$EDITOR" ]; then
+            $EDITOR "$config_file"
+        elif command -v nano &> /dev/null; then
+            nano "$config_file"
+        elif command -v vim &> /dev/null; then
+            vim "$config_file"
+        else
+            echo -e "${YELLOW}No text editor found. Please open $config_file manually.${NC}"
+        fi
+    fi
+else
+    echo -e "${GREEN}Skipping Jira integration setup.${NC}"
+    echo -e "${YELLOW}You can set it up later by running:${NC}"
+    echo -e "  ${YELLOW}./ollama_shell.py jira --configure${NC}"
 fi
 
 echo -e "\n${GREEN}Installation complete!${NC}"
