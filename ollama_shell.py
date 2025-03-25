@@ -1182,8 +1182,26 @@ def interactive_chat(model: str, system_prompt: Optional[str] = None, context_fi
                                     default="n"
                                 ).lower() in ['y', 'yes']
                         
+                        # Ask for custom prompt if it's not an image file
+                        _, ext = os.path.splitext(cleaned_path)
+                        ext = ext.lower()
+                        is_image = ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
+                        
+                        custom_prompt = None
+                        if not is_image:
+                            use_custom_prompt = Prompt.ask(
+                                f"\nUse custom prompt for {os.path.basename(cleaned_path)}?",
+                                choices=["y", "n", "yes", "no"],
+                                default="n"
+                            ).lower() in ['y', 'yes']
+                            
+                            if use_custom_prompt:
+                                custom_prompt = Prompt.ask("Enter your custom prompt")
+                        
                         # Create a message about the file being shared
-                        file_message = f"I've added a {file_type} to our conversation. Please analyze it and provide key insights. The content is:\n\n{content}"
+                        default_prompt = f"I've added a {file_type} to our conversation. Please analyze it and provide key insights."
+                        file_message = custom_prompt or default_prompt
+                        file_message += f" The content is:\n\n{content}"
                         
                         # Send message to model (non-streaming for file analysis)
                         with console.status("[cyan]Analyzing document...[/cyan]"):
