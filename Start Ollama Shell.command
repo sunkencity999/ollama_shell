@@ -129,6 +129,38 @@ if ! is_process_running "ollama serve"; then
     show_notification "Ollama Shell" "Ollama service started successfully!"
 fi
 
+# Check if Docker is installed and set up Selenium WebDriver container for enhanced web browsing
+if command -v docker &> /dev/null; then
+    echo -e "${YELLOW}Checking Selenium WebDriver container for enhanced web browsing...${NC}"
+    
+    # Check if the selenium/standalone-chrome container is already running
+    if ! docker ps | grep -q selenium/standalone-chrome; then
+        # Check if the container exists but is not running
+        if docker ps -a | grep -q selenium/standalone-chrome; then
+            echo -e "${YELLOW}Starting existing Selenium container...${NC}"
+            docker start $(docker ps -a | grep selenium/standalone-chrome | awk '{print $1}')
+        else
+            echo -e "${YELLOW}Pulling Selenium WebDriver container image...${NC}"
+            docker pull selenium/standalone-chrome:latest
+            
+            echo -e "${YELLOW}Starting Selenium WebDriver container...${NC}"
+            docker run -d -p 4444:4444 -p 7900:7900 --shm-size="2g" --name selenium-chrome selenium/standalone-chrome:latest
+        fi
+        
+        # Wait for the container to be ready
+        echo -e "${YELLOW}Waiting for Selenium WebDriver container to be ready...${NC}"
+        sleep 5
+        
+        echo -e "${GREEN}Selenium WebDriver container is ready!${NC}"
+        show_notification "Ollama Shell" "Enhanced web browsing capabilities are now available."
+    else
+        echo -e "${GREEN}Selenium WebDriver container is already running.${NC}"
+    fi
+else
+    echo -e "${YELLOW}Docker is not installed. Enhanced web browsing capabilities will be limited.${NC}"
+    show_notification "Ollama Shell" "Enhanced web browsing capabilities limited (Docker not found)."
+fi
+
 # Ensure the main script is executable
 chmod +x ollama_shell.py
 

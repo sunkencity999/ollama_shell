@@ -35,6 +35,10 @@ fastapi>=0.100.0  # FastAPI for MCP server
 uvicorn>=0.22.0  # ASGI server for FastAPI
 mcp>=0.1.0  # Model Context Protocol SDK
 
+# Selenium WebDriver dependencies
+selenium>=4.15.0  # Selenium WebDriver for browser automation
+webdriver-manager>=4.0.0  # WebDriver manager for automatic driver installation
+
 # Fine-tuning dependencies (installed on-demand based on hardware)
 # These are not installed by default but are installed by the /finetune install command
 # For NVIDIA GPUs (Unsloth)

@@ -888,16 +888,23 @@ class TaskExecutor:
         print(f"\n  Handling file creation: {task.description}")
         
         try:
-            # First try to use the assistant's specialized method if available
+            # Extract filename from task description first
+            extracted_filename = self._extract_filename_from_task(task.description)
+            if extracted_filename:
+                print(f"  Step 1: Extracted filename '{extracted_filename}' from task description")
+                # Add the filename to the task description to ensure it's used
+                enhanced_description = f"{enhanced_description}\n\nIMPORTANT: Save the file as '{extracted_filename}'"
+            
+            # Try to use the assistant's specialized method if available
             if hasattr(self.agentic_assistant, "_handle_file_creation"):
-                print("  Step 1: Using specialized file creation handler...")
+                print("  Step 2: Using specialized file creation handler...")
                 result = await self.agentic_assistant._handle_file_creation(enhanced_description)
             else:
                 # Fallback to standard execution
-                print("  Step 1: No specialized handler available, using standard execution...")
+                print("  Step 2: No specialized handler available, using standard execution...")
                 result = await self.agentic_assistant.execute_task(enhanced_description)
             
-            print("  Step 2: Processing file creation result...")
+            print("  Step 3: Processing file creation result...")
             
             # Ensure the result has the correct structure
             if result.get("success", False):
@@ -906,10 +913,22 @@ class TaskExecutor:
                     result["result"] = {}
                 
                 # Ensure we have the required fields
-                if "filename" not in result["result"]:
+                if "filename" not in result["result"] or not result["result"]["filename"]:
                     # Try to extract filename from task description
                     filename = self._extract_filename_from_task(task.description)
-                    result["result"]["filename"] = filename or "document.txt"
+                    if filename:
+                        # Use the extracted filename
+                        result["result"]["filename"] = filename
+                        
+                        # Create the full path
+                        home_dir = os.path.expanduser("~")
+                        documents_dir = os.path.join(home_dir, "Documents")
+                        os.makedirs(documents_dir, exist_ok=True)
+                        result["result"]["full_path"] = os.path.join(documents_dir, filename)
+                    else:
+                        # Default fallback
+                        result["result"]["filename"] = "document.txt"
+                        result["result"]["full_path"] = os.path.join(os.path.expanduser("~"), "Documents", "document.txt")
                 
                 if "file_type" not in result["result"]:
                     # Extract file type from filename
@@ -941,27 +960,37 @@ class TaskExecutor:
         Returns:
             Extracted filename or None if not found
         """
-        # Pattern 1: "save it to/as/in [filename]"
-        save_as_match = re.search(r'save\s+(?:it|this|the\s+\w+)\s+(?:to|as|in)\s+[\'\"]*([\w\-\.]+)[\'\"]*', task_description, re.IGNORECASE)
+        # Pattern 1: Look for quoted filenames with extensions
+        quoted_filename = re.search(r'["\'](\w[\w\s\-\.]+\.[\w]+)["\']', task_description)
+        if quoted_filename:
+            return quoted_filename.group(1).strip()
+        
+        # Pattern 2: "save it to/as/in [filename]"
+        save_as_match = re.search(r'save\s+(?:it|this|the\s+\w+)\s+(?:to|as|in)\s+[\'\"]*([a-zA-Z0-9\s\-\.]+\.[\w]+)[\'\"]*', task_description, re.IGNORECASE)
         if save_as_match:
             return save_as_match.group(1).strip()
         
-        # Pattern 2: "save to/as/in [filename]"
-        save_to_match = re.search(r'save\s+(?:to|as|in)\s+[\'\"]*([\w\-\.]+)[\'\"]*', task_description, re.IGNORECASE)
+        # Pattern 3: "save to/as/in [filename]"
+        save_to_match = re.search(r'save\s+(?:to|as|in)\s+[\'\"]*([a-zA-Z0-9\s\-\.]+\.[\w]+)[\'\"]*', task_description, re.IGNORECASE)
         if save_to_match:
             return save_to_match.group(1).strip()
         
-        # Pattern 3: "create/write a [content] and save it as [filename]"
+        # Pattern 4: Look for any word followed by a file extension pattern
+        extension_match = re.search(r'\b([a-zA-Z0-9\s\-\.]+\.(doc|docx|txt|md|rtf|pdf|html))\b', task_description, re.IGNORECASE)
+        if extension_match:
+            return extension_match.group(1).strip()
+        
+        # Pattern 5: "create/write a [content] and save it as [filename]"
         create_save_match = re.search(r'(?:create|write)\s+a\s+[\w\s]+\s+(?:and|&)\s+save\s+(?:it|this)\s+(?:to|as|in)\s+[\'\"]*([\w\-\.]+)[\'\"]*', task_description, re.IGNORECASE)
         if create_save_match:
             return create_save_match.group(1).strip()
         
-        # Pattern 4: "create/write a [content] called/named [filename]"
+        # Pattern 6: "create/write a [content] called/named [filename]"
         called_match = re.search(r'(?:create|write)\s+a\s+[\w\s]+\s+(?:called|named)\s+[\'\"]*([\w\-\.]+)[\'\"]*', task_description, re.IGNORECASE)
         if called_match:
             return called_match.group(1).strip()
         
-        # Pattern 5: "create/write [filename]"
+        # Pattern 7: "create/write [filename]"
         create_file_match = re.search(r'(?:create|write)\s+[\'\"]*([\w\-\.]+\.\w+)[\'\"]*', task_description, re.IGNORECASE)
         if create_file_match:
             return create_file_match.group(1).strip()
@@ -970,6 +999,7 @@ class TaskExecutor:
         content_types = {
             "story": "story.txt",
             "poem": "poem.txt",
+            "epic poem": "epic_poem.txt",
             "essay": "essay.txt",
             "document": "document.txt",
             "report": "report.txt",
@@ -981,6 +1011,11 @@ class TaskExecutor:
         
         for content_type, default_filename in content_types.items():
             if content_type in task_description.lower():
+                # Check if there's a file format specified
+                format_match = re.search(r'\.(doc|docx|txt|md|rtf|pdf|html)', task_description, re.IGNORECASE)
+                if format_match:
+                    extension = format_match.group(1).lower()
+                    return default_filename.replace('.txt', f'.{extension}')
                 return default_filename
         
         # Default fallback

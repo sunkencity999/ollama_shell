@@ -7,6 +7,10 @@ with Ollama Shell, allowing LLMs to interact with Confluence Cloud through
 natural language.
 """
 
+# Disable PostHog analytics before any other imports
+# Import our enhanced PostHog disabler that completely blocks all PostHog functionality
+import posthog_disable
+
 import os
 import sys
 import json
@@ -322,7 +326,18 @@ class ConfluenceMCPIntegration:
             url = f"{self.confluence_url}/rest/api/space"
             
             logger.info(f"Testing connection to Confluence API: {url}")
-            response = requests.get(url, headers=headers)
+            # Apply SSL verification handling if available
+            verify = True
+            try:
+                from ssl_utils import should_skip_verification, SSL_UTILS_AVAILABLE
+                if SSL_UTILS_AVAILABLE and should_skip_verification(url):
+                    verify = False
+                    logger.debug(f"SSL verification disabled for request to {url}")
+            except ImportError:
+                # SSL utilities not available, use default verification
+                pass
+                
+            response = requests.get(url, headers=headers, verify=verify)
             
             if response.status_code == 200:
                 # Check if the response is actually JSON
@@ -572,6 +587,7 @@ class ConfluenceMCPIntegration:
             
             # Make the API call to Ollama
             try:
+                # Local Ollama API calls don't need SSL verification handling
                 response = requests.post(
                     "http://localhost:11434/api/chat",
                     json=request_payload

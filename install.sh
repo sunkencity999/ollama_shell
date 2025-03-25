@@ -43,6 +43,34 @@ if ! command -v ollama &> /dev/null; then
     fi
 fi
 
+# Check if Docker is installed (required for Selenium WebDriver)
+if ! command -v docker &> /dev/null; then
+    echo -e "${YELLOW}Docker is not installed. Docker is required for enhanced web browsing capabilities.${NC}"
+    echo -e "${YELLOW}Would you like to install Docker? (y/n)${NC}"
+    read -r install_docker
+    if [ "$install_docker" = "y" ]; then
+        echo -e "${GREEN}Installing Docker...${NC}"
+        if [[ "$(uname)" == "Darwin" ]]; then
+            # macOS - provide instructions for Docker Desktop
+            echo -e "${YELLOW}Please download and install Docker Desktop from: https://www.docker.com/products/docker-desktop/${NC}"
+            echo -e "${YELLOW}After installation, please run this script again.${NC}"
+            exit 0
+        elif [[ "$(uname)" == "Linux" ]]; then
+            # Linux - use convenience script
+            curl -fsSL https://get.docker.com -o get-docker.sh
+            sudo sh get-docker.sh
+            sudo usermod -aG docker $USER
+            echo -e "${GREEN}Docker installed. You may need to log out and back in for group changes to take effect.${NC}"
+        else
+            echo -e "${YELLOW}Please install Docker manually from https://www.docker.com/products/docker-desktop/${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Enhanced web browsing capabilities will be limited without Docker.${NC}"
+    fi
+else
+    echo -e "${GREEN}Docker is installed. Enhanced web browsing capabilities will be available.${NC}"
+fi
+
 # Create necessary directories for user data
 echo -e "${GREEN}Creating user data directories...${NC}"
 
@@ -53,6 +81,37 @@ mkdir -p "Created Files/jobs" "Created Files/datasets" "Created Files/models" "C
 # Install Filesystem MCP Protocol dependencies
 echo -e "${GREEN}Installing Filesystem MCP Protocol dependencies...${NC}"
 python install_filesystem_mcp_protocol.py
+
+# Set up Selenium WebDriver container for enhanced web browsing
+if command -v docker &> /dev/null; then
+    echo -e "${GREEN}Setting up Selenium WebDriver container for enhanced web browsing...${NC}"
+    
+    # Check if the selenium/standalone-chrome container is already running
+    if ! docker ps | grep -q selenium/standalone-chrome; then
+        # Check if the container exists but is not running
+        if docker ps -a | grep -q selenium/standalone-chrome; then
+            echo -e "${YELLOW}Starting existing Selenium container...${NC}"
+            docker start $(docker ps -a | grep selenium/standalone-chrome | awk '{print $1}')
+        else
+            echo -e "${YELLOW}Pulling Selenium WebDriver container image...${NC}"
+            docker pull selenium/standalone-chrome:latest
+            
+            echo -e "${YELLOW}Starting Selenium WebDriver container...${NC}"
+            docker run -d -p 4444:4444 -p 7900:7900 --shm-size="2g" --name selenium-chrome selenium/standalone-chrome:latest
+        fi
+        
+        # Wait for the container to be ready
+        echo -e "${YELLOW}Waiting for Selenium WebDriver container to be ready...${NC}"
+        sleep 5
+        
+        echo -e "${GREEN}Selenium WebDriver container is ready!${NC}"
+        echo -e "${GREEN}Enhanced web browsing capabilities are now available.${NC}"
+    else
+        echo -e "${GREEN}Selenium WebDriver container is already running.${NC}"
+    fi
+else
+    echo -e "${YELLOW}Docker is not installed. Enhanced web browsing capabilities will be limited.${NC}"
+fi
 
 # 2. Using Python script (for cross-platform compatibility)
 python3 create_directories.py

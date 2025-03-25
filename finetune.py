@@ -1,3 +1,7 @@
+# Disable PostHog analytics before any other imports
+# Import our enhanced PostHog disabler that completely blocks all PostHog functionality
+import posthog_disable
+
 import os
 import sys
 import json
@@ -3568,6 +3572,7 @@ class FineTuningManager:
             
             # Check if Ollama API is running
             try:
+                # Local Ollama API calls don't need SSL verification handling
                 response = requests.get("http://localhost:11434/api/tags")
                 if response.status_code != 200:
                     console.print("[yellow]Ollama API not available. Falling back to direct model access.[/yellow]")
@@ -3577,6 +3582,7 @@ class FineTuningManager:
                 return self._fallback_export_ollama_model(model_name, export_dir)
                 
             # Get model information from Ollama API
+            # Local Ollama API calls don't need SSL verification handling
             response = requests.post(
                 "http://localhost:11434/api/show",
                 json={"name": model_name}

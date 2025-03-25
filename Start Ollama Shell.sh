@@ -58,6 +58,38 @@ if ! curl -s http://localhost:11434/api/tags &> /dev/null; then
     fi
 fi
 
+# Check if Docker is installed and set up Selenium WebDriver container for enhanced web browsing
+if command -v docker &> /dev/null; then
+    echo "Checking Selenium WebDriver container for enhanced web browsing..."
+    
+    # Check if the selenium/standalone-chrome container is already running
+    if ! docker ps | grep -q selenium/standalone-chrome; then
+        # Check if the container exists but is not running
+        if docker ps -a | grep -q selenium/standalone-chrome; then
+            echo "Starting existing Selenium container..."
+            docker start $(docker ps -a | grep selenium/standalone-chrome | awk '{print $1}')
+        else
+            echo "Pulling Selenium WebDriver container image..."
+            docker pull selenium/standalone-chrome:latest
+            
+            echo "Starting Selenium WebDriver container..."
+            docker run -d -p 4444:4444 -p 7900:7900 --shm-size="2g" --name selenium-chrome selenium/standalone-chrome:latest
+        fi
+        
+        # Wait for the container to be ready
+        echo "Waiting for Selenium WebDriver container to be ready..."
+        sleep 5
+        
+        echo "Selenium WebDriver container is ready!"
+        echo "Enhanced web browsing capabilities are now available."
+    else
+        echo "Selenium WebDriver container is already running."
+    fi
+else
+    echo "Docker is not installed. Enhanced web browsing capabilities will be limited."
+    echo "To enable enhanced web browsing, please install Docker and run this script again."
+fi
+
 # Load environment variables for integrations
 echo "Loading integration configurations..."
 

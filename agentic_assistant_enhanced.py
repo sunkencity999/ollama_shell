@@ -13,6 +13,7 @@ import json
 import logging
 import asyncio
 import re
+import datetime
 from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
 from rich.console import Console
@@ -375,6 +376,299 @@ class EnhancedAgenticAssistant(AgenticAssistant):
             
         return False
         
+    def _is_advanced_web_browsing_task(self, task_description: str) -> bool:
+        """
+        Determine if a task is an advanced web browsing task that could benefit from Selenium capabilities.
+        
+        Args:
+            task_description: Description of the task
+            
+        Returns:
+            True if the task is an advanced web browsing task, False otherwise
+        """
+        task_lower = task_description.lower()
+        
+        # Check for tasks that require JavaScript rendering
+        js_required_terms = ["javascript", "dynamic", "interactive", "single page application", "spa", "react", "vue", "angular"]
+        has_js_required = any(term in task_lower for term in js_required_terms)
+        
+        # Check for tasks that require interaction with web elements
+        interaction_terms = ["click", "button", "form", "fill", "input", "select", "dropdown", "menu", "navigate", "login"]
+        has_interaction = any(term in task_lower for term in interaction_terms)
+        
+        # Check for tasks that require scrolling
+        scroll_terms = ["scroll", "bottom of page", "end of page", "infinite scroll"]
+        has_scroll = any(term in task_lower for term in scroll_terms)
+        
+        # Check for tasks that require screenshots
+        screenshot_terms = ["screenshot", "capture", "image of", "picture of", "snapshot"]
+        has_screenshot = any(term in task_lower for term in screenshot_terms)
+        
+        # Check for tasks that require structured content extraction
+        structured_content_terms = ["table", "extract data", "scrape", "structured", "headings", "links", "images"]
+        has_structured_content = any(term in task_lower for term in structured_content_terms)
+        
+        # Check for tasks that require JavaScript execution
+        js_execution_terms = ["execute", "run script", "javascript", "js"]
+        has_js_execution = any(term in task_lower for term in js_execution_terms)
+        
+        # Return True if any of the advanced capabilities are needed
+        return has_js_required or has_interaction or has_scroll or has_screenshot or has_structured_content or has_js_execution
+    
+    async def _execute_advanced_web_browsing_task(self, task_description: str) -> Dict[str, Any]:
+        """
+        Execute an advanced web browsing task using the Selenium-powered MCP Browser.
+        
+        Args:
+            task_description: Description of the task
+            
+        Returns:
+            Dict containing the execution results
+        """
+        try:
+            print(f"  Using enhanced MCP Browser with Selenium for advanced web browsing...")
+            
+            # Extract URLs from the task description
+            url_pattern = re.compile(r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+', re.IGNORECASE)
+            urls = url_pattern.findall(task_description)
+            
+            # Extract domains from the task description
+            domain_pattern = r'\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|ai|co\.uk|co)\b'
+            domains = re.findall(domain_pattern, task_description, re.IGNORECASE)
+            
+            # Filter out domains that are already part of URLs to avoid duplication
+            if urls and domains:
+                domains = [domain for domain in domains if not any(domain in url for url in urls)]
+                
+            print(f"  Extracted URLs: {urls}")
+            print(f"  Extracted domains: {domains}")
+            
+            # Extract search queries from the task description
+            search_patterns = [
+                r"search\s+for\s+(.+?)(?:\s+and|\s+on|\s+about|\s+in|\s+at|\.|$)",
+                r"find\s+information\s+(?:about|on)\s+(.+?)(?:\s+and|\s+on|\s+about|\s+in|\s+at|\.|$)",
+                r"look\s+up\s+(.+?)(?:\s+and|\s+on|\s+about|\s+in|\s+at|\.|$)",
+                r"research\s+(.+?)(?:\s+and|\s+on|\s+about|\s+in|\s+at|\.|$)"
+            ]
+            
+            search_query = None
+            for pattern in search_patterns:
+                match = re.search(pattern, task_description, re.IGNORECASE)
+                if match:
+                    search_query = match.group(1).strip()
+                    break
+            
+            # Determine the task type and execute the appropriate action
+            task_lower = task_description.lower()
+            
+            result = {
+                "success": False,
+                "task_type": "advanced_web_browsing",
+                "message": "",
+                "artifacts": {}
+            }
+            
+            # If we have a URL, use it directly
+            if urls:
+                url = urls[0]
+                print(f"  Browsing URL: {url}")
+                
+                # Check for specific actions in the task description
+                if any(term in task_lower for term in ["screenshot", "capture", "image"]):
+                    # Take a screenshot of the webpage
+                    screenshot_result = await self.web_browser.mcp_browser.take_screenshot(url)
+                    if screenshot_result.get("success", False):
+                        result["success"] = True
+                        result["message"] = f"Successfully captured screenshot of {url}"
+                        result["artifacts"]["screenshot"] = screenshot_result.get("screenshot", "")
+                        result["artifacts"]["url"] = url
+                    else:
+                        result["message"] = f"Failed to capture screenshot: {screenshot_result.get('error', 'Unknown error')}"
+                
+                elif any(term in task_lower for term in ["structured", "extract data", "scrape", "headings", "links", "images"]):
+                    # Extract structured content from the webpage
+                    content_result = await self.web_browser.mcp_browser.extract_structured_content(url)
+                    if content_result.get("success", False):
+                        result["success"] = True
+                        result["message"] = f"Successfully extracted structured content from {url}"
+                        result["artifacts"]["structured_data"] = content_result.get("structured_data", {})
+                        result["artifacts"]["url"] = url
+                        
+                        # Add a content preview
+                        structured_data = content_result.get("structured_data", {})
+                        preview = ""
+                        
+                        # Add headings to the preview
+                        if "headings" in structured_data and structured_data["headings"]:
+                            preview += "### Headings:\n"
+                            for heading in structured_data["headings"][:5]:
+                                preview += f"- {heading.get('level', 'H')} - {heading.get('text', '')}\n"
+                            preview += "\n"
+                        
+                        # Add paragraphs to the preview
+                        if "paragraphs" in structured_data and structured_data["paragraphs"]:
+                            preview += "### Content Preview:\n"
+                            for paragraph in structured_data["paragraphs"][:3]:
+                                preview += f"{paragraph[:100]}...\n\n"
+                        
+                        result["artifacts"]["content_preview"] = preview
+                    else:
+                        result["message"] = f"Failed to extract structured content: {content_result.get('error', 'Unknown error')}"
+                
+                elif any(term in task_lower for term in ["scroll"]):
+                    # Scroll the webpage
+                    direction = "down"
+                    if "up" in task_lower:
+                        direction = "up"
+                    
+                    scroll_result = await self.web_browser.mcp_browser.scroll_page(url, direction)
+                    if scroll_result.get("success", False):
+                        # After scrolling, extract the content
+                        content_result = await self.web_browser.mcp_browser.extract_content(url)
+                        result["success"] = True
+                        result["message"] = f"Successfully scrolled {direction} and extracted content from {url}"
+                        result["artifacts"]["content"] = content_result.get("content", "")
+                        result["artifacts"]["url"] = url
+                        
+                        # Create a content preview
+                        content = content_result.get("content", "")
+                        soup = BeautifulSoup(content, "html.parser")
+                        paragraphs = soup.find_all("p")
+                        preview = "\n".join([p.text for p in paragraphs[:3]])
+                        result["artifacts"]["content_preview"] = preview
+                    else:
+                        result["message"] = f"Failed to scroll page: {scroll_result.get('error', 'Unknown error')}"
+                
+                elif any(term in task_lower for term in ["click", "button", "link"]):
+                    # Extract the element to click from the task description
+                    click_patterns = [
+                        r"click\s+(?:on\s+)?(?:the\s+)?(.+?)(?:\s+button|\s+link)?(?:\s+and|\s+on|\s+in|\s+at|\.|$)",
+                        r"press\s+(?:the\s+)?(.+?)(?:\s+button|\s+link)?(?:\s+and|\s+on|\s+in|\s+at|\.|$)"
+                    ]
+                    
+                    element_to_click = None
+                    for pattern in click_patterns:
+                        match = re.search(pattern, task_description, re.IGNORECASE)
+                        if match:
+                            element_to_click = match.group(1).strip()
+                            break
+                    
+                    if element_to_click:
+                        # Create a CSS selector for the element
+                        selector = f"*:contains('{element_to_click}')"
+                        
+                        # Click the element
+                        click_result = await self.web_browser.mcp_browser.click_element(url, selector)
+                        if click_result.get("success", False):
+                            # After clicking, extract the content
+                            content_result = await self.web_browser.mcp_browser.extract_content(url)
+                            result["success"] = True
+                            result["message"] = f"Successfully clicked on '{element_to_click}' and extracted content from {url}"
+                            result["artifacts"]["content"] = content_result.get("content", "")
+                            result["artifacts"]["url"] = url
+                            
+                            # Create a content preview
+                            content = content_result.get("content", "")
+                            soup = BeautifulSoup(content, "html.parser")
+                            paragraphs = soup.find_all("p")
+                            preview = "\n".join([p.text for p in paragraphs[:3]])
+                            result["artifacts"]["content_preview"] = preview
+                        else:
+                            result["message"] = f"Failed to click on '{element_to_click}': {click_result.get('error', 'Unknown error')}"
+                    else:
+                        result["message"] = "Could not determine which element to click on"
+                
+                else:
+                    # Default to extracting content
+                    content_result = await self.web_browser.mcp_browser.extract_content(url)
+                    if content_result.get("success", False):
+                        result["success"] = True
+                        result["message"] = f"Successfully extracted content from {url}"
+                        result["artifacts"]["content"] = content_result.get("content", "")
+                        result["artifacts"]["url"] = url
+                        
+                        # Create a content preview
+                        content = content_result.get("content", "")
+                        soup = BeautifulSoup(content, "html.parser")
+                        
+                        # Extract headlines
+                        headlines = []
+                        for tag in ["h1", "h2", "h3"]:
+                            for heading in soup.find_all(tag):
+                                headlines.append(heading.text.strip())
+                        
+                        result["artifacts"]["headlines"] = headlines
+                        
+                        # Create a content preview
+                        paragraphs = soup.find_all("p")
+                        preview = "\n".join([p.text for p in paragraphs[:3]])
+                        result["artifacts"]["content_preview"] = preview
+                    else:
+                        result["message"] = f"Failed to extract content: {content_result.get('error', 'Unknown error')}"
+            
+            # If we have a search query, use it
+            elif search_query:
+                print(f"  Searching for: {search_query}")
+                
+                # Use the standard web browser to handle the search
+                search_result = await self.web_browser.browse_web(f"search for {search_query}")
+                if search_result.get("success", False):
+                    result["success"] = True
+                    result["message"] = f"Successfully searched for '{search_query}'"
+                    result["artifacts"] = search_result.get("artifacts", {})
+                else:
+                    result["message"] = f"Failed to search for '{search_query}': {search_result.get('error', 'Unknown error')}"
+            
+            # If we have a domain, use it
+            elif domains:
+                domain = domains[0]
+                url = f"https://{domain}"
+                print(f"  Browsing domain: {domain} (URL: {url})")
+                
+                # Extract content from the domain
+                content_result = await self.web_browser.mcp_browser.extract_content(url)
+                if content_result.get("success", False):
+                    result["success"] = True
+                    result["message"] = f"Successfully extracted content from {domain}"
+                    result["artifacts"]["content"] = content_result.get("content", "")
+                    result["artifacts"]["url"] = url
+                    result["artifacts"]["domain"] = domain
+                    
+                    # Create a content preview
+                    content = content_result.get("content", "")
+                    soup = BeautifulSoup(content, "html.parser")
+                    
+                    # Extract headlines
+                    headlines = []
+                    for tag in ["h1", "h2", "h3"]:
+                        for heading in soup.find_all(tag):
+                            headlines.append(heading.text.strip())
+                    
+                    result["artifacts"]["headlines"] = headlines
+                    
+                    # Create a content preview
+                    paragraphs = soup.find_all("p")
+                    preview = "\n".join([p.text for p in paragraphs[:3]])
+                    result["artifacts"]["content_preview"] = preview
+                else:
+                    result["message"] = f"Failed to extract content from {domain}: {content_result.get('error', 'Unknown error')}"
+            
+            else:
+                # Fall back to the standard web browser
+                print(f"  No URL, search query, or domain found. Falling back to standard web browsing...")
+                result = await self.web_browser.browse_web(task_description)
+            
+            return result
+        
+        except Exception as e:
+            logger.error(f"Error executing advanced web browsing task: {str(e)}")
+            return {
+                "success": False,
+                "task_type": "advanced_web_browsing",
+                "error": str(e),
+                "message": f"Failed to execute advanced web browsing task: {str(e)}"
+            }
+    
     def _is_hybrid_task(self, task_description: str) -> bool:
         """
         Check if a task is a hybrid task (web browsing + file creation).
@@ -473,6 +767,15 @@ class EnhancedAgenticAssistant(AgenticAssistant):
             if not web_result.get('success', False):
                 logger.error(f"Web browsing failed for hybrid task: '{task_description}'")
                 print("Web browsing failed. Falling back to direct file creation...")
+                
+                # Extract the filename before passing to _handle_file_creation
+                # to ensure consistent filename handling
+                filename = self._extract_filename(task_description)
+                if filename:
+                    # Add the filename to the task description if not already present
+                    if "save as" not in task_description.lower() and "save to" not in task_description.lower():
+                        task_description = f"{task_description} (Save as '{filename}')"
+                
                 return await self._handle_file_creation(task_description)
             
             # Step 2: Use the web browsing results to create a file
@@ -716,11 +1019,35 @@ class EnhancedAgenticAssistant(AgenticAssistant):
                     
                 print("  Added formatted detailed analysis section to final content (no markers)")
             
-            # Save the content to a file
+            # Save the content to a file only if we have actual content
+            if not content or content.strip() == "":
+                logger.warning("No content to save to file. Skipping file creation.")
+                return {
+                    "success": False,
+                    "task_type": "hybrid_task",
+                    "message": "Failed to create file: No content was extracted from the web browsing results.",
+                    "error": "Empty content"
+                }
+                
+            # Ensure the filename has an extension
+            if '.' not in filename:
+                filename += '.txt'  # Default to .txt if no extension
+            
+            # Prepare the file path
             documents_dir = os.path.expanduser("~/Documents")
             os.makedirs(documents_dir, exist_ok=True)
             file_path = os.path.join(documents_dir, filename)
             
+            # Check if the file already exists and avoid overwriting unless explicitly requested
+            if os.path.exists(file_path) and "overwrite" not in task_description.lower():
+                # Create a unique filename by adding a timestamp
+                base_name, extension = os.path.splitext(filename)
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"{base_name}_{timestamp}{extension}"
+                file_path = os.path.join(documents_dir, filename)
+                logger.info(f"File already exists, creating with unique name: {filename}")
+            
+            # Write the content to the file
             with open(file_path, "w") as f:
                 f.write(content)
             
@@ -745,6 +1072,15 @@ class EnhancedAgenticAssistant(AgenticAssistant):
             
             # Fall back to direct file creation if hybrid task fails
             print("Falling back to direct file creation...")
+            
+            # Extract the filename before passing to _handle_file_creation
+            # to ensure consistent filename handling
+            filename = self._extract_filename(task_description)
+            if filename:
+                # Add the filename to the task description if not already present
+                if "save as" not in task_description.lower() and "save to" not in task_description.lower():
+                    task_description = f"{task_description} (Save as '{filename}')"
+            
             return await self._handle_file_creation(task_description)
         
         # Pattern 3: Save as filename...
@@ -1407,10 +1743,26 @@ class EnhancedAgenticAssistant(AgenticAssistant):
                 # Create a web browser instance if needed
                 if not hasattr(self, 'web_browser'):
                     from web_browsing import WebBrowser
+                    print("Initializing WebBrowser with enhanced MCP Browser capabilities...")
                     self.web_browser = WebBrowser(self)
                 
-                # Use the web browser to handle the task
-                result = await self.web_browser.browse_web(task_description)
+                # Check if this is an advanced web browsing task that could benefit from Selenium
+                is_advanced = self._is_advanced_web_browsing_task(task_description)
+                
+                # Check if the MCP browser is available (has Selenium WebDriver)
+                has_mcp_browser = hasattr(self.web_browser, 'mcp_browser')
+                
+                if is_advanced and has_mcp_browser:
+                    print(f"Detected advanced web browsing task: '{task_description}'")
+                    print("Using enhanced MCP Browser with Selenium WebDriver...")
+                    # Use the advanced web browsing method with Selenium capabilities
+                    result = await self._execute_advanced_web_browsing_task(task_description)
+                else:
+                    if is_advanced and not has_mcp_browser:
+                        print("Advanced web browsing task detected, but MCP Browser not available.")
+                        print("Falling back to standard web browsing...")
+                    # Use the standard web browser to handle the task
+                    result = await self.web_browser.browse_web(task_description)
                 
                 # Display the results
                 if result.get('success', False):

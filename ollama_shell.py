@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+
+# Disable PostHog analytics before any other imports
+# Import our enhanced PostHog disabler that completely blocks all PostHog functionality
+import posthog_disable
+
 import os
 # Set environment variable to avoid tokenizers parallelism warning
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -114,6 +119,18 @@ try:
     AGENTIC_AVAILABLE = True
 except ImportError:
     AGENTIC_AVAILABLE = False
+
+# Import SSL utilities
+try:
+    from ssl_utils import configure_ssl_verification
+    SSL_UTILS_AVAILABLE = True
+except ImportError:
+    SSL_UTILS_AVAILABLE = False
+
+# Initialize SSL certificate verification utilities
+if SSL_UTILS_AVAILABLE:
+    # Configure SSL verification to handle PostHog and other services with certificate issues
+    configure_ssl_verification(disable_all=False)
 
 app = typer.Typer()
 console = Console(
