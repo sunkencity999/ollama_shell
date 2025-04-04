@@ -418,8 +418,8 @@ if [ "$setup_jira" = "y" ]; then
 
 # Required settings
 JIRA_URL=https://your-instance.atlassian.net
-JIRA_EMAIL=your.email@example.com
-JIRA_API_TOKEN=your_api_token_here
+JIRA_USER_EMAIL=your.email@example.com
+JIRA_API_KEY=your_api_token_here
 
 # Optional settings
 JIRA_AUTH_METHOD=pat
