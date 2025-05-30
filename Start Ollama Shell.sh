@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Prevent running as root unless explicitly needed
+if [ "$EUID" -eq 0 ]; then
+    echo "This script should NOT be run as root (sudo). Please run as your normal user."
+    exit 1
+fi
+
 # Set terminal size
 if command -v resize &> /dev/null; then
     resize -s 50 150
@@ -10,9 +16,9 @@ fi
 
 echo "Starting Ollama Shell..."
 
-# Check if Python is installed
+# Check if Python 3 is installed
 if ! command -v python3 &> /dev/null; then
-    echo "Python is not installed! Please install Python 3.8 or higher."
+    echo "Python 3 is not installed! Please install Python 3.8 or higher."
     read -p "Press Enter to exit..."
     exit 1
 fi
@@ -20,29 +26,53 @@ fi
 # Create virtual environment if it doesn't exist
 if [ ! -d "venv" ]; then
     echo "Creating virtual environment..."
-    python3 -m venv venv
+    python3 -m venv venv || { echo "Failed to create virtual environment."; exit 1; }
 fi
 
 # Activate virtual environment
-source venv/bin/activate
+if [ -f "venv/bin/activate" ]; then
+    source venv/bin/activate
+else
+    echo "Failed to find venv/bin/activate. Virtual environment setup failed."
+    exit 1
+fi
 
 # Install/upgrade pip
-python -m pip install --upgrade pip
+python3 -m pip install --upgrade pip
 
 # Install dependencies
 echo "Installing dependencies..."
-pip install -r requirements.txt
+pip3 install -r requirements.txt
+
+# Check if Ollama is installed
+if ! command -v ollama &> /dev/null; then
+    echo "Ollama is not installed!"
+    read -p "Would you like to install Ollama now? (y/n): " install_ollama
+    if [ "$install_ollama" = "y" ]; then
+        echo "Installing Ollama..."
+        curl https://ollama.ai/install.sh | sh
+        # Re-check if ollama is available after install
+        if ! command -v ollama &> /dev/null; then
+            echo "Ollama installation failed. Please install manually from https://ollama.ai"
+            read -p "Press Enter to exit..."
+            exit 1
+        fi
+    else
+        echo "Ollama is required to run this application."
+        echo "Please install it from https://ollama.ai"
+        read -p "Press Enter to exit..."
+        exit 1
+    fi
+fi
 
 # Check if Ollama service is running
 if ! curl -s http://localhost:11434/api/tags &> /dev/null; then
     echo "Ollama service is not running!"
-    
     # Check if systemd is available (Linux)
     if command -v systemctl &> /dev/null; then
         echo "Attempting to start Ollama service..."
         sudo systemctl start ollama
         sleep 2
-        
         if ! curl -s http://localhost:11434/api/tags &> /dev/null; then
             echo "Failed to start Ollama service."
             echo "Please ensure Ollama is installed and running."
