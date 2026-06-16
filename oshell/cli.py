@@ -31,6 +31,11 @@ app = typer.Typer(
 )
 console = Console()
 
+# Local LoRA fine-tuning lives in its own subcommand group: `oshell finetune ...`
+from .finetune.cli import finetune_app  # noqa: E402 - after app exists, before commands
+
+app.add_typer(finetune_app, name="finetune")
+
 
 def _build_agent(config: Config, model: str | None) -> Agent:
     provider = get_provider(config)

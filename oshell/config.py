@@ -48,6 +48,16 @@ class KnowledgeConfig(BaseModel):
     default_limit: int = 5
 
 
+class FinetuneConfig(BaseModel):
+    """Local LoRA fine-tuning (the ``[finetune]`` path; MLX on Apple Silicon)."""
+
+    jobs_dir: str = "~/.oshell/finetune"  # job metadata + adapters + logs
+    batch_size: int = 1
+    learning_rate: float = 1e-5
+    iters: int = 200  # training iterations
+    num_layers: int = 16  # LoRA layers to train
+
+
 class Config(BaseModel):
     """Top-level runtime configuration for the shell."""
 
@@ -69,6 +79,9 @@ class Config(BaseModel):
 
     # Local vector knowledge base
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
+
+    # Local fine-tuning
+    finetune: FinetuneConfig = Field(default_factory=FinetuneConfig)
 
     # Agent loop
     max_tool_iterations: int = 8  # safety cap on tool-call rounds per turn

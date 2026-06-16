@@ -80,6 +80,8 @@ oshell/
   knowledge.py           KnowledgeBase: ChromaDB + sentence-transformers (lazy, on-disk)
   integrations/
     atlassian.py         Jira/Confluence Server REST clients (reuse JIRA_*/CONFLUENCE_* env)
+  finetune/              detect hardware, prep datasets, manage jobs, run mlx_lm.lora
+    cli.py               `oshell finetune detect|create|start|status|list`
   agent/
     loop.py              The loop: model drives, multi-round tool-use, pin/exclude
     events.py            TextDelta / ToolStarted / ToolFinished / TurnComplete / LimitReached
@@ -108,6 +110,7 @@ shared) → `config.local.json` (per-machine, git-ignored) → `OSHELL_*` env va
 | `tui` | Textual workspace |
 | `web` | DuckDuckGo search + scraping (BeautifulSoup, Selenium) |
 | `rag` | ChromaDB + sentence-transformers knowledge base |
+| `finetune` | MLX-LM LoRA fine-tuning (Apple Silicon) |
 | `docs` | Word/Excel/PDF/Markdown export |
 | `vision` | Image analysis (Pillow) |
 | `all` | everything above |
@@ -148,11 +151,14 @@ verified parity, its legacy module is deleted.
 - monolith `KnowledgeBase` → `oshell.knowledge` + `add_knowledge`/`search_knowledge`
   *(legacy code lives in the monolith; removed in the final sweep)*
 
+- `finetune.py` + `finetune_modules/` → `oshell.finetune` + `oshell finetune` CLI
+  *(legacy deleted; MLX command verified against the real `mlx_lm.lora` entrypoint)*
+
 **In progress:**
 - Jira/Confluence (Server/DC) → `oshell.integrations.atlassian` + 4 tools
   *(built & mock-tested; legacy deletion pending a live read-only smoke test)*
 
-**Next:** fine-tuning; then delete the monolith itself.
+**Next:** delete the monolith itself.
 
 > While migration is in progress the legacy monolith is being **decommissioned**:
 > it has dangling imports to deleted modules and is no longer runnable. The
