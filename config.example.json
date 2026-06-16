@@ -1,0 +1,10 @@
+{
+  "default_model": "llama3.2:latest",
+  "default_vision_model": "llama3.2-vision:latest",
+  "verbose": true,
+  "save_history": true,
+  "history_file": "~/.ollama_shell_history",
+  "show_model_details": true,
+  "temperature": 0.8,
+  "context_length": 8192
+}

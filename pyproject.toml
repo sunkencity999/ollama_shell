@@ -1,0 +1,80 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ollama-shell"
+version = "0.2.0"
+description = "A local-first, agentic shell for Ollama — chat, tools, and an MCP-style agent loop that never phones home."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Christopher Bradford", email = "contact@christopherdanielbradford.com" }]
+keywords = ["ollama", "llm", "agent", "mcp", "tui", "local-first"]
+
+# ─── Light core: a usable chat + agent shell with zero heavy/native deps ────
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.6.0",
+    "prompt_toolkit>=3.0.39",
+    "requests>=2.31.0",
+    "pydantic>=2.5.0",
+]
+
+# ─── Opt-in capability bundles (pip install "ollama-shell[web,tui]") ─────────
+[project.optional-dependencies]
+tui = ["textual>=0.50.0"]
+web = [
+    "duckduckgo-search>=4.1.1",
+    "beautifulsoup4>=4.12.0",
+    "html2text>=2020.1.16",
+    "selenium>=4.15.0",
+    "webdriver-manager>=4.0.0",
+]
+rag = ["chromadb>=0.4.18", "sentence-transformers>=2.2.2"]
+docs = [
+    "python-docx>=1.0.0",
+    "openpyxl>=3.1.0",
+    "PyPDF2>=3.0.0",
+    "weasyprint>=60.1",
+    "markdown2>=2.4.10",
+    "pandas>=2.0.0",
+]
+vision = ["Pillow>=10.0.0"]
+dev = ["pytest>=8.0", "pytest-cov>=4.1", "ruff>=0.6", "mypy>=1.8"]
+all = ["ollama-shell[tui,web,rag,docs,vision]"]
+
+[project.scripts]
+# New clean entrypoint. The legacy monolith remains runnable as `python ollama_shell.py`.
+oshell = "oshell.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["oshell"]
+
+# ─── Tooling ─────────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# The legacy engine predates this config; lint only the new core for now.
+extend-exclude = [
+    "tests/legacy", "examples", "scripts", "finetune_modules",
+    "browser-use-mcp-server", "agentic_*.py", "web_browsing.py",
+    "ollama_shell.py", "*_mcp*.py", "task_manager.py", "file_creation.py",
+    "fixed_file_handler.py", "filesystem_*.py", "glama_*.py", "mcp_browser.py",
+    "confluence_*.py", "jira_*.py", "js_content_extraction.py", "posthog_disable.py",
+    "hardware_detection.py", "logger.py", "venv_utils.py", "ssl_utils.py",
+    "filename_extractor.py",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Legacy throwaway scripts in tests/legacy are not a runnable suite.
+addopts = "--ignore=tests/legacy -q"
+
+[tool.mypy]
+python_version = "3.10"
+files = ["oshell"]
+ignore_missing_imports = true
