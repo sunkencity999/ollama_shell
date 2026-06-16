@@ -1,44 +1,40 @@
-# Python
+# ─── Python ───────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
+develop-eggs/
 .eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
-# Virtual Environment
+# ─── Virtual environments ───────────────────────────────────────────────────
 venv/
 .venv/
 ENV/
 env/
 
-# IDE files
+# ─── IDE / OS ───────────────────────────────────────────────────────────────
 .idea/
 .vscode/
 *.swp
 *.swo
 .DS_Store
 
-# Logs
+# ─── Logs ────────────────────────────────────────────────────────────────────
 *.log
 logs/
 log/
 
-# User-specific data
+# ─── User-/run-generated data (never committed) ─────────────────────────────
 /jobs/
 /datasets/
 /models/
@@ -48,8 +44,9 @@ log/
 /tmp/
 /cache/
 /data/
+extracted_*.html
 
-# Ollama model files
+# ─── Model weights (large binaries) ──────────────────────────────────────────
 *.bin
 *.safetensors
 *.gguf
@@ -57,18 +54,17 @@ log/
 weights.safetensors
 tokenizer.json
 tokenizer.model
-
-# Fine-tuning specific files
 Modelfile
-finetune.log
-*.json
-!requirements.json
-!package.json
-!package-lock.json
 
-# Configuration files with potential secrets
+# ─── Secrets ─────────────────────────────────────────────────────────────────
+# NOTE: we intentionally do NOT blanket-ignore *.json anymore. The old rule
+# silently un-tracked config.json, breaking reproducibility. Config is tracked
+# by default; keep real secrets in .env / config.local.json (ignored below).
 .env
+.env.*
+!.env.example
 *.key
 *_key
 *_secret
 *_token
+config.local.json
