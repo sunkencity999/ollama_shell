@@ -28,45 +28,61 @@ Created by Christopher Bradford · [contact@christopherdanielbradford.com](mailt
 ## Quick start
 
 ```bash
-# 1. Install (uv recommended). Core is tiny; add extras as needed.
-uv venv .venv
-uv pip install --python .venv -e .            # core
-uv pip install --python .venv -e ".[tui,web]" # + Textual UI + web search
+# 1. Install into a local .venv. The script prefers `uv`, falls back to pip,
+#    and warns if Ollama isn't running.
+./install.sh            # core + tui (interactive default)
+./install.sh all        # everything: tui, web, rag, docs, vision, finetune
+./install.sh web,rag    # or a custom subset of extras
 
-# 2. Make sure Ollama is running, then:
-.venv/bin/oshell chat        # interactive agent chat (default)
+# 2. Make sure Ollama is running (https://ollama.com), then:
+.venv/bin/oshell             # interactive agent chat (default command)
 .venv/bin/oshell tui         # Textual workspace (needs [tui])
 .venv/bin/oshell ask "What time is it? Use your tool."
 .venv/bin/oshell models      # list backend models
-.venv/bin/oshell config      # show resolved config
+.venv/bin/oshell config      # resolved config + which capabilities are available
+.venv/bin/oshell finetune detect   # local LoRA training backend
 ```
 
-`make install` / `make run` / `make tui` / `make test` wrap the above.
+Prefer raw `uv`? `uv venv .venv && uv pip install -e ".[tui]"`. The
+`make install / run / tui / test` targets wrap the common flows. macOS users can
+double-click **Start Ollama Shell.command**.
 
 ## The TUI workspace
 
-`oshell tui` opens a three-pane workspace instead of a scrolling REPL:
+`oshell tui` opens a workspace instead of a scrolling REPL: the conversation on
+the left, and a tabbed sidebar — **Tools**, **Context**, **Activity** — on the
+right. The header shows the model, backend, tool count, and privacy posture.
 
 ```
-┌──────────────────────────────┬───────────────────────┐
-│ Conversation                 │ Context  📌 pinned     │
-│ › what files are here?       │  0 syst You are Ollama │
-│ ⚙ list_dir → README.md, ...  │  1 user what files...  │
-│ The directory contains …     │ ───────────────────────│
-│                              │ Tool activity          │
-│                              │ ⚙ list_dir({})         │
-│                              │   ↳ README.md pyproject │
-└──────────────────────────────┴───────────────────────┘
+┌────────────────────────────────┬──────────────────────────────┐
+│ Ollama Shell · llama3.2 · ollama · 12 tools · network: web_…   │
+├────────────────────────────────┼──────────────────────────────┤
+│ Conversation                   │ [Tools] Context  Activity     │
+│ › what files are here?         │  Active tools                 │
+│ The directory contains …       │   local list_dir              │
+│                                │   net   web_search            │
+│                                │   …                           │
+│                                │  Optional features            │
+│                                │   ✓ rag (knowledge base)      │
+│                                │   ✗ docs  (pip install …[docs])│
+├────────────────────────────────┴──────────────────────────────┤
+│ Message the model…   (Ctrl+C quit · Ctrl+T tools)              │
+└─────────────────────────────────────────────────────────────--┘
 ```
 
-The **context inspector** makes the old invisible `/pin` and `/exclude` commands
-visual: you can see exactly which messages the model is being shown.
+- **Tools** — the live tool roster (local vs network) plus which optional
+  features this install actually has. This is the TUI's source of truth for
+  what the app can currently do.
+- **Context** — the pin/exclude state, making the `/pin` and `/exclude` controls
+  visual: you see exactly which messages the model is shown.
+- **Activity** — a running log of tool calls and their results.
 
 ## Architecture
 
 ```
 oshell/
   config.py            Typed, layered config (defaults<config.json<config.local.json<env)
+  capabilities.py      Reports which optional features/integrations are available
   providers/           LLMProvider abstraction
     base.py              Message / ToolCall / ChatChunk / LLMProvider
     ollama.py            Ollama REST + streaming (tool-aware)
@@ -76,18 +92,18 @@ oshell/
     builtins.py          current_time, list_models, sandboxed read/write/list files
     web.py               web_search + fetch_url (opt-in [web]; flagged network-touching)
     documents.py         create_document — txt/md/csv/docx/xlsx/pdf (opt-in [docs])
-    knowledge.py         add_knowledge + search_knowledge — local vectors (opt-in [rag])
+    knowledge.py         add_knowledge + search_knowledge tools (opt-in [rag])
     atlassian.py         jira_search/get_issue + confluence_search/get_page (Server/DC)
-  knowledge.py           KnowledgeBase: ChromaDB + sentence-transformers (lazy, on-disk)
+  knowledge.py         KnowledgeBase: ChromaDB + sentence-transformers (lazy, on-disk, no telemetry)
   integrations/
     atlassian.py         Jira/Confluence Server REST clients (reuse JIRA_*/CONFLUENCE_* env)
-  finetune/              detect hardware, prep datasets, manage jobs, run mlx_lm.lora
+  finetune/            detect hardware, prep datasets, manage jobs, run mlx_lm.lora
     cli.py               `oshell finetune detect|create|start|status|list`
   agent/
     loop.py              The loop: model drives, multi-round tool-use, pin/exclude
     events.py            TextDelta / ToolStarted / ToolFinished / TurnComplete / LimitReached
-  cli.py                 Thin Typer/Rich front-end
-  tui/app.py             Textual workspace
+  cli.py               Thin Typer/Rich front-end
+  tui/app.py           Textual workspace (Tools / Context / Activity tabs)
 ```
 
 The agent loop emits a stream of **events**; the CLI and TUI are just renderers
@@ -119,6 +135,23 @@ shared) → `config.local.json` (per-machine, git-ignored) → `OSHELL_*` env va
 ```bash
 uv pip install -e ".[all]"
 ```
+
+## Fine-tuning (local LoRA)
+
+On Apple Silicon, `oshell finetune` drives MLX-LM LoRA training; jobs are tracked
+on disk under `~/.oshell/finetune`.
+
+```bash
+oshell finetune detect                                   # mlx / unsloth / cpu
+oshell finetune create my-run -m <hf-model> -d data.jsonl  # prep + register
+oshell finetune start <job-id>                           # launch mlx_lm.lora
+oshell finetune status <job-id>                          # running/completed/failed
+oshell finetune list
+```
+
+Datasets may be `.jsonl/.json/.csv/.tsv/.txt`; records are normalized to a
+`{"text": …}` training set (text / prompt+completion / chat-messages all work).
+Needs the `finetune` extra (`mlx-lm`).
 
 ## Development
 

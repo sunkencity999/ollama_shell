@@ -174,9 +174,22 @@ def models() -> None:
 
 @app.command()
 def config() -> None:
-    """Show the resolved configuration (after layering files + env)."""
+    """Show the resolved configuration and which optional capabilities are available."""
     cfg = Config.load()
     console.print_json(cfg.model_dump_json(indent=2))
+
+    from rich.markup import escape
+
+    from .capabilities import optional_features
+
+    table = Table(title="Optional capabilities")
+    table.add_column("feature")
+    table.add_column("status")
+    for cap in optional_features():
+        mark = "[green]✓[/green]" if cap.available else "[dim]✗[/dim]"
+        # escape: detail may contain "[web]" etc., which Rich would treat as markup
+        table.add_row(f"{mark} {escape(cap.name)}", escape(cap.detail))
+    console.print(table)
 
 
 @app.command()
