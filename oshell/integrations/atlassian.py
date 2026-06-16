@@ -26,9 +26,27 @@ from typing import Any
 
 import requests
 
+from ..config import AtlassianConfig
+
 
 class AtlassianConfigError(RuntimeError):
     """Missing/invalid Atlassian configuration (e.g. no URL or token)."""
+
+
+def _first(*values: str | None) -> str:
+    """Return the first non-empty value (env wins, config is the fallback)."""
+    for v in values:
+        if v:
+            return v
+    return ""
+
+
+def jira_configured(cfg: AtlassianConfig | None = None) -> bool:
+    return bool(_first(os.environ.get("JIRA_URL"), (cfg or AtlassianConfig()).jira_url))
+
+
+def confluence_configured(cfg: AtlassianConfig | None = None) -> bool:
+    return bool(_first(os.environ.get("CONFLUENCE_URL"), (cfg or AtlassianConfig()).confluence_url))
 
 
 def _auth_header(method: str, user: str | None, token: str) -> dict[str, str]:
@@ -73,17 +91,24 @@ class JiraClient:
         self._ep = endpoint
 
     @classmethod
-    def from_env(cls) -> JiraClient:
-        # Accept JIRA_API_KEY (legacy ollama_shell) or JIRA_TOKEN (joby-datasets).
-        token = os.environ.get("JIRA_API_KEY") or os.environ.get("JIRA_TOKEN", "")
+    def resolve(cls, cfg: AtlassianConfig | None = None) -> JiraClient:
+        """Build from env (highest precedence) with config.local.json fallback.
+        Token accepts JIRA_API_KEY (legacy) or JIRA_TOKEN (joby-datasets)."""
+        cfg = cfg or AtlassianConfig()
         return cls(
             _Endpoint(
-                base_url=os.environ.get("JIRA_URL", ""),
-                token=token,
-                user=os.environ.get("JIRA_USER_EMAIL"),
-                auth_method=os.environ.get("JIRA_AUTH_METHOD", "pat"),
+                base_url=_first(os.environ.get("JIRA_URL"), cfg.jira_url),
+                token=_first(
+                    os.environ.get("JIRA_API_KEY"), os.environ.get("JIRA_TOKEN"), cfg.jira_token
+                ),
+                user=_first(os.environ.get("JIRA_USER_EMAIL"), cfg.jira_user) or None,
+                auth_method=_first(os.environ.get("JIRA_AUTH_METHOD"), cfg.auth_method, "pat"),
             )
         )
+
+    @classmethod
+    def from_env(cls) -> JiraClient:
+        return cls.resolve(None)
 
     def search(self, jql: str, max_results: int = 10) -> list[dict[str, Any]]:
         data = self._ep.get(
@@ -121,17 +146,28 @@ class ConfluenceClient:
         self._ep = endpoint
 
     @classmethod
-    def from_env(cls) -> ConfluenceClient:
-        # Accept CONFLUENCE_API_TOKEN (legacy) or CONFLUENCE_TOKEN (joby-datasets).
-        token = os.environ.get("CONFLUENCE_API_TOKEN") or os.environ.get("CONFLUENCE_TOKEN", "")
+    def resolve(cls, cfg: AtlassianConfig | None = None) -> ConfluenceClient:
+        """Build from env (highest precedence) with config.local.json fallback.
+        Token accepts CONFLUENCE_API_TOKEN (legacy) or CONFLUENCE_TOKEN."""
+        cfg = cfg or AtlassianConfig()
         return cls(
             _Endpoint(
-                base_url=os.environ.get("CONFLUENCE_URL", ""),
-                token=token,
-                user=os.environ.get("CONFLUENCE_EMAIL"),
-                auth_method=os.environ.get("CONFLUENCE_AUTH_METHOD", "pat"),
+                base_url=_first(os.environ.get("CONFLUENCE_URL"), cfg.confluence_url),
+                token=_first(
+                    os.environ.get("CONFLUENCE_API_TOKEN"),
+                    os.environ.get("CONFLUENCE_TOKEN"),
+                    cfg.confluence_token,
+                ),
+                user=_first(os.environ.get("CONFLUENCE_EMAIL"), cfg.confluence_user) or None,
+                auth_method=_first(
+                    os.environ.get("CONFLUENCE_AUTH_METHOD"), cfg.auth_method, "pat"
+                ),
             )
         )
+
+    @classmethod
+    def from_env(cls) -> ConfluenceClient:
+        return cls.resolve(None)
 
     def search(self, cql: str, limit: int = 10) -> list[dict[str, Any]]:
         data = self._ep.get("/rest/api/content/search", {"cql": cql, "limit": limit})

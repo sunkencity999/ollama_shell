@@ -42,7 +42,7 @@ class ToolsPanel(Static):
             lines.append(f"  {tag} [bold]{t.name}[/bold]")
         lines.append("")
         lines.append("[b]Optional features[/b]")
-        for cap in optional_features():
+        for cap in optional_features(agent.config):
             mark = "[green]✓[/green]" if cap.available else "[dim]✗[/dim]"
             # escape: detail may contain "[web]" etc. that Rich would eat as markup
             lines.append(f"  {mark} {cap.name} [dim]({escape(cap.detail)})[/dim]")

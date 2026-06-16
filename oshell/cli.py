@@ -172,11 +172,29 @@ def models() -> None:
     console.print(table)
 
 
+_SECRET_HINT = ("token", "key", "secret", "password", "api_key")
+
+
+def _redact(obj):
+    """Recursively mask secret-looking values so `config` never prints creds."""
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            if isinstance(v, str) and v and any(h in k.lower() for h in _SECRET_HINT):
+                out[k] = f"***redacted ({len(v)} chars)***"
+            else:
+                out[k] = _redact(v)
+        return out
+    if isinstance(obj, list):
+        return [_redact(v) for v in obj]
+    return obj
+
+
 @app.command()
 def config() -> None:
-    """Show the resolved configuration and which optional capabilities are available."""
+    """Show the resolved configuration (secrets redacted) and available capabilities."""
     cfg = Config.load()
-    console.print_json(cfg.model_dump_json(indent=2))
+    console.print_json(data=_redact(cfg.model_dump()))
 
     from rich.markup import escape
 
@@ -185,7 +203,7 @@ def config() -> None:
     table = Table(title="Optional capabilities")
     table.add_column("feature")
     table.add_column("status")
-    for cap in optional_features():
+    for cap in optional_features(cfg):
         mark = "[green]✓[/green]" if cap.available else "[dim]✗[/dim]"
         # escape: detail may contain "[web]" etc., which Rich would treat as markup
         table.add_row(f"{mark} {escape(cap.name)}", escape(cap.detail))

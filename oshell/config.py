@@ -48,6 +48,23 @@ class KnowledgeConfig(BaseModel):
     default_limit: int = 5
 
 
+class AtlassianConfig(BaseModel):
+    """Jira/Confluence Server credentials.
+
+    These can also come from environment variables (``JIRA_URL``/``JIRA_TOKEN``,
+    ``CONFLUENCE_URL``/``CONFLUENCE_TOKEN``); env wins, this is the fallback so
+    creds can live in a git-ignored ``config.local.json`` instead of the shell.
+    """
+
+    jira_url: str = ""
+    jira_token: str = ""
+    jira_user: str = ""
+    confluence_url: str = ""
+    confluence_token: str = ""
+    confluence_user: str = ""
+    auth_method: str = "pat"  # pat | bearer | basic (Server: pat == bearer)
+
+
 class FinetuneConfig(BaseModel):
     """Local LoRA fine-tuning (the ``[finetune]`` path; MLX on Apple Silicon)."""
 
@@ -82,6 +99,9 @@ class Config(BaseModel):
 
     # Local fine-tuning
     finetune: FinetuneConfig = Field(default_factory=FinetuneConfig)
+
+    # Atlassian (Jira/Confluence Server) — optional fallback for env creds
+    atlassian: AtlassianConfig = Field(default_factory=AtlassianConfig)
 
     # Agent loop
     max_tool_iterations: int = 8  # safety cap on tool-call rounds per turn

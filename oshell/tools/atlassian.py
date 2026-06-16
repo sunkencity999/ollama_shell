@@ -11,6 +11,7 @@ from typing import Any
 
 import requests
 
+from ..config import AtlassianConfig
 from ..integrations.atlassian import (
     AtlassianConfigError,
     ConfluenceClient,
@@ -34,7 +35,14 @@ def _guard(fn):
         raise ToolError(f"could not reach Atlassian: {exc}") from exc
 
 
-class JiraSearchTool(Tool):
+class _AtlassianTool(Tool):
+    """Base: holds the AtlassianConfig so clients resolve env-then-config."""
+
+    def __init__(self, cfg: AtlassianConfig | None = None):
+        self._cfg = cfg
+
+
+class JiraSearchTool(_AtlassianTool):
     name = "jira_search"
     description = "Search Jira issues with a JQL query (Server/DC). Returns key, summary, status."
     local_only = False
@@ -51,7 +59,7 @@ class JiraSearchTool(Tool):
     }
 
     def run(self, jql: str = "", max_results: int = 10, **_: Any) -> str:
-        issues = _guard(lambda: JiraClient.from_env().search(jql, int(max_results)))
+        issues = _guard(lambda: JiraClient.resolve(self._cfg).search(jql, int(max_results)))
         if not issues:
             return "(no matching issues)"
         return "\n".join(
@@ -60,7 +68,7 @@ class JiraSearchTool(Tool):
         )
 
 
-class JiraGetIssueTool(Tool):
+class JiraGetIssueTool(_AtlassianTool):
     name = "jira_get_issue"
     description = "Fetch one Jira issue by key (e.g. OPS-1234), including its description."
     local_only = False
@@ -71,7 +79,7 @@ class JiraGetIssueTool(Tool):
     }
 
     def run(self, key: str = "", **_: Any) -> str:
-        i = _guard(lambda: JiraClient.from_env().get_issue(key))
+        i = _guard(lambda: JiraClient.resolve(self._cfg).get_issue(key))
         desc = (i.get("description") or "")[:_BODY_LIMIT]
         return (
             f"{i['key']}  [{i['status']}]  {i['summary']}\n"
@@ -79,7 +87,7 @@ class JiraGetIssueTool(Tool):
         )
 
 
-class ConfluenceSearchTool(Tool):
+class ConfluenceSearchTool(_AtlassianTool):
     name = "confluence_search"
     description = "Search Confluence content with a CQL query (Server/DC). Returns id, type, title."
     local_only = False
@@ -96,13 +104,13 @@ class ConfluenceSearchTool(Tool):
     }
 
     def run(self, cql: str = "", limit: int = 10, **_: Any) -> str:
-        results = _guard(lambda: ConfluenceClient.from_env().search(cql, int(limit)))
+        results = _guard(lambda: ConfluenceClient.resolve(self._cfg).search(cql, int(limit)))
         if not results:
             return "(no matching content)"
         return "\n".join(f"{r['id']}  [{r['type']}]  {r['title']}" for r in results)
 
 
-class ConfluenceGetPageTool(Tool):
+class ConfluenceGetPageTool(_AtlassianTool):
     name = "confluence_get_page"
     description = (
         "Fetch a Confluence page by id, returning its title, space, and body (HTML storage)."
@@ -115,6 +123,6 @@ class ConfluenceGetPageTool(Tool):
     }
 
     def run(self, page_id: str = "", **_: Any) -> str:
-        p = _guard(lambda: ConfluenceClient.from_env().get_page(page_id))
+        p = _guard(lambda: ConfluenceClient.resolve(self._cfg).get_page(page_id))
         body = (p.get("body") or "")[:_BODY_LIMIT]
         return f"# {p['title']}  (space {p['space']}, v{p['version']})\n\n{body}"

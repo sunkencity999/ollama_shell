@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from ..config import Config
+from ..integrations.atlassian import confluence_configured, jira_configured
 from ..providers.base import LLMProvider
 from .atlassian import (
     ConfluenceGetPageTool,
@@ -46,10 +46,11 @@ def default_registry(
         AddKnowledgeTool(kb),
         SearchKnowledgeTool(kb),
     ]
-    # Atlassian tools appear only when their server is configured, so we don't
-    # advertise unusable tools to the model.
-    if os.environ.get("JIRA_URL"):
-        tools += [JiraSearchTool(), JiraGetIssueTool()]
-    if os.environ.get("CONFLUENCE_URL"):
-        tools += [ConfluenceSearchTool(), ConfluenceGetPageTool()]
+    # Atlassian tools appear only when their server is configured (env or
+    # config.local.json), so we don't advertise unusable tools to the model.
+    atl = config.atlassian
+    if jira_configured(atl):
+        tools += [JiraSearchTool(atl), JiraGetIssueTool(atl)]
+    if confluence_configured(atl):
+        tools += [ConfluenceSearchTool(atl), ConfluenceGetPageTool(atl)]
     return ToolRegistry(tools, enabled=config.enabled_tools)

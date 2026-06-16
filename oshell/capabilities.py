@@ -10,8 +10,11 @@ will only error when called.
 from __future__ import annotations
 
 import importlib.util
-import os
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .config import Config
 
 
 @dataclass
@@ -25,8 +28,13 @@ def _have(*modules: str) -> bool:
     return all(importlib.util.find_spec(m) is not None for m in modules)
 
 
-def optional_features() -> list[Capability]:
-    """One entry per optional feature, with availability + a hint."""
+def optional_features(config: Config | None = None) -> list[Capability]:
+    """One entry per optional feature, with availability + a hint.
+
+    Pass ``config`` so Atlassian status reflects creds in config.local.json,
+    not just environment variables.
+    """
+    from .integrations.atlassian import confluence_configured, jira_configured
     feats = [
         ("web (search/fetch)", _have("duckduckgo_search", "bs4"), "[web]"),
         ("rag (knowledge base)", _have("chromadb", "sentence_transformers"), "[rag]"),
@@ -39,8 +47,9 @@ def optional_features() -> list[Capability]:
         for n, ok, extra in feats
     ]
 
-    jira = bool(os.environ.get("JIRA_URL"))
-    conf = bool(os.environ.get("CONFLUENCE_URL"))
+    atl = config.atlassian if config else None
+    jira = jira_configured(atl)
+    conf = confluence_configured(atl)
     out.append(
         Capability("jira (Server)", jira, "configured" if jira else "set JIRA_URL + JIRA_TOKEN")
     )

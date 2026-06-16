@@ -107,6 +107,66 @@ def test_from_env_accepts_token_alias(monkeypatch):
     assert captured["auth"] == "Bearer alias-tok"
 
 
+def test_resolve_falls_back_to_config(monkeypatch):
+    # No env vars set -> creds come from config.local.json (AtlassianConfig).
+    from oshell.config import AtlassianConfig
+
+    for var in ("JIRA_URL", "JIRA_API_KEY", "JIRA_TOKEN", "JIRA_USER_EMAIL"):
+        monkeypatch.delenv(var, raising=False)
+    cfg = AtlassianConfig(jira_url="https://jira.cfg", jira_token="cfgtok")
+    captured = {}
+
+    def _capture(url, headers=None, params=None, timeout=None):
+        captured["url"] = url
+        captured["auth"] = headers["Authorization"]
+        return _FakeResp({"issues": []})
+
+    monkeypatch.setattr("oshell.integrations.atlassian.requests.get", _capture)
+    JiraClient.resolve(cfg).search("ORDER BY created DESC", 1)
+    assert captured["url"].startswith("https://jira.cfg")
+    assert captured["auth"] == "Bearer cfgtok"
+
+
+def test_env_wins_over_config(monkeypatch):
+    from oshell.config import AtlassianConfig
+
+    monkeypatch.setenv("JIRA_URL", "https://jira.env")
+    monkeypatch.setenv("JIRA_TOKEN", "envtok")
+    cfg = AtlassianConfig(jira_url="https://jira.cfg", jira_token="cfgtok")
+    captured = {}
+
+    def _capture(url, headers=None, params=None, timeout=None):
+        captured["url"] = url
+        return _FakeResp({"issues": []})
+
+    monkeypatch.setattr("oshell.integrations.atlassian.requests.get", _capture)
+    JiraClient.resolve(cfg).search("x", 1)
+    assert captured["url"].startswith("https://jira.env")  # env beats config
+
+
+def test_configured_helpers(monkeypatch):
+    from oshell.config import AtlassianConfig
+    from oshell.integrations.atlassian import confluence_configured, jira_configured
+
+    monkeypatch.delenv("JIRA_URL", raising=False)
+    monkeypatch.delenv("CONFLUENCE_URL", raising=False)
+    assert jira_configured(AtlassianConfig()) is False
+    assert jira_configured(AtlassianConfig(jira_url="https://j")) is True
+    assert confluence_configured(AtlassianConfig(confluence_url="https://c")) is True
+
+
+def test_registry_includes_atlassian_tools_when_config_set():
+    from oshell.config import AtlassianConfig, Config
+    from oshell.providers import OllamaProvider
+    from oshell.tools import default_registry
+
+    cfg = Config(atlassian=AtlassianConfig(jira_url="https://j", jira_token="t"))
+    reg = default_registry(OllamaProvider(), cfg)
+    names = {t.name for t in reg.active()}
+    assert "jira_search" in names and "jira_get_issue" in names
+    assert "confluence_search" not in names  # confluence not configured
+
+
 def test_jira_tool_soft_errors_when_unconfigured(monkeypatch):
     monkeypatch.delenv("JIRA_URL", raising=False)
     monkeypatch.delenv("JIRA_API_KEY", raising=False)
