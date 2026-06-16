@@ -7,12 +7,13 @@ unless a tool you can see explicitly reaches out.
 Created by Christopher Bradford · [contact@christopherdanielbradford.com](mailto:contact@christopherdanielbradford.com)
 
 > **v0.2 — Reimagined.** This project began as a feature-rich chat REPL and grew
-> into an everything-client. v0.2 inverts the architecture around three ideas:
-> **(1) local-first / privacy-native**, **(2) the agent loop *is* the shell**
+> into a 4,600-line everything-client. v0.2 inverts the architecture around three
+> ideas: **(1) local-first / privacy-native**, **(2) the agent loop *is* the shell**
 > (capabilities are tools the model calls, MCP-style), and **(3) a light core
-> with opt-in power**. The proven feature set from v0.1 lives on as the
-> [legacy engine](#legacy-engine). See [`docs/LEGACY_README.md`](docs/LEGACY_README.md)
-> for the original, full v0.1 documentation.
+> with opt-in power**. The v0.1 monolith has now been **fully retired** — every
+> capability was migrated into clean, tested tools (see
+> [migration](#legacy-migration-complete)). The original code lives on only in
+> git history and [`docs/LEGACY_README.md`](docs/LEGACY_README.md).
 
 ---
 
@@ -131,48 +132,34 @@ make fmt         # ruff --fix + format
 
 CI (GitHub Actions) runs ruff + mypy + pytest on Python 3.10–3.13.
 
-## Legacy engine
+## Legacy migration (complete)
 
-The original v0.1 application — a 4,600-line interactive shell plus modules for
-web research, fine-tuning (Unsloth/MLX), Confluence/Jira/filesystem MCP
-integrations, and a vector knowledge base — remains runnable at the repo root:
+The v0.1 monolith (`ollama_shell.py`) and all its sibling modules have been
+**deleted**. Each capability was reimplemented as a clean, tested tool and
+verified before its legacy source was removed:
 
-```bash
-python ollama_shell.py
-```
+| v0.1 module(s) | → v0.2 | Verification |
+|----------------|--------|--------------|
+| `web_browsing` (extraction core) | `fetch_url` + `web_search` | live fetch of a real page |
+| `file_creation` + `fixed_file_handler` | `create_document` tool | model wrote a real `.docx` |
+| monolith `KnowledgeBase` | `oshell.knowledge` + `add/search_knowledge` | live semantic round-trip |
+| `finetune.py` + `finetune_modules/` | `oshell.finetune` + `oshell finetune` | command verified vs real `mlx_lm.lora` |
+| `*_mcp_integration` (Confluence/Jira) | `oshell.integrations.atlassian` + 4 tools | live read-only call to a real Server |
 
-These modules are the *proven* feature set. The v0.2 roadmap bridges them into the new core as tools so capabilities
-migrate cleanly and the monolith can retire. As each capability reaches
-verified parity, its legacy module is deleted.
-
-**Done:**
-- `web_browsing`'s extraction core → `fetch_url` (paired with `web_search`)
-- `file_creation` + `fixed_file_handler` → the `create_document` tool *(legacy deleted)*
-- monolith `KnowledgeBase` → `oshell.knowledge` + `add_knowledge`/`search_knowledge`
-  *(legacy code lives in the monolith; removed in the final sweep)*
-
-- `finetune.py` + `finetune_modules/` → `oshell.finetune` + `oshell finetune` CLI
-  *(legacy deleted; MLX command verified against the real `mlx_lm.lora` entrypoint)*
-
-- Jira/Confluence (Server/DC) → `oshell.integrations.atlassian` + 4 tools
-  *(live-verified read-only against a real Server instance; legacy deleted)*
-
-**Next:** delete the monolith itself.
-
-> While migration is in progress the legacy monolith is being **decommissioned**:
-> it has dangling imports to deleted modules and is no longer runnable. The
-> `oshell` core stays fully green throughout. Full v0.1 docs:
-> [`docs/LEGACY_README.md`](docs/LEGACY_README.md).
+**Not carried over** (available in git history if ever needed): the standalone
+filesystem-MCP server (the core read/write/list operations are covered by
+built-in sandboxed tools), the `task_manager` to-do subsystem, and the
+Glama/`mcp_browser` browser-automation integrations. Open an issue or ask if
+you want any of these migrated next.
 
 ### Repository layout
 
 | Path | What |
 |------|------|
-| `oshell/` | the reimagined v0.2 core (this README) |
-| `ollama_shell.py` + sibling modules | the v0.1 legacy engine |
-| `tests/` | v0.2 test suite (`tests/legacy/` holds archived v0.1 scratch tests) |
-| `examples/`, `scripts/` | relocated demos and installer/migration utilities |
-| `docs/` | guides + legacy README |
+| `oshell/` | the entire application (core + tools + integrations + finetune + tui) |
+| `tests/` | the test suite (`tests/legacy/` holds archived v0.1 scratch tests) |
+| `examples/`, `scripts/` | relocated v0.1 demos and utilities |
+| `docs/` | guides; `docs/LEGACY_README.md` + `docs/legacy/` preserve v0.1 docs |
 
 ## License
 

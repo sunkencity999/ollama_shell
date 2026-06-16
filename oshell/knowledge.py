@@ -53,7 +53,11 @@ class KnowledgeBase:
 
         path = Path(self.config.path).expanduser()
         path.mkdir(parents=True, exist_ok=True)
-        self._client = chromadb.PersistentClient(path=str(path))
+        # Local-first: disable ChromaDB's default posthog telemetry so the
+        # knowledge base never phones home. (Replaces the legacy posthog_disable
+        # shim the old monolith needed.)
+        settings = chromadb.config.Settings(anonymized_telemetry=False)
+        self._client = chromadb.PersistentClient(path=str(path), settings=settings)
         self._collection = self._client.get_or_create_collection(self.config.collection)
         self._embedder = SentenceTransformer(self.config.model)
 

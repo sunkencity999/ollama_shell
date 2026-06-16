@@ -1,5 +1,4 @@
-# Developer convenience targets for the reimagined `oshell` core.
-# (The legacy monolith at the repo root is run directly: `python ollama_shell.py`.)
+# Developer convenience targets for the `oshell` package.
 
 .PHONY: install lint fmt test cov run tui clean
 

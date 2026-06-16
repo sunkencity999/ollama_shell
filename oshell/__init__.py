@@ -9,9 +9,10 @@ This package is the *reimagined* core of Ollama Shell. Its design goals:
 3. **Light core, opt-in power** — the base install is tiny; heavy features
    (web, RAG, fine-tuning, docs export) are optional extras.
 
-The original 4,600-line monolith (``ollama_shell.py``) and its proven feature
-modules remain at the repository root as the "legacy engine"; selected
-capabilities are bridged into this core as tools. See README.md.
+The original 4,600-line monolith (``ollama_shell.py``) and its feature modules
+have been fully retired: every capability now lives in this package, and the
+old code is preserved only in git history and ``docs/LEGACY_README.md``.
+See README.md.
 """
 
 __version__ = "0.2.0"
