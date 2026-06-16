@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ..config import Config
 from ..providers.base import LLMProvider
+from .atlassian import (
+    ConfluenceGetPageTool,
+    ConfluenceSearchTool,
+    JiraGetIssueTool,
+    JiraSearchTool,
+)
 from .base import Tool, ToolError, ToolRegistry
 from .builtins import (
     CurrentTimeTool,
@@ -39,4 +46,10 @@ def default_registry(
         AddKnowledgeTool(kb),
         SearchKnowledgeTool(kb),
     ]
+    # Atlassian tools appear only when their server is configured, so we don't
+    # advertise unusable tools to the model.
+    if os.environ.get("JIRA_URL"):
+        tools += [JiraSearchTool(), JiraGetIssueTool()]
+    if os.environ.get("CONFLUENCE_URL"):
+        tools += [ConfluenceSearchTool(), ConfluenceGetPageTool()]
     return ToolRegistry(tools, enabled=config.enabled_tools)

@@ -76,7 +76,10 @@ oshell/
     web.py               web_search + fetch_url (opt-in [web]; flagged network-touching)
     documents.py         create_document — txt/md/csv/docx/xlsx/pdf (opt-in [docs])
     knowledge.py         add_knowledge + search_knowledge — local vectors (opt-in [rag])
+    atlassian.py         jira_search/get_issue + confluence_search/get_page (Server/DC)
   knowledge.py           KnowledgeBase: ChromaDB + sentence-transformers (lazy, on-disk)
+  integrations/
+    atlassian.py         Jira/Confluence Server REST clients (reuse JIRA_*/CONFLUENCE_* env)
   agent/
     loop.py              The loop: model drives, multi-round tool-use, pin/exclude
     events.py            TextDelta / ToolStarted / ToolFinished / TurnComplete / LimitReached
@@ -145,7 +148,11 @@ verified parity, its legacy module is deleted.
 - monolith `KnowledgeBase` → `oshell.knowledge` + `add_knowledge`/`search_knowledge`
   *(legacy code lives in the monolith; removed in the final sweep)*
 
-**Next:** Confluence / Jira / fine-tuning; then delete the monolith itself.
+**In progress:**
+- Jira/Confluence (Server/DC) → `oshell.integrations.atlassian` + 4 tools
+  *(built & mock-tested; legacy deletion pending a live read-only smoke test)*
+
+**Next:** fine-tuning; then delete the monolith itself.
 
 > While migration is in progress the legacy monolith is being **decommissioned**:
 > it has dangling imports to deleted modules and is no longer runnable. The
