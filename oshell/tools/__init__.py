@@ -14,7 +14,7 @@ from .builtins import (
     ReadFileTool,
     WriteFileTool,
 )
-from .web import WebSearchTool
+from .web import FetchUrlTool, WebSearchTool
 
 __all__ = ["Tool", "ToolError", "ToolRegistry", "default_registry"]
 
@@ -31,5 +31,6 @@ def default_registry(
         WriteFileTool(workspace),
         ListDirTool(workspace),
         WebSearchTool(),
+        FetchUrlTool(),
     ]
     return ToolRegistry(tools, enabled=config.enabled_tools)

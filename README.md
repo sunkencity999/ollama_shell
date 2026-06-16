@@ -73,7 +73,7 @@ oshell/
   tools/               MCP-style host
     base.py              Tool + ToolRegistry (advertise specs, dispatch calls)
     builtins.py          current_time, list_models, sandboxed read/write/list files
-    web.py               web_search (opt-in [web] extra; flagged network-touching)
+    web.py               web_search + fetch_url (opt-in [web]; flagged network-touching)
   agent/
     loop.py              The loop: model drives, multi-round tool-use, pin/exclude
     events.py            TextDelta / ToolStarted / ToolFinished / TurnComplete / LimitReached
@@ -132,10 +132,11 @@ integrations, and a vector knowledge base — remains runnable at the repo root:
 python ollama_shell.py
 ```
 
-These modules are the *proven* feature set. The v0.2 roadmap bridges them into
-the new core as tools (e.g. `web_browsing` → a richer `web_search`,
-`file_creation` → document-export tools) so capabilities migrate without being
-rewritten. Full v0.1 docs: [`docs/LEGACY_README.md`](docs/LEGACY_README.md).
+These modules are the *proven* feature set. The v0.2 roadmap bridges them into the new core as tools so capabilities
+migrate cleanly and the monolith can retire. **Done:** `web_browsing`'s
+extraction core → the `fetch_url` tool (paired with `web_search`). **Next:**
+`file_creation` → document-export tools; then Confluence/Jira/RAG/fine-tuning.
+Full v0.1 docs: [`docs/LEGACY_README.md`](docs/LEGACY_README.md).
 
 ### Repository layout
 
