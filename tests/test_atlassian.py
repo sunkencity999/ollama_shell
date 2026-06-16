@@ -90,6 +90,23 @@ def test_confluence_search_parsing(monkeypatch):
     assert rows[0]["title"] == "Runbook"
 
 
+def test_from_env_accepts_token_alias(monkeypatch):
+    # joby-datasets uses *_TOKEN; legacy used *_API_KEY. Both must work.
+    monkeypatch.delenv("JIRA_API_KEY", raising=False)
+    monkeypatch.setenv("JIRA_URL", "https://jira.local")
+    monkeypatch.setenv("JIRA_TOKEN", "alias-tok")
+    captured = {}
+    _patch_get(monkeypatch, _FakeResp({"issues": []}))
+
+    def _capture(url, headers=None, params=None, timeout=None):
+        captured["auth"] = headers["Authorization"]
+        return _FakeResp({"issues": []})
+
+    monkeypatch.setattr("oshell.integrations.atlassian.requests.get", _capture)
+    JiraClient.from_env().search("ORDER BY created DESC", 1)
+    assert captured["auth"] == "Bearer alias-tok"
+
+
 def test_jira_tool_soft_errors_when_unconfigured(monkeypatch):
     monkeypatch.delenv("JIRA_URL", raising=False)
     monkeypatch.delenv("JIRA_API_KEY", raising=False)

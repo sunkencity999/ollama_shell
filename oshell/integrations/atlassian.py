@@ -74,10 +74,12 @@ class JiraClient:
 
     @classmethod
     def from_env(cls) -> JiraClient:
+        # Accept JIRA_API_KEY (legacy ollama_shell) or JIRA_TOKEN (joby-datasets).
+        token = os.environ.get("JIRA_API_KEY") or os.environ.get("JIRA_TOKEN", "")
         return cls(
             _Endpoint(
                 base_url=os.environ.get("JIRA_URL", ""),
-                token=os.environ.get("JIRA_API_KEY", ""),
+                token=token,
                 user=os.environ.get("JIRA_USER_EMAIL"),
                 auth_method=os.environ.get("JIRA_AUTH_METHOD", "pat"),
             )
@@ -120,10 +122,12 @@ class ConfluenceClient:
 
     @classmethod
     def from_env(cls) -> ConfluenceClient:
+        # Accept CONFLUENCE_API_TOKEN (legacy) or CONFLUENCE_TOKEN (joby-datasets).
+        token = os.environ.get("CONFLUENCE_API_TOKEN") or os.environ.get("CONFLUENCE_TOKEN", "")
         return cls(
             _Endpoint(
                 base_url=os.environ.get("CONFLUENCE_URL", ""),
-                token=os.environ.get("CONFLUENCE_API_TOKEN", ""),
+                token=token,
                 user=os.environ.get("CONFLUENCE_EMAIL"),
                 auth_method=os.environ.get("CONFLUENCE_AUTH_METHOD", "pat"),
             )

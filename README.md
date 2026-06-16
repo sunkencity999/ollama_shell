@@ -154,9 +154,8 @@ verified parity, its legacy module is deleted.
 - `finetune.py` + `finetune_modules/` → `oshell.finetune` + `oshell finetune` CLI
   *(legacy deleted; MLX command verified against the real `mlx_lm.lora` entrypoint)*
 
-**In progress:**
 - Jira/Confluence (Server/DC) → `oshell.integrations.atlassian` + 4 tools
-  *(built & mock-tested; legacy deletion pending a live read-only smoke test)*
+  *(live-verified read-only against a real Server instance; legacy deleted)*
 
 **Next:** delete the monolith itself.
 
