@@ -75,6 +75,8 @@ oshell/
     builtins.py          current_time, list_models, sandboxed read/write/list files
     web.py               web_search + fetch_url (opt-in [web]; flagged network-touching)
     documents.py         create_document — txt/md/csv/docx/xlsx/pdf (opt-in [docs])
+    knowledge.py         add_knowledge + search_knowledge — local vectors (opt-in [rag])
+  knowledge.py           KnowledgeBase: ChromaDB + sentence-transformers (lazy, on-disk)
   agent/
     loop.py              The loop: model drives, multi-round tool-use, pin/exclude
     events.py            TextDelta / ToolStarted / ToolFinished / TurnComplete / LimitReached
@@ -140,9 +142,10 @@ verified parity, its legacy module is deleted.
 **Done:**
 - `web_browsing`'s extraction core → `fetch_url` (paired with `web_search`)
 - `file_creation` + `fixed_file_handler` → the `create_document` tool *(legacy deleted)*
+- monolith `KnowledgeBase` → `oshell.knowledge` + `add_knowledge`/`search_knowledge`
+  *(legacy code lives in the monolith; removed in the final sweep)*
 
-**Next:** RAG knowledge base → `search_knowledge`; then Confluence / Jira /
-fine-tuning; then delete the monolith itself.
+**Next:** Confluence / Jira / fine-tuning; then delete the monolith itself.
 
 > While migration is in progress the legacy monolith is being **decommissioned**:
 > it has dangling imports to deleted modules and is no longer runnable. The

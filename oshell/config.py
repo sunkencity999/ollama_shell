@@ -39,6 +39,15 @@ class ProviderConfig(BaseModel):
     timeout: float = 120.0
 
 
+class KnowledgeConfig(BaseModel):
+    """Local vector knowledge base (the ``[rag]`` extra)."""
+
+    path: str = "~/.oshell/knowledge"  # ChromaDB persistent dir
+    collection: str = "oshell_kb"
+    model: str = "all-MiniLM-L6-v2"  # sentence-transformers embedding model
+    default_limit: int = 5
+
+
 class Config(BaseModel):
     """Top-level runtime configuration for the shell."""
 
@@ -57,6 +66,9 @@ class Config(BaseModel):
 
     # Backend
     provider: ProviderConfig = Field(default_factory=ProviderConfig)
+
+    # Local vector knowledge base
+    knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
 
     # Agent loop
     max_tool_iterations: int = 8  # safety cap on tool-call rounds per turn

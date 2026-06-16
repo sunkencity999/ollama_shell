@@ -15,6 +15,7 @@ from .builtins import (
     WriteFileTool,
 )
 from .documents import CreateDocumentTool
+from .knowledge import AddKnowledgeTool, SearchKnowledgeTool, _SharedKB
 from .web import FetchUrlTool, WebSearchTool
 
 __all__ = ["Tool", "ToolError", "ToolRegistry", "default_registry"]
@@ -25,6 +26,7 @@ def default_registry(
 ) -> ToolRegistry:
     """Assemble the standard toolset. ``config.enabled_tools`` gates which are
     advertised to the model (``["*"]`` = all)."""
+    kb = _SharedKB(config)  # one lazy knowledge base shared by both KB tools
     tools: list[Tool] = [
         CurrentTimeTool(),
         ListModelsTool(provider),
@@ -34,5 +36,7 @@ def default_registry(
         CreateDocumentTool(workspace),
         WebSearchTool(),
         FetchUrlTool(),
+        AddKnowledgeTool(kb),
+        SearchKnowledgeTool(kb),
     ]
     return ToolRegistry(tools, enabled=config.enabled_tools)
