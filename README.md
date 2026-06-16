@@ -163,7 +163,10 @@ make lint        # ruff
 make fmt         # ruff --fix + format
 ```
 
-CI (GitHub Actions) runs ruff + mypy + pytest on Python 3.10–3.13.
+CI (GitHub Actions) runs ruff + mypy + pytest (`-m "not snapshot"`) on Python
+3.10–3.13. The TUI has a Textual SVG **layout snapshot** test (marked `snapshot`,
+run locally since baselines are pinned to a Textual version); regenerate it after
+intentional layout changes with `make snapshot`.
 
 ## Legacy migration (complete)
 

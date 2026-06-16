@@ -19,6 +19,9 @@ test:           ## Run the test suite
 cov:            ## Tests with coverage
 	.venv/bin/python -m pytest -q --cov=oshell --cov-report=term-missing
 
+snapshot:       ## Update the TUI layout snapshot baseline
+	.venv/bin/python -m pytest -m snapshot --snapshot-update
+
 run:            ## Launch the interactive CLI
 	.venv/bin/oshell chat
 

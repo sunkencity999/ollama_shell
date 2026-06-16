@@ -32,4 +32,5 @@ jobs:
 
       - name: Test (pytest)
         # Ollama is not available in CI, so live smoke tests self-skip.
-        run: uv run pytest -q --cov=oshell --cov-report=term-missing
+        # Snapshot baselines are pinned to a Textual version -> run locally only.
+        run: uv run pytest -q -m "not snapshot" --cov=oshell --cov-report=term-missing

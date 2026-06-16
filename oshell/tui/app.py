@@ -79,12 +79,15 @@ class OllamaShellTUI(App):
     """
     BINDINGS = [("ctrl+c", "quit", "Quit"), ("ctrl+t", "show_tools", "Tools")]
 
-    def __init__(self, agent: Agent):
+    def __init__(self, agent: Agent, show_clock: bool = True):
         super().__init__()
         self.agent = agent
+        # The header clock is live (changes every second); tests/snapshots turn
+        # it off so renders are deterministic.
+        self._show_clock = show_clock
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
+        yield Header(show_clock=self._show_clock)
         with Horizontal(id="body"):
             yield RichLog(id="conversation", wrap=True, markup=True, highlight=True)
             with TabbedContent(id="sidebar", initial="tab-tools"):
