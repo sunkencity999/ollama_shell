@@ -28,24 +28,26 @@ Created by Christopher Bradford · [contact@christopherdanielbradford.com](mailt
 ## Quick start
 
 ```bash
-# 1. Install into a local .venv. The script prefers `uv`, falls back to pip,
-#    and warns if Ollama isn't running.
-./install.sh            # core + tui (interactive default)
+# 1. Install. Puts `oshell` on your PATH (via `uv tool install`, editable;
+#    falls back to a venv + symlink). Warns if Ollama isn't running.
+./install.sh            # macOS / Linux — core + tui (interactive default)
 ./install.sh all        # everything: tui, web, rag, docs, vision, finetune
 ./install.sh web,rag    # or a custom subset of extras
+#   Windows (PowerShell):  .\install.ps1   (same arguments)
 
-# 2. Make sure Ollama is running (https://ollama.com), then:
-.venv/bin/oshell             # interactive agent chat (default command)
-.venv/bin/oshell tui         # Textual workspace (needs [tui])
-.venv/bin/oshell ask "What time is it? Use your tool."
-.venv/bin/oshell models      # list backend models
-.venv/bin/oshell config      # resolved config + which capabilities are available
-.venv/bin/oshell finetune detect   # local LoRA training backend
+# 2. Make sure Ollama is running (https://ollama.com), then — from anywhere:
+oshell                  # interactive agent chat (default command)
+oshell tui              # Textual workspace (needs [tui])
+oshell ask "What time is it? Use your tool."
+oshell models           # list backend models
+oshell config           # resolved config + which capabilities are available
+oshell finetune detect  # local LoRA training backend
 ```
 
-Prefer raw `uv`? `uv venv .venv && uv pip install -e ".[tui]"`. The
-`make install / run / tui / test` targets wrap the common flows. macOS users can
-double-click **Start Ollama Shell.command**.
+If `oshell` isn't found, open a new terminal (so the updated PATH loads) or add
+the printed bin dir to PATH. Prefer raw `uv`? `uv tool install --editable ".[tui]"`.
+For a dev checkout, `make install` builds a local `.venv`; `make run / tui / test`
+wrap the common flows. macOS users can also double-click **Start Ollama Shell.command**.
 
 ## The TUI workspace
 
