@@ -68,3 +68,6 @@ Modelfile
 *_secret
 *_token
 config.local.json
+
+# pytest-textual-snapshot generated report
+snapshot_report.html

@@ -79,6 +79,11 @@ right. The header shows the model, backend, tool count, and privacy posture.
   visual: you see exactly which messages the model is shown.
 - **Activity** — a running log of tool calls and their results.
 
+On startup (and any time you press **F2**) an old-school, keyboard-driven
+**menu** pops up — navigate with ↑/↓ + Enter or just press a number — for Chat,
+Models, Tools, Knowledge base, Fine-tuning, Settings, Help, and Quit. Esc drops
+back to the conversation.
+
 ## Architecture
 
 ```

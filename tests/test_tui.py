@@ -30,7 +30,8 @@ class _Scripted(LLMProvider):
 def _app() -> OllamaShellTUI:
     cfg = Config()
     reg = ToolRegistry([CurrentTimeTool()])
-    return OllamaShellTUI(Agent(_Scripted(), reg, cfg))
+    # Disable the startup menu modal so these tests drive the main view directly.
+    return OllamaShellTUI(Agent(_Scripted(), reg, cfg), show_menu_on_start=False)
 
 
 async def test_tui_mounts_and_shows_tools():
@@ -71,3 +72,48 @@ async def test_context_inspector_renders():
     async with app.run_test():
         text = app.query_one(ContextInspector).text
         assert "Context" in text and "syst" in text  # system message row
+
+
+async def test_menu_opens_and_number_selects_models():
+    from textual.widgets import RichLog
+
+    from oshell.tui.menu import MenuScreen
+
+    app = _app()
+    async with app.run_test() as pilot:
+        await pilot.press("f2")  # open the menu
+        await pilot.pause()
+        assert isinstance(app.screen, MenuScreen)
+        await pilot.press("2")  # "2. Models" — number selects, classic style
+        await pilot.pause()
+        assert not isinstance(app.screen, MenuScreen)  # menu dismissed
+        for _ in range(40):
+            lines = app.query_one("#conversation", RichLog).lines
+            if any("Models" in str(seg) for line in lines for seg in line._segments):
+                break
+            await pilot.pause(0.05)
+        lines = app.query_one("#conversation", RichLog).lines
+        assert any("scripted-model" in str(seg) for line in lines for seg in line._segments)
+
+
+async def test_menu_escape_returns_to_chat():
+    from oshell.tui.menu import MenuScreen
+
+    app = _app()
+    async with app.run_test() as pilot:
+        await pilot.press("f2")
+        await pilot.pause()
+        assert isinstance(app.screen, MenuScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, MenuScreen)  # back to chat
+
+
+async def test_menu_shows_on_startup_when_enabled():
+    from oshell.tui.menu import MenuScreen
+
+    cfg = Config()
+    app = OllamaShellTUI(Agent(_Scripted(), ToolRegistry([CurrentTimeTool()]), cfg))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert isinstance(app.screen, MenuScreen)  # greeted with the menu

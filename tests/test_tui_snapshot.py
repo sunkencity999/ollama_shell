@@ -37,7 +37,7 @@ def _deterministic_app() -> OllamaShellTUI:
     # Fixed config (no Atlassian creds), scripted provider, clock off → stable render.
     cfg = Config(default_model="demo-model")
     agent = Agent(_Scripted(), ToolRegistry([CurrentTimeTool()]), cfg)
-    return OllamaShellTUI(agent, show_clock=False)
+    return OllamaShellTUI(agent, show_clock=False, show_menu_on_start=False)
 
 
 @pytest.mark.snapshot

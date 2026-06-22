@@ -24,6 +24,7 @@ from ..capabilities import optional_features
 from ..config import Config
 from ..providers import get_provider
 from ..tools import default_registry
+from .menu import MenuScreen
 
 
 class ToolsPanel(Static):
@@ -77,14 +78,20 @@ class OllamaShellTUI(App):
     #activity { padding: 0 1; }
     Input { dock: bottom; }
     """
-    BINDINGS = [("ctrl+c", "quit", "Quit"), ("ctrl+t", "show_tools", "Tools")]
+    BINDINGS = [
+        ("ctrl+c", "quit", "Quit"),
+        ("f2", "open_menu", "Menu"),
+        ("ctrl+t", "show_tools", "Tools"),
+    ]
 
-    def __init__(self, agent: Agent, show_clock: bool = True):
+    def __init__(self, agent: Agent, show_clock: bool = True, show_menu_on_start: bool = True):
         super().__init__()
         self.agent = agent
         # The header clock is live (changes every second); tests/snapshots turn
         # it off so renders are deterministic.
         self._show_clock = show_clock
+        # Old-school: greet with the menu. Tests/snapshots disable it.
+        self._show_menu_on_start = show_menu_on_start
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=self._show_clock)
@@ -97,7 +104,7 @@ class OllamaShellTUI(App):
                     yield ContextInspector(id="context")
                 with TabPane("Activity", id="tab-activity"):
                     yield RichLog(id="activity", wrap=True, markup=True)
-        yield Input(placeholder="Message the model…  (Ctrl+C quit · Ctrl+T tools)")
+        yield Input(placeholder="Message the model…  (F2 menu · Ctrl+T tools · Ctrl+C quit)")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -115,6 +122,9 @@ class OllamaShellTUI(App):
             + (f"Network-capable tools: {', '.join(net)}." if net else "No networked tools active.")
         )
         self._conversation().write(banner)
+        self._conversation().write("[dim]Press F2 for the menu.[/dim]")
+        if self._show_menu_on_start:
+            self.action_open_menu()
 
     # ── widget shortcuts ─────────────────────────────────────────────────────
     def _conversation(self) -> RichLog:
@@ -125,6 +135,80 @@ class OllamaShellTUI(App):
 
     def action_show_tools(self) -> None:
         self.query_one(TabbedContent).active = "tab-tools"
+
+    # ── menu ─────────────────────────────────────────────────────────────────
+    def action_open_menu(self) -> None:
+        self.push_screen(MenuScreen(), self._on_menu_choice)
+
+    def _on_menu_choice(self, choice: str | None) -> None:
+        """Run the action chosen in the modal menu."""
+        if choice in (None, "chat"):
+            self.query_one(Input).focus()
+        elif choice == "quit":
+            self.exit()
+        elif choice == "tools":
+            self.query_one(TabbedContent).active = "tab-tools"
+        elif choice == "models":
+            self.run_worker(self._menu_models, thread=True, exclusive=True)
+        elif choice == "finetune":
+            self._menu_finetune()
+        elif choice == "config":
+            self._menu_config()
+        elif choice == "knowledge":
+            self._menu_knowledge()
+        elif choice == "help":
+            self._menu_help()
+
+    def _menu_models(self) -> None:
+        convo = self._conversation()
+        try:
+            models = self.agent.provider.list_models()
+            body = "\n".join(f"  • {m}" for m in models) or "  (none)"
+        except Exception as exc:  # network/backend down
+            body = f"  [red]could not list models: {exc}[/red]"
+        self.call_from_thread(convo.write, f"[b]Models[/b] ({self.agent.provider.name}):\n{body}")
+
+    def _menu_finetune(self) -> None:
+        from ..finetune import FineTuneManager, detect_hardware
+
+        hw = detect_hardware()
+        lines = [f"[b]Fine-tuning[/b]  backend: {hw.platform} → {hw.framework}"]
+        try:
+            jobs = FineTuneManager(self.agent.config).list_jobs()
+            lines += [f"  • {j.id}  [{j.status}]  {j.base_model}" for j in jobs] or ["  (no jobs)"]
+        except Exception as exc:
+            lines.append(f"  [red]{exc}[/red]")
+        lines.append("[dim]Manage jobs from the terminal: oshell finetune …[/dim]")
+        self._conversation().write("\n".join(lines))
+
+    def _menu_config(self) -> None:
+        c = self.agent.config
+        caps = ", ".join(f"{x.name.split(' ')[0]}{'✓' if x.available else '✗'}"
+                         for x in optional_features(c))
+        self._conversation().write(
+            "[b]Settings[/b]\n"
+            f"  model: {self.agent.model}   provider: {c.provider.name} ({c.provider.host})\n"
+            f"  temperature: {c.temperature}   max tool rounds: {c.max_tool_iterations}\n"
+            f"  capabilities: {caps}\n"
+            "[dim]Full config (secrets redacted): run `oshell config`.[/dim]"
+        )
+
+    def _menu_knowledge(self) -> None:
+        self._conversation().write(
+            "[b]Knowledge base[/b] (local vectors)\n"
+            "  Just talk to the model — it has tools:\n"
+            "   • [green]add_knowledge[/green]: \"remember that …\"\n"
+            "   • [green]search_knowledge[/green]: \"what did I save about …?\"\n"
+            "[dim]Needs the [rag] extra; stored under ~/.oshell/knowledge.[/dim]"
+        )
+
+    def _menu_help(self) -> None:
+        self._conversation().write(
+            "[b]Help[/b]\n"
+            "  The model drives: type a request and it calls tools as needed.\n"
+            "  Keys:  F2 menu · Ctrl+T tools · Ctrl+C quit · Tab/↑↓ navigate.\n"
+            "  Tabs:  Tools (roster) · Context (pin/exclude) · Activity (tool log)."
+        )
 
     # ── input handling ───────────────────────────────────────────────────────
     def on_input_submitted(self, event: Input.Submitted) -> None:
