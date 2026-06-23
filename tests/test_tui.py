@@ -11,7 +11,7 @@ pytest.importorskip("textual")
 
 from oshell.agent import Agent  # noqa: E402
 from oshell.config import Config  # noqa: E402
-from oshell.providers.base import ChatChunk, LLMProvider, Message  # noqa: E402
+from oshell.providers.base import ChatChunk, LLMProvider, Message, ToolCall  # noqa: E402
 from oshell.tools import ToolRegistry  # noqa: E402
 from oshell.tools.builtins import CurrentTimeTool  # noqa: E402
 from oshell.tui.app import ContextInspector, OllamaShellTUI, ToolsPanel  # noqa: E402
@@ -139,6 +139,61 @@ async def test_models_menu_opens_picker_and_sets_model():
         await pilot.pause()
         assert not isinstance(app.screen, ModelScreen)
         assert app.agent.model == "scripted-model"  # active model actually changed
+
+
+def test_result_summary_is_honest():
+    from oshell.tui.app import _compact_args, _summarize_result
+
+    assert "no results" in _summarize_result("(no results)")
+    assert "no results" in _summarize_result("")
+    assert "red" in _summarize_result("[error] web search failed: boom")
+    s = _summarize_result("Title\nhttps://x\nbody text")
+    assert "chars" in s and "Title" in s
+    assert _compact_args({"query": "hi", "max_results": 5}) == "query=hi, max_results=5"
+
+
+def _convo_text(app) -> str:
+    from textual.widgets import RichLog
+
+    log = app.query_one("#conversation", RichLog)
+    return "\n".join("".join(seg.text for seg in line) for line in log.lines)
+
+
+async def test_tool_call_is_shown_inline():
+    # A model that calls a tool (round 1) then answers (round 2).
+    class _ToolThenText(LLMProvider):
+        name = "tt"
+
+        def __init__(self):
+            self.calls = 0
+
+        def list_models(self):
+            return ["m"]
+
+        def chat(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                yield ChatChunk(tool_calls=[ToolCall(name="current_time", arguments={})], done=True)
+            else:
+                yield ChatChunk(content="Done.", done=True)
+
+    app = OllamaShellTUI(
+        Agent(_ToolThenText(), ToolRegistry([CurrentTimeTool()]), Config()),
+        show_menu_on_start=False,
+    )
+    async with app.run_test() as pilot:
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "what time is it?"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(60):
+            await pilot.pause(0.05)
+            if not app._busy and "Done." in _convo_text(app):
+                break
+        text = _convo_text(app)
+        assert "🔧 current_time" in text  # the real call is visible inline
+        assert "↳" in text  # ...with its result summary
 
 
 async def test_menu_shows_on_startup_when_enabled():

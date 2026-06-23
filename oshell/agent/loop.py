@@ -55,6 +55,11 @@ def build_system_prompt(registry: ToolRegistry, base: str = DEFAULT_SYSTEM_PROMP
             "they ask for current facts, external information, documentation, or anything you "
             "are not certain of from memory, call web_search (then fetch_url to read a result) "
             "and answer from what you find."
+            "\n\nGround every factual claim in actual tool output. Do NOT invent URLs, links, "
+            "product pages, videos, prices, citations, or sources, and do not claim something "
+            "is 'from your search results' unless it actually appears in a tool result. If a "
+            "search returns nothing useful, say so plainly and offer to refine the query — "
+            "never fabricate an answer to seem helpful."
         )
     return prompt
 

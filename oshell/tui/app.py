@@ -291,12 +291,20 @@ class OllamaShellTUI(App):
                 elif isinstance(event, ToolStarted):
                     self._status = f"Running {event.name}"
                     self._stream = ""  # back to spinner while the tool runs
-                    line = f"[dim]⚙ {event.name}({event.arguments})[/dim]"
-                    self.call_from_thread(activity.write, line)
+                    args = _compact_args(event.arguments)
+                    # Show the real call INLINE so the user can trust (or catch) it.
+                    self.call_from_thread(
+                        convo.write, f"[cyan]🔧 {event.name}[/cyan][dim]({escape(args)})[/dim]"
+                    )
+                    act = f"[dim]⚙ {event.name}({event.arguments})[/dim]"
+                    self.call_from_thread(activity.write, act)
                 elif isinstance(event, ToolFinished):
                     self._status = "Thinking"
-                    preview = event.result.replace("\n", " ")[:80]
-                    self.call_from_thread(activity.write, f"[dim]  ↳ {preview}[/dim]")
+                    summary = _summarize_result(event.result)
+                    self.call_from_thread(convo.write, f"[dim]   ↳ {escape(summary)}[/dim]")
+                    self.call_from_thread(
+                        activity.write, f"[dim]  ↳ {escape(event.result[:200])}[/dim]"
+                    )
                 elif isinstance(event, TurnComplete):
                     final = event.text or "[dim](no text)[/dim]"
                     self.call_from_thread(convo.write, final)
@@ -311,6 +319,31 @@ class OllamaShellTUI(App):
             self._busy = False
             self._stream = ""
             self.call_from_thread(self.query_one(ContextInspector).refresh_view, self.agent)
+
+
+def _compact_args(args: dict) -> str:
+    """One-line, truncated rendering of tool-call arguments."""
+    parts = []
+    for k, v in (args or {}).items():
+        s = str(v).replace("\n", " ")
+        parts.append(f"{k}={s[:50]}{'…' if len(s) > 50 else ''}")
+    return ", ".join(parts)
+
+
+def _summarize_result(result: str) -> str:
+    """A short, honest one-line summary of a tool result for inline display.
+
+    Surfaces empty/error results plainly so the user can tell when a tool found
+    nothing — and the model is just talking.
+    """
+    r = (result or "").strip()
+    if not r or r == "(no results)":
+        return "[yellow]no results[/yellow]"
+    if r.startswith("[error]"):
+        return f"[red]{r[:120]}[/red]"
+    first = r.replace("\n", " ")
+    n = len(r)
+    return f"{n} chars · {first[:90]}{'…' if len(first) > 90 else ''}"
 
 
 def run_tui(model: str | None = None) -> None:
