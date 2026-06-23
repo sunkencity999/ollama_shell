@@ -50,7 +50,12 @@ class WebSearchTool(Tool):
 
     def run(self, query: str = "", max_results: int = 5, **_: Any) -> str:
         try:
-            from duckduckgo_search import DDGS  # type: ignore
+            # `duckduckgo_search` was renamed to `ddgs`; prefer the new package
+            # and fall back to the old one for existing installs.
+            try:
+                from ddgs import DDGS  # type: ignore
+            except ImportError:
+                from duckduckgo_search import DDGS  # type: ignore
         except ImportError as exc:  # pragma: no cover - exercised via extras
             raise ToolError(
                 "web search needs the optional 'web' extra: pip install 'ollama-shell[web]'"
@@ -59,8 +64,11 @@ class WebSearchTool(Tool):
         if not query.strip():
             raise ToolError("query must not be empty")
 
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
+        try:
+            with DDGS() as ddgs:
+                results = list(ddgs.text(query, max_results=int(max_results)))
+        except Exception as exc:  # network hiccup, rate limit, backend change
+            raise ToolError(f"web search failed: {exc}") from exc
         if not results:
             return "(no results)"
         return "\n\n".join(

@@ -75,6 +75,28 @@ def test_iteration_cap():
     assert events[-1].iterations == 3
 
 
+def test_system_prompt_is_tool_aware():
+    from oshell.tools.builtins import CurrentTimeTool
+    from oshell.tools.web import WebSearchTool
+
+    reg = ToolRegistry([CurrentTimeTool(), WebSearchTool()])
+    agent = Agent(ScriptedProvider([]), reg, Config())
+    sysmsg = agent.messages[0].content
+    # Lists the actual tools...
+    assert "current_time" in sysmsg and "web_search" in sysmsg
+    # ...and tells the model it is NOT offline (web_search reaches the network).
+    assert "internet" in sysmsg.lower()
+    assert "web_search" in sysmsg
+
+
+def test_system_prompt_no_internet_line_without_network_tools():
+    from oshell.tools.builtins import CurrentTimeTool
+
+    reg = ToolRegistry([CurrentTimeTool()])  # local-only
+    agent = Agent(ScriptedProvider([]), reg, Config())
+    assert "NOT a disconnected model" not in agent.messages[0].content
+
+
 def test_context_pin_exclude():
     agent, _ = _agent([[ChatChunk(content="ok", done=True)]])
     list(agent.send("first"))

@@ -26,11 +26,37 @@ from .events import (
 )
 
 DEFAULT_SYSTEM_PROMPT = (
-    "You are Ollama Shell, a local-first assistant running entirely on the "
-    "user's machine. You can call tools to read/write files, check the time, "
-    "list models, and (if enabled) search the web. Prefer tools over guessing. "
-    "Be concise."
+    "You are Ollama Shell, a local-first assistant that runs on the user's "
+    "machine but can act on the world through the tools listed below. "
+    "Prefer calling a tool over guessing or declining. Be concise."
 )
+
+
+def build_system_prompt(registry: ToolRegistry, base: str = DEFAULT_SYSTEM_PROMPT) -> str:
+    """Compose a tool-aware system prompt.
+
+    Small local models otherwise fall back to an "I'm an offline LLM with no
+    internet" persona and refuse perfectly-doable requests. We therefore list
+    the *actual* available tools and, when any reach the network, state plainly
+    that the model is NOT disconnected and must use them.
+    """
+    tools = registry.active()
+    if not tools:
+        return base
+    listing = "\n".join(f"- {t.name}: {t.description}" for t in tools)
+    prompt = f"{base}\n\nTools available to you (call them; do not invent results):\n{listing}"
+
+    networked = [t.name for t in tools if not t.local_only]
+    if networked:
+        prompt += (
+            "\n\nIMPORTANT: You are NOT a disconnected model — you have live internet "
+            f"access through these tools: {', '.join(networked)}. Never tell the user you "
+            "cannot access the internet, real-time information, or a specific website. When "
+            "they ask for current facts, external information, documentation, or anything you "
+            "are not certain of from memory, call web_search (then fetch_url to read a result) "
+            "and answer from what you find."
+        )
+    return prompt
 
 
 class Agent:
@@ -43,13 +69,15 @@ class Agent:
         config: Config,
         *,
         model: str | None = None,
-        system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        system_prompt: str | None = None,
     ):
         self.provider = provider
         self.registry = registry
         self.config = config
         self.model = model or config.default_model
-        self.messages: list[Message] = [Message(role="system", content=system_prompt)]
+        # Build a tool-aware prompt unless the caller supplies an explicit one.
+        content = system_prompt if system_prompt is not None else build_system_prompt(registry)
+        self.messages: list[Message] = [Message(role="system", content=content)]
         # Context management: indices into ``self.messages``.
         self.pinned: set[int] = {0}  # system prompt is pinned by default
         self.excluded: set[int] = set()
