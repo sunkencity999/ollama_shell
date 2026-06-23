@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from rich.markup import escape
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Footer, Header, Input, RichLog, Static, TabbedContent, TabPane
 
@@ -24,7 +25,7 @@ from ..capabilities import optional_features
 from ..config import Config
 from ..providers import get_provider
 from ..tools import default_registry
-from .menu import MenuScreen
+from .menu import MenuScreen, ModelScreen
 
 
 class ToolsPanel(Static):
@@ -78,10 +79,14 @@ class OllamaShellTUI(App):
     #activity { padding: 0 1; }
     Input { dock: bottom; }
     """
+    # Esc is the primary menu key — F-keys are unreliable on macOS (the OS grabs
+    # them). F2 / Ctrl+O are kept as hidden alternates for other platforms.
     BINDINGS = [
-        ("ctrl+c", "quit", "Quit"),
-        ("f2", "open_menu", "Menu"),
-        ("ctrl+t", "show_tools", "Tools"),
+        Binding("escape", "open_menu", "Menu"),
+        Binding("ctrl+t", "show_tools", "Tools"),
+        Binding("ctrl+c", "quit", "Quit"),
+        Binding("f2", "open_menu", "Menu", show=False),
+        Binding("ctrl+o", "open_menu", "Menu", show=False),
     ]
 
     def __init__(self, agent: Agent, show_clock: bool = True, show_menu_on_start: bool = True):
@@ -104,17 +109,21 @@ class OllamaShellTUI(App):
                     yield ContextInspector(id="context")
                 with TabPane("Activity", id="tab-activity"):
                     yield RichLog(id="activity", wrap=True, markup=True)
-        yield Input(placeholder="Message the model…  (F2 menu · Ctrl+T tools · Ctrl+C quit)")
+        yield Input(placeholder="Message the model…  (Esc menu · Ctrl+T tools · Ctrl+C quit)")
         yield Footer()
 
-    def on_mount(self) -> None:
+    def _subtitle(self) -> str:
         net = [t.name for t in self.agent.registry.active() if not t.local_only]
         n = len(self.agent.registry)
-        self.title = "Ollama Shell"
-        self.sub_title = (
+        return (
             f"{self.agent.model} · {self.agent.provider.name} · {n} tools · "
             + ("network: " + ", ".join(net) if net else "fully local")
         )
+
+    def on_mount(self) -> None:
+        net = [t.name for t in self.agent.registry.active() if not t.local_only]
+        self.title = "Ollama Shell"
+        self.sub_title = self._subtitle()
         self.query_one(ToolsPanel).render_for(self.agent)
         self.query_one(ContextInspector).refresh_view(self.agent)
         banner = (
@@ -122,7 +131,7 @@ class OllamaShellTUI(App):
             + (f"Network-capable tools: {', '.join(net)}." if net else "No networked tools active.")
         )
         self._conversation().write(banner)
-        self._conversation().write("[dim]Press F2 for the menu.[/dim]")
+        self._conversation().write("[dim]Press Esc for the menu.[/dim]")
         if self._show_menu_on_start:
             self.action_open_menu()
 
@@ -149,7 +158,7 @@ class OllamaShellTUI(App):
         elif choice == "tools":
             self.query_one(TabbedContent).active = "tab-tools"
         elif choice == "models":
-            self.run_worker(self._menu_models, thread=True, exclusive=True)
+            self.run_worker(self._open_model_picker, thread=True, exclusive=True)
         elif choice == "finetune":
             self._menu_finetune()
         elif choice == "config":
@@ -159,14 +168,30 @@ class OllamaShellTUI(App):
         elif choice == "help":
             self._menu_help()
 
-    def _menu_models(self) -> None:
+    def _open_model_picker(self) -> None:
+        """Fetch models (worker thread), then show the picker on the UI thread."""
         convo = self._conversation()
         try:
             models = self.agent.provider.list_models()
-            body = "\n".join(f"  • {m}" for m in models) or "  (none)"
         except Exception as exc:  # network/backend down
-            body = f"  [red]could not list models: {exc}[/red]"
-        self.call_from_thread(convo.write, f"[b]Models[/b] ({self.agent.provider.name}):\n{body}")
+            self.call_from_thread(convo.write, f"[red]Could not list models: {exc}[/red]")
+            return
+        if not models:
+            msg = "[yellow]No models available. Is Ollama running?[/yellow]"
+            self.call_from_thread(convo.write, msg)
+            return
+        self.call_from_thread(
+            self.push_screen, ModelScreen(models, self.agent.model), self._on_model_choice
+        )
+
+    def _on_model_choice(self, name: str | None) -> None:
+        if not name:
+            self.query_one(Input).focus()
+            return
+        self.agent.model = name
+        self.sub_title = self._subtitle()  # header reflects the new model
+        self._conversation().write(f"[green]Model set to[/green] [bold]{name}[/bold]")
+        self.query_one(Input).focus()
 
     def _menu_finetune(self) -> None:
         from ..finetune import FineTuneManager, detect_hardware

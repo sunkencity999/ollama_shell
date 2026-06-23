@@ -74,29 +74,22 @@ async def test_context_inspector_renders():
         assert "Context" in text and "syst" in text  # system message row
 
 
-async def test_menu_opens_and_number_selects_models():
-    from textual.widgets import RichLog
-
+async def test_escape_opens_menu_then_closes():
+    # Esc is the primary menu key (F-keys are unreliable on macOS).
     from oshell.tui.menu import MenuScreen
 
     app = _app()
     async with app.run_test() as pilot:
-        await pilot.press("f2")  # open the menu
+        await pilot.press("escape")  # chat -> menu
         await pilot.pause()
         assert isinstance(app.screen, MenuScreen)
-        await pilot.press("2")  # "2. Models" — number selects, classic style
+        await pilot.press("escape")  # menu -> chat
         await pilot.pause()
-        assert not isinstance(app.screen, MenuScreen)  # menu dismissed
-        for _ in range(40):
-            lines = app.query_one("#conversation", RichLog).lines
-            if any("Models" in str(seg) for line in lines for seg in line._segments):
-                break
-            await pilot.pause(0.05)
-        lines = app.query_one("#conversation", RichLog).lines
-        assert any("scripted-model" in str(seg) for line in lines for seg in line._segments)
+        assert not isinstance(app.screen, MenuScreen)
 
 
-async def test_menu_escape_returns_to_chat():
+async def test_f2_still_opens_menu():
+    # Hidden alternate binding for non-macOS keyboards.
     from oshell.tui.menu import MenuScreen
 
     app = _app()
@@ -104,9 +97,27 @@ async def test_menu_escape_returns_to_chat():
         await pilot.press("f2")
         await pilot.pause()
         assert isinstance(app.screen, MenuScreen)
-        await pilot.press("escape")
+
+
+async def test_models_menu_opens_picker_and_sets_model():
+    from oshell.tui.menu import MenuScreen, ModelScreen
+
+    app = _app()  # starts on default model "llama3"
+    assert app.agent.model != "scripted-model"
+    async with app.run_test() as pilot:
+        await pilot.press("escape")  # open menu
         await pilot.pause()
-        assert not isinstance(app.screen, MenuScreen)  # back to chat
+        assert isinstance(app.screen, MenuScreen)
+        await pilot.press("2")  # "2. Models" -> opens the picker (in a worker)
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, ModelScreen):
+                break
+        assert isinstance(app.screen, ModelScreen)
+        await pilot.press("1")  # pick the first model -> "scripted-model"
+        await pilot.pause()
+        assert not isinstance(app.screen, ModelScreen)
+        assert app.agent.model == "scripted-model"  # active model actually changed
 
 
 async def test_menu_shows_on_startup_when_enabled():
