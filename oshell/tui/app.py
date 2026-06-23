@@ -17,7 +17,7 @@ from __future__ import annotations
 from rich.markup import escape
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, RichLog, Static, TabbedContent, TabPane
 
 from ..agent import Agent, LimitReached, TextDelta, ToolFinished, ToolStarted, TurnComplete
@@ -73,7 +73,9 @@ class OllamaShellTUI(App):
 
     CSS = """
     #body { height: 1fr; }
-    #conversation { width: 2fr; border: round $accent; padding: 0 1; }
+    #convo-pane { width: 2fr; }
+    #conversation { height: 1fr; border: round $accent; padding: 0 1; }
+    #live { height: auto; max-height: 8; padding: 0 1; color: $text-muted; }
     #sidebar { width: 1fr; }
     #tools, #context { padding: 0 1; }
     #activity { padding: 0 1; }
@@ -97,11 +99,23 @@ class OllamaShellTUI(App):
         self._show_clock = show_clock
         # Old-school: greet with the menu. Tests/snapshots disable it.
         self._show_menu_on_start = show_menu_on_start
+        # Live-region state (read by the spinner timer on the UI thread, written
+        # by the turn worker thread — plain attribute assignments are atomic).
+        self._busy = False
+        self._status = "Thinking"  # what the model is doing right now
+        self._stream = ""  # assistant text as it streams in this round
+        self._spin = 0
+        self._live_text = ""  # what the live region currently shows (for tests)
+
+    _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=self._show_clock)
         with Horizontal(id="body"):
-            yield RichLog(id="conversation", wrap=True, markup=True, highlight=True)
+            with Vertical(id="convo-pane"):
+                yield RichLog(id="conversation", wrap=True, markup=True, highlight=True)
+                # Live region: spinner/status while working, streamed reply as it builds.
+                yield Static("", id="live")
             with TabbedContent(id="sidebar", initial="tab-tools"):
                 with TabPane("Tools", id="tab-tools"):
                     yield ToolsPanel(id="tools")
@@ -132,8 +146,28 @@ class OllamaShellTUI(App):
         )
         self._conversation().write(banner)
         self._conversation().write("[dim]Press Esc for the menu.[/dim]")
+        # Drives the live spinner / streaming preview.
+        self.set_interval(0.1, self._tick)
         if self._show_menu_on_start:
             self.action_open_menu()
+
+    def _tick(self) -> None:
+        """Render the live region: spinner+status while working, or streamed text."""
+        if not self._busy:
+            if self._live_text:
+                self._set_live("")
+            return
+        self._spin = (self._spin + 1) % len(self._SPINNER)
+        frame = self._SPINNER[self._spin]
+        if self._stream:
+            # Streaming the reply — show it building with a blinking cursor.
+            self._set_live(f"[dim]{escape(self._stream)}[/dim][cyan]▌[/cyan]")
+        else:
+            self._set_live(f"[cyan]{frame}[/cyan] [dim]{escape(self._status)}…[/dim]")
+
+    def _set_live(self, markup: str) -> None:
+        self._live_text = markup
+        self.query_one("#live", Static).update(markup)
 
     # ── widget shortcuts ─────────────────────────────────────────────────────
     def _conversation(self) -> RichLog:
@@ -239,30 +273,44 @@ class OllamaShellTUI(App):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         event.input.value = ""
-        if not text:
+        if not text or self._busy:  # ignore submits while a turn is running
             return
         self._conversation().write(f"[bold green]›[/] {text}")
+        # Engage the live indicator before the (possibly slow) first token.
+        self._stream = ""
+        self._status = "Thinking"
+        self._busy = True
         self.run_worker(lambda: self._worker(text), thread=True, exclusive=True)
 
     def _worker(self, text: str) -> None:
         convo, activity = self._conversation(), self._activity()
-        buffer: list[str] = []
-        for event in self.agent.send(text):
-            if isinstance(event, TextDelta):
-                buffer.append(event.text)
-            elif isinstance(event, ToolStarted):
-                line = f"[dim]⚙ {event.name}({event.arguments})[/dim]"
-                self.call_from_thread(activity.write, line)
-            elif isinstance(event, ToolFinished):
-                preview = event.result.replace("\n", " ")[:80]
-                self.call_from_thread(activity.write, f"[dim]  ↳ {preview}[/dim]")
-            elif isinstance(event, TurnComplete):
-                self.call_from_thread(convo.write, "".join(buffer) or "[dim](no text)[/dim]")
-            elif isinstance(event, LimitReached):
-                self.call_from_thread(
-                    convo.write, f"[red]Stopped after {event.iterations} tool rounds.[/red]"
-                )
-        self.call_from_thread(self.query_one(ContextInspector).refresh_view, self.agent)
+        try:
+            for event in self.agent.send(text):
+                if isinstance(event, TextDelta):
+                    self._stream += event.text  # the spinner timer renders this live
+                elif isinstance(event, ToolStarted):
+                    self._status = f"Running {event.name}"
+                    self._stream = ""  # back to spinner while the tool runs
+                    line = f"[dim]⚙ {event.name}({event.arguments})[/dim]"
+                    self.call_from_thread(activity.write, line)
+                elif isinstance(event, ToolFinished):
+                    self._status = "Thinking"
+                    preview = event.result.replace("\n", " ")[:80]
+                    self.call_from_thread(activity.write, f"[dim]  ↳ {preview}[/dim]")
+                elif isinstance(event, TurnComplete):
+                    final = event.text or "[dim](no text)[/dim]"
+                    self.call_from_thread(convo.write, final)
+                elif isinstance(event, LimitReached):
+                    self.call_from_thread(
+                        convo.write, f"[red]Stopped after {event.iterations} tool rounds.[/red]"
+                    )
+        except Exception as exc:  # surface backend errors instead of a silent hang
+            self.call_from_thread(convo.write, f"[red]Error: {exc}[/red]")
+        finally:
+            # Stop the indicator and refresh the context view.
+            self._busy = False
+            self._stream = ""
+            self.call_from_thread(self.query_one(ContextInspector).refresh_view, self.agent)
 
 
 def run_tui(model: str | None = None) -> None:

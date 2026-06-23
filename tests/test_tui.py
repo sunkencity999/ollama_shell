@@ -65,6 +65,27 @@ async def test_tui_processes_a_turn():
         assert app.agent.messages[-1].content == "hello from the model"
         # And the conversation pane received output (user echo + reply).
         assert len(app.query_one("#conversation", RichLog).lines) >= 2
+        assert app._busy is False  # indicator cleared when the turn finished
+
+
+async def test_live_indicator_states():
+    app = _app()
+    async with app.run_test():
+        app._busy = False
+        app._tick()
+        assert app._live_text == ""  # idle: empty
+
+        app._busy, app._status, app._stream = True, "Thinking", ""
+        app._tick()
+        assert "Thinking" in app._live_text  # spinner + status
+
+        app._stream = "partial answer"
+        app._tick()
+        assert "partial answer" in app._live_text  # streamed reply preview
+
+        app._busy = False
+        app._tick()
+        assert app._live_text == ""  # cleared when done
 
 
 async def test_context_inspector_renders():

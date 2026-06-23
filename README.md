@@ -79,6 +79,11 @@ right. The header shows the model, backend, tool count, and privacy posture.
   visual: you see exactly which messages the model is shown.
 - **Activity** — a running log of tool calls and their results.
 
+While the model works, a live region under the conversation shows an animated
+spinner with the current status (*Thinking…*, *Running web_search…*) and then
+**streams the reply token-by-token** as it's generated — no more staring at a
+blank space.
+
 On startup (and any time you press **F2**) an old-school, keyboard-driven
 **menu** pops up — navigate with ↑/↓ + Enter or just press a number — for Chat,
 Models, Tools, Knowledge base, Fine-tuning, Settings, Help, and Quit. Esc drops
