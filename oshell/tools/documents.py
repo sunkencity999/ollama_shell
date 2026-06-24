@@ -17,18 +17,18 @@ import io
 from typing import Any
 
 from .base import ToolError
-from .builtins import _WorkspaceTool
+from .builtins import _PathTool
 
 # Extensions handled with no extra dependency.
 _PLAINTEXT = {"txt", "md", "markdown", "text"}
 
 
-class CreateDocumentTool(_WorkspaceTool):
+class CreateDocumentTool(_PathTool):
     name = "create_document"
     description = (
-        "Create a document in the workspace. The file extension picks the format: "
-        "txt/md (plain), csv (rows), docx (Word), xlsx (Excel from CSV text), pdf. "
-        "For csv/xlsx, pass CSV-formatted text as content."
+        "Create a document at any path on the system. The file extension picks the "
+        "format: txt/md (plain), csv (rows), docx (Word), xlsx (Excel from CSV text), "
+        "pdf. For csv/xlsx, pass CSV-formatted text as content."
     )
     local_only = True
     parameters = {
@@ -36,7 +36,8 @@ class CreateDocumentTool(_WorkspaceTool):
         "properties": {
             "path": {
                 "type": "string",
-                "description": "Destination path relative to the workspace (extension sets format)",
+                "description": "Destination — absolute, ~, or relative to the working dir "
+                "(extension sets the format)",
             },
             "content": {
                 "type": "string",
@@ -64,8 +65,7 @@ class CreateDocumentTool(_WorkspaceTool):
         else:
             raise ToolError(f"unsupported extension: .{ext}")
 
-        rel = target.relative_to(self.root)
-        return f"created {ext} document: {rel} ({len(content)} bytes of source)"
+        return f"created {ext} document: {self._display(target)} ({len(content)} bytes of source)"
 
 
 def _write_docx(target, content: str) -> None:

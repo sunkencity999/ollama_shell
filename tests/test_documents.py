@@ -46,12 +46,18 @@ def test_unsupported_extension(tmp_path):
     assert out.startswith("[error]") and "unsupported" in out
 
 
-def test_sandbox_escape_blocked(tmp_path):
+def test_can_write_outside_workspace(tmp_path):
+    # Relaxed sandbox: documents can be created anywhere (e.g. ~/Documents).
+    outside = tmp_path.parent / f"oshell-doc-{tmp_path.name}.md"
     reg = _reg(tmp_path)
-    out = reg.dispatch(
-        ToolCall(name="create_document", arguments={"path": "../evil.txt", "content": "x"})
-    )
-    assert out.startswith("[error]") and "escapes" in out
+    try:
+        out = reg.dispatch(
+            ToolCall(name="create_document", arguments={"path": str(outside), "content": "# Hi"})
+        )
+        assert not out.startswith("[error]")
+        assert outside.read_text() == "# Hi"
+    finally:
+        outside.unlink(missing_ok=True)
 
 
 def test_docx(tmp_path):

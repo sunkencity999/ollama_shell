@@ -122,7 +122,7 @@ oshell/
     openai_compat.py     LM Studio / vLLM / llama.cpp / MLX (OpenAI schema)
   tools/               MCP-style host
     base.py              Tool + ToolRegistry (advertise specs, dispatch calls)
-    builtins.py          current_time, list_models, sandboxed read/write/list files
+    builtins.py          current_time, list_models, read/write/list files (any path)
     system.py            run_command (shell exec, cross-platform) + system_info
     gui.py               screenshot + gui_click/type/key/move (opt-in, vision-gated)
   gui/controller.py      desktop-control backends (pyautogui; native seam)
@@ -190,6 +190,11 @@ and **falls back to one-shot automatically** if it isn't responsive, so it can
 never hang. GUI key chords are normalized per-OS (`cmd`→`win` on Windows,
 `command` on macOS) and the model is told which OS it's on. Disable persistence
 with `{"shell": {"persistent": false}}`.
+
+The file tools (`read_file`, `write_file`, `create_document`, `list_dir`) are
+**not sandboxed** — they accept absolute, `~`, or working-dir-relative paths and
+can read/write anywhere you can (e.g. save a report to `~/Documents`), consistent
+with `run_command`'s autonomy.
 
 > **Autonomy & safety.** By default `run_command` runs **without per-command
 > confirmation** — full autonomy. Every command and its output are shown inline

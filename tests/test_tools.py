@@ -42,11 +42,32 @@ def test_workspace_write_read_list(tmp_path):
     assert "b.txt" in listing
 
 
-def test_workspace_escape_blocked(tmp_path):
-    reg = ToolRegistry([ReadFileTool(tmp_path)])
-    out = reg.dispatch(ToolCall(name="read_file", arguments={"path": "../../etc/passwd"}))
-    assert out.startswith("[error]")
-    assert "escapes" in out
+def test_paths_are_not_sandboxed(tmp_path):
+    # Relaxed sandbox: file tools can read/write outside the working dir.
+    outside = tmp_path.parent / f"oshell-outside-{tmp_path.name}.txt"
+    reg = ToolRegistry([WriteFileTool(tmp_path), ReadFileTool(tmp_path)])
+    try:
+        # Absolute path outside the workspace root writes fine.
+        out = reg.dispatch(
+            ToolCall(name="write_file", arguments={"path": str(outside), "content": "anywhere"})
+        )
+        assert not out.startswith("[error]") and str(outside) in out
+        assert outside.read_text() == "anywhere"
+        # And reads back via absolute path.
+        back = reg.dispatch(ToolCall(name="read_file", arguments={"path": str(outside)}))
+        assert back == "anywhere"
+    finally:
+        outside.unlink(missing_ok=True)
+
+
+def test_tilde_path_expands(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))  # ~ -> tmp_path
+    reg = ToolRegistry([WriteFileTool(tmp_path)])
+    out = reg.dispatch(
+        ToolCall(name="write_file", arguments={"path": "~/tilde.txt", "content": "hi"})
+    )
+    assert not out.startswith("[error]")
+    assert (tmp_path / "tilde.txt").read_text() == "hi"
 
 
 def test_tool_exception_is_caught():
