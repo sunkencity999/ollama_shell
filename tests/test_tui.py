@@ -263,6 +263,48 @@ async def test_model_choice_persists_default(tmp_path, monkeypatch):
     assert saved["default_model"] == "my-chosen-model"
 
 
+async def test_multiline_paste_buffers_and_sends():
+    from textual import events
+    from textual.widgets import Input
+
+    app = _app()
+    async with app.run_test() as pilot:
+        inp = app.query_one(Input)
+        inp.focus()
+        await pilot.pause()
+        inp.post_message(events.Paste("line1\nline2\nline3"))  # multi-line paste
+        await pilot.pause()
+        # Buffered (not lost to first line), input stays clean.
+        assert app._pending_paste == "line1\nline2\nline3"
+        assert inp.value == ""
+        # Type a question and submit; the pasted block is included.
+        inp.value = "summarize this"
+        await pilot.press("enter")
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if any(m.role == "user" for m in app.agent.messages):
+                break
+        user_msg = next(m for m in app.agent.messages if m.role == "user")
+        assert "line1" in user_msg.content and "line3" in user_msg.content
+        assert "summarize this" in user_msg.content
+        assert app._pending_paste == ""  # consumed
+
+
+async def test_singleline_paste_still_inserts_normally():
+    from textual import events
+    from textual.widgets import Input
+
+    app = _app()
+    async with app.run_test() as pilot:
+        inp = app.query_one(Input)
+        inp.focus()
+        await pilot.pause()
+        inp.post_message(events.Paste("just one line"))
+        await pilot.pause()
+        assert inp.value == "just one line"  # normal Input paste behavior preserved
+        assert app._pending_paste == ""
+
+
 async def test_menu_shows_on_startup_when_enabled():
     from oshell.tui.menu import MenuScreen
 

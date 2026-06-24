@@ -15,9 +15,11 @@ The agent loop is synchronous and streaming, so each turn runs in a worker
 from __future__ import annotations
 
 from rich.markup import escape
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.message import Message
 from textual.widgets import Footer, Header, Input, RichLog, Static, TabbedContent, TabPane
 
 from ..agent import Agent, LimitReached, TextDelta, ToolFinished, ToolStarted, TurnComplete
@@ -26,6 +28,29 @@ from ..config import Config
 from ..providers import get_provider
 from ..tools import default_registry
 from .menu import INSTALLABLE_FEATURES, FeaturesScreen, MenuScreen, ModelScreen, feature_installed
+
+
+class ChatInput(Input):
+    """A single-line Input that diverts *multi-line* pastes to the app.
+
+    Textual's Input keeps only the first line of a pasted block; for a chat
+    where people paste logs/code that's lossy. We post the full text to the app
+    instead (single-line pastes fall through to normal behavior)."""
+
+    class MultilinePasted(Message):
+        def __init__(self, text: str) -> None:
+            self.text = text
+            super().__init__()
+
+    def _on_paste(self, event: events.Paste) -> None:
+        # Textual dispatches _on_paste to every class in the MRO; for multi-line
+        # we divert and prevent_default() so Input's default (first-line-only)
+        # handler is skipped. For single-line we do nothing and let Input's own
+        # _on_paste run (calling super() here would double-insert).
+        if event.text and "\n" in event.text:
+            self.post_message(self.MultilinePasted(event.text))
+            event.prevent_default()
+            event.stop()
 
 
 class ToolsPanel(Static):
@@ -111,6 +136,7 @@ class OllamaShellTUI(App):
         self._stream = ""  # assistant text as it streams in this round
         self._spin = 0
         self._live_text = ""  # what the live region currently shows (for tests)
+        self._pending_paste = ""  # multi-line pasted text, sent with the next message
 
     _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -128,7 +154,7 @@ class OllamaShellTUI(App):
                     yield ContextInspector(id="context")
                 with TabPane("Activity", id="tab-activity"):
                     yield RichLog(id="activity", wrap=True, markup=True)
-        yield Input(placeholder="Message the model…  (Esc menu · Ctrl+T tools · Ctrl+C quit)")
+        yield ChatInput(placeholder="Message the model…  (Esc menu · Ctrl+T tools · Ctrl+C quit)")
         yield Footer()
 
     def _subtitle(self) -> str:
@@ -347,17 +373,35 @@ class OllamaShellTUI(App):
         self._conversation().write(
             "[b]Help[/b]\n"
             "  The model drives: type a request and it calls tools as needed.\n"
-            "  Keys:  F2 menu · Ctrl+T tools · Ctrl+C quit · Tab/↑↓ navigate.\n"
+            "  Keys:  Esc menu · Ctrl+T tools · Ctrl+C quit · Tab/↑↓ navigate.\n"
             "  Tabs:  Tools (roster) · Context (pin/exclude) · Activity (tool log)."
         )
 
-    # ── input handling ───────────────────────────────────────────────────────
+    # ── paste / input handling ────────────────────────────────────────────────
+    def on_chat_input_multiline_pasted(self, event: ChatInput.MultilinePasted) -> None:
+        """Buffer a multi-line paste; it's sent with the next message."""
+        self._pending_paste += (("\n" + event.text) if self._pending_paste else event.text)
+        n = self._pending_paste.count("\n") + 1
+        self._conversation().write(
+            f"[dim]📋 pasted {n} lines — type a message (or just press Enter) to send it.[/dim]"
+        )
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        text = event.value.strip()
+        typed = event.value.strip()
         event.input.value = ""
-        if not text or self._busy:  # ignore submits while a turn is running
+        if self._busy:  # ignore submits while a turn is running
             return
-        self._conversation().write(f"[bold green]›[/] {text}")
+        if self._pending_paste:
+            pasted, self._pending_paste = self._pending_paste, ""
+            text = f"{pasted}\n\n{typed}" if typed else pasted
+            echo = f"{typed} [dim](+{pasted.count(chr(10)) + 1} pasted lines)[/dim]" if typed \
+                else f"[dim](pasted {pasted.count(chr(10)) + 1} lines)[/dim]"
+        else:
+            text = typed
+            echo = escape(typed)
+        if not text:
+            return
+        self._conversation().write(f"[bold green]›[/] {echo}")
         # Engage the live indicator before the (possibly slow) first token.
         self._stream = ""
         self._status = "Thinking"
