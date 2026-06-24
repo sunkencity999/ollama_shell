@@ -9,7 +9,42 @@ from __future__ import annotations
 
 import base64
 import io
+import platform
 from abc import ABC, abstractmethod
+
+
+def _meta_key() -> str:
+    """The platform's super/meta modifier name for pyautogui."""
+    s = platform.system().lower()
+    if s == "darwin":
+        return "command"
+    if s == "windows":
+        return "win"
+    return "winleft"  # Linux / X11 "super"
+
+
+# Cross-platform key aliases -> pyautogui names. The meta-key family maps to the
+# current OS so a chord like "cmd+space" works on Windows ("win") and Linux too.
+_KEY_ALIASES = {
+    "cmd": _meta_key(),
+    "command": _meta_key(),
+    "super": _meta_key(),
+    "meta": _meta_key(),
+    "win": _meta_key(),
+    "windows": _meta_key(),
+    "option": "alt",
+    "control": "ctrl",
+    "ctl": "ctrl",
+    "return": "enter",
+    "esc": "escape",
+    "del": "delete",
+}
+
+
+def _normalize_keys(key: str) -> list[str]:
+    """Split a chord like 'ctrl+shift+t' and map aliases to pyautogui names."""
+    parts = [p.strip().lower() for p in key.replace("+", " ").split() if p.strip()]
+    return [_KEY_ALIASES.get(p, p) for p in parts]
 
 
 class GuiUnavailable(RuntimeError):
@@ -83,10 +118,10 @@ class PyAutoGuiBackend(Controller):
         self._g.typewrite(text, interval=0.01)
 
     def press_key(self, key: str) -> None:
-        keys = [k.strip() for k in key.replace("+", " ").split()]
+        keys = _normalize_keys(key)  # platform-aware (cmd->win on Windows, etc.)
         if len(keys) > 1:
             self._g.hotkey(*keys)
-        else:
+        elif keys:
             self._g.press(keys[0])
 
 

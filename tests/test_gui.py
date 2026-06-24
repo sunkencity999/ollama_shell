@@ -154,3 +154,32 @@ def test_gui_tools_absent_without_model():
 def test_gui_tools_are_sensitive():
     assert ScreenshotTool(_Shared(FakeController())).sensitive is True
     assert CurrentTimeTool().sensitive is False
+
+
+# ── cross-platform key normalization ─────────────────────────────────────---
+def test_key_normalization_maps_meta_per_platform(monkeypatch):
+    import oshell.gui.controller as ctl
+
+    # Windows: cmd/super -> "win"
+    monkeypatch.setattr(ctl.platform, "system", lambda: "Windows")
+    assert ctl._meta_key() == "win"
+    # The alias table is computed at import; recompute via the helper for the test.
+    assert ctl._KEY_ALIASES["option"] == "alt"
+    assert ctl._KEY_ALIASES["return"] == "enter"
+
+
+def test_normalize_keys_splits_and_lowercases():
+    from oshell.gui.controller import _normalize_keys
+
+    assert _normalize_keys("ctrl+shift+T") == ["ctrl", "shift", "t"]
+    assert _normalize_keys("Option+Tab") == ["alt", "tab"]
+    assert _normalize_keys("enter") == ["enter"]
+    assert _normalize_keys("  ") == []
+
+
+def test_press_key_uses_normalized_chord():
+    fake = FakeController()
+    # FakeController.press_key records the raw key; verify the tool passes a chord
+    # through. (Backend normalization is unit-tested separately via _normalize_keys.)
+    PressKeyTool(_Shared(fake)).run(key="ctrl+c")
+    assert ("key", "ctrl+c") in fake.calls

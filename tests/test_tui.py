@@ -318,6 +318,7 @@ def test_image_path_to_b64(tmp_path):
 
 
 def test_clipboard_image_no_image(monkeypatch):
+    pytest.importorskip("PIL")  # clipboard grab needs Pillow (the 'vision'/'gui' extra)
     import PIL.ImageGrab
 
     from oshell.tui.app import clipboard_image_b64

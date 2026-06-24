@@ -47,11 +47,16 @@ def build_system_prompt(registry: ToolRegistry, base: str = DEFAULT_SYSTEM_PROMP
     prompt = f"{base}\n\nTools available to you (call them; do not invent results):\n{listing}"
 
     if any(t.name == "screenshot" for t in tools):
+        import platform
+
+        os_name = platform.system()  # Darwin / Linux / Windows
         prompt += (
             "\n\nYou can control the desktop GUI (screenshot, gui_click, gui_type, gui_key), "
             "but PREFER the terminal: use run_command for anything achievable in a shell, and "
             "only use the GUI tools for genuine graphical tasks. When you do use the GUI, take a "
-            "screenshot first to see the screen, act, then screenshot again to verify."
+            "screenshot first to see the screen, act, then screenshot again to verify. "
+            f"This machine runs {os_name}; use OS-appropriate keys and paths "
+            "(e.g. the super/meta key is Command on macOS, the Windows key on Windows)."
         )
 
     networked = [t.name for t in tools if not t.local_only]

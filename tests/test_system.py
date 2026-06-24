@@ -153,6 +153,22 @@ def test_persistent_run_command_tool_keeps_cwd(tmp_path):
     assert "deep" in out and "[exit 0]" in out
 
 
+def test_windows_uses_oneshot_not_persistent(tmp_path, monkeypatch):
+    import oshell.tools.system as sysmod
+
+    monkeypatch.setattr(sysmod.platform, "system", lambda: "Windows")
+    tool = RunCommandTool(tmp_path, ShellConfig(persistent=True))
+    assert tool._use_session() is False  # Windows -> one-shot PowerShell
+
+
+def test_posix_uses_persistent_when_enabled(tmp_path, monkeypatch):
+    import oshell.tools.system as sysmod
+
+    monkeypatch.setattr(sysmod.platform, "system", lambda: "Darwin")
+    assert RunCommandTool(tmp_path, ShellConfig(persistent=True))._use_session() is True
+    assert RunCommandTool(tmp_path, ShellConfig(persistent=False))._use_session() is False
+
+
 @posix_only
 def test_persistent_timeout_raises(tmp_path):
     from oshell.config import ShellConfig

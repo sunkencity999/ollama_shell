@@ -97,8 +97,8 @@ On startup (and any time you press **Esc**) an old-school, keyboard-driven
 - **Attach image** — attach an image (by file path — drag a file into the
   terminal to paste it — or from the clipboard with Pillow installed) to send to
   a **vision-capable model** (e.g. `llava`, `gemma3`/`gemma4`, `llama3.2-vision`;
-  pick one in Models). Tools are suppressed on image turns so tool-less vision
-  models work.
+  pick one in Models). The agent only advertises tools to models that support
+  them, so vision-only models like `llava` work too.
 
 You can also **paste multi-line text** (logs, code) straight into the prompt —
 it's buffered and sent with your next message rather than truncated to one line.
@@ -175,10 +175,14 @@ the working directory, so the agent can inspect the system, drive git/builds,
 run scripts, and process files. `system_info` gives a safe, read-only summary
 (OS, arch, CPU, cores, RAM) without a shell.
 
-On macOS/Linux the shell is **persistent**: `cd`, environment variables, and
-activated virtualenvs carry across `run_command` calls within a session (a
-long-lived `/bin/sh` behind the scenes). Windows runs each command one-shot in
-PowerShell. Disable with `{"shell": {"persistent": false}}`.
+**Cross-platform.** Commands run through the platform's own shell: `/bin/sh` on
+macOS/Linux, **PowerShell** on Windows (`pwsh` if present, else `powershell`;
+force `cmd` with `{"shell":{"windows_shell":"cmd"}}`). On macOS/Linux the shell
+is **persistent** — `cd`, env vars, and activated virtualenvs carry across
+`run_command` calls (a long-lived `/bin/sh`); Windows runs each command one-shot.
+GUI key chords are normalized per-OS (`cmd`→`win` on Windows, `command` on
+macOS), and the model is told which OS it's on. Disable persistence with
+`{"shell": {"persistent": false}}`.
 
 > **Autonomy & safety.** By default `run_command` runs **without per-command
 > confirmation** — full autonomy. Every command and its output are shown inline
