@@ -39,8 +39,9 @@ app.add_typer(finetune_app, name="finetune")
 
 def _build_agent(config: Config, model: str | None) -> Agent:
     provider = get_provider(config)
-    registry = default_registry(provider, config)
-    return Agent(provider, registry, config, model=model)
+    m = model or config.default_model
+    registry = default_registry(provider, config, model=m)
+    return Agent(provider, registry, config, model=m)
 
 
 def _privacy_banner(agent: Agent) -> Panel:

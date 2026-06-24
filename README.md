@@ -118,6 +118,8 @@ oshell/
     base.py              Tool + ToolRegistry (advertise specs, dispatch calls)
     builtins.py          current_time, list_models, sandboxed read/write/list files
     system.py            run_command (shell exec, cross-platform) + system_info
+    gui.py               screenshot + gui_click/type/key/move (opt-in, vision-gated)
+  gui/controller.py      desktop-control backends (pyautogui; native seam)
     web.py               web_search + fetch_url (core; flagged network-touching)
     documents.py         create_document — txt/md/csv/docx/xlsx/pdf (opt-in [docs])
     knowledge.py         add_knowledge + search_knowledge tools (opt-in [rag])
@@ -157,6 +159,7 @@ shared) → `config.local.json` (per-machine, git-ignored) → `OSHELL_*` env va
 | `finetune` | MLX-LM LoRA fine-tuning (Apple Silicon) |
 | `docs` | Word/Excel/PDF/Markdown export |
 | `vision` | Image analysis (Pillow) |
+| `gui` | GUI computer-use — screenshots + mouse/keyboard (pyautogui) |
 | `all` | everything above |
 
 ```bash
@@ -184,6 +187,34 @@ PowerShell. Disable with `{"shell": {"persistent": false}}`.
 > ran. To require review or disable it, set `shell.enabled`/timeout in
 > `config.local.json` (e.g. `{"shell": {"enabled": false}}`) — or just don't ask
 > it to. Commands run with your user's privileges; treat the model accordingly.
+
+### GUI computer-use (opt-in)
+
+Beyond the terminal, the model can drive the **desktop GUI** — take a
+screenshot, then click/type/press keys — for tasks a shell can't do. It's
+**off by default** and only available with a **vision-capable model** (it has to
+*see* the screen). The terminal stays the autonomous default; the model is told
+to prefer `run_command` and use the GUI only when a task genuinely needs it.
+
+```jsonc
+// config.local.json
+{ "gui": { "enabled": true } }
+```
+
+- Install the backend from the menu (**Install features → GUI computer-use**) or
+  `./install.sh gui` (pyautogui). macOS needs **Screen Recording + Accessibility**
+  permission for your terminal; Linux X11 works out of the box (Wayland support is
+  a planned native backend).
+- Select a vision+tools model (e.g. `gemma3`/`gemma4`, `llama3.2-vision`) in
+  **Models** — the GUI tools (`screenshot`, `gui_click`, `gui_type`, `gui_key`,
+  `gui_move`) appear only then, flagged `exec` (red).
+- The model screenshots, the image is fed back so it can see, it acts, and
+  screenshots again to verify. A pyautogui failsafe (slam the mouse into a
+  screen corner) aborts a runaway loop.
+
+The control layer is a `Controller` abstraction (`oshell/gui/`) with a pyautogui
+backend today and a clean seam for native backends (Wayland `grim`/`ydotool`,
+macOS `screencapture`/`cliclick`).
 
 ## Fine-tuning (local LoRA)
 

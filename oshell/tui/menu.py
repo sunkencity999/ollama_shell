@@ -148,6 +148,12 @@ INSTALLABLE_FEATURES: list[tuple[str, str, list[str], tuple[str, ...]]] = [
     ),
     ("vision", "Image analysis", ["Pillow>=10.0.0"], ("PIL",)),
     ("finetune", "Fine-tuning (MLX, Apple Silicon)", ["mlx-lm>=0.20.0"], ("mlx_lm",)),
+    (
+        "gui",
+        "GUI computer-use (pyautogui)",
+        ["pyautogui>=0.9.54", "Pillow>=10.0.0"],
+        ("pyautogui",),
+    ),
 ]
 
 

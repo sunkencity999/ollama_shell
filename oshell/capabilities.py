@@ -41,6 +41,7 @@ def optional_features(config: Config | None = None) -> list[Capability]:
         ("docs (docx/xlsx/pdf)", _have("docx", "openpyxl"), "[docs]"),
         ("tui", _have("textual"), "[tui]"),
         ("finetune (mlx)", _have("mlx_lm"), "[finetune]"),
+        ("gui (computer-use)", _have("pyautogui"), "[gui]"),
     ]
     out = [
         Capability(n, ok, "enabled" if ok else f"pip install 'ollama-shell{extra}'")

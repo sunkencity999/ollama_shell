@@ -39,6 +39,7 @@ docs = [
     "pandas>=2.0.0",
 ]
 vision = ["Pillow>=10.0.0"]
+gui = ["pyautogui>=0.9.54", "Pillow>=10.0.0"]  # desktop computer-use (opt-in)
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.1",
@@ -47,7 +48,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.8",
 ]
-all = ["ollama-shell[tui,rag,docs,vision]"]
+all = ["ollama-shell[tui,rag,docs,vision,gui]"]
 
 [project.scripts]
 # New clean entrypoint. The legacy monolith remains runnable as `python ollama_shell.py`.

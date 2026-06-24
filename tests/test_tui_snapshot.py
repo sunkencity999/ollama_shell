@@ -41,5 +41,16 @@ def _deterministic_app() -> OllamaShellTUI:
 
 
 @pytest.mark.snapshot
-def test_tui_layout_snapshot(snap_compare):
+def test_tui_layout_snapshot(snap_compare, monkeypatch):
+    # Pin the optional-feature list so the snapshot is about LAYOUT, not about
+    # which extras happen to be pip-installed in this environment.
+    from oshell.capabilities import Capability
+
+    fixed = [
+        Capability("rag (knowledge base)", False, "[rag]"),
+        Capability("docs (docx/xlsx/pdf)", False, "[docs]"),
+        Capability("gui (computer-use)", False, "[gui]"),
+        Capability("jira (Server)", False, "set JIRA_URL + JIRA_TOKEN"),
+    ]
+    monkeypatch.setattr("oshell.tui.app.optional_features", lambda *_a, **_k: fixed)
     assert snap_compare(_deterministic_app(), terminal_size=(100, 32))

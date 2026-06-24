@@ -52,6 +52,12 @@ class ShellConfig(BaseModel):
     persistent: bool = True
 
 
+class GuiConfig(BaseModel):
+    """GUI computer-use (desktop control). Opt-in; vision-model gated."""
+
+    enabled: bool = False  # off by default — needs OS permissions + a vision model
+
+
 class KnowledgeConfig(BaseModel):
     """Local vector knowledge base (the ``[rag]`` extra)."""
 
@@ -118,6 +124,9 @@ class Config(BaseModel):
 
     # Local shell command execution
     shell: ShellConfig = Field(default_factory=ShellConfig)
+
+    # GUI computer-use (opt-in)
+    gui: GuiConfig = Field(default_factory=GuiConfig)
 
     # Agent loop
     max_tool_iterations: int = 8  # safety cap on tool-call rounds per turn

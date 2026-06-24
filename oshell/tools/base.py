@@ -14,9 +14,23 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Any
 
 from ..providers.base import ToolCall
+
+
+@dataclass
+class ToolResult:
+    """A tool's output: text the model reads, plus optional images it can see.
+
+    ``images`` are base64 PNGs (e.g. a screenshot from a GUI tool) which the
+    agent loop attaches to the tool-result message so vision models can view
+    them on the next round.
+    """
+
+    text: str
+    images: list[str] = field(default_factory=list)
 
 
 class Tool(ABC):
@@ -79,22 +93,30 @@ class ToolRegistry:
         """The ``tools`` array to hand the provider (empty if none active)."""
         return [t.spec() for t in self.active()]
 
-    def dispatch(self, call: ToolCall) -> str:
-        """Run a model-requested tool call, returning a string result.
+    def dispatch_full(self, call: ToolCall) -> ToolResult:
+        """Run a tool call and return its full result (text + any images).
 
-        Failures are caught and returned as text so the model can recover
-        rather than the whole turn crashing.
+        Failures are caught and returned as text so the model can recover rather
+        than the whole turn crashing.
         """
         tool = self._tools.get(call.name)
         if tool is None or not self._is_enabled(call.name):
-            return f"[error] unknown or disabled tool: {call.name}"
+            return ToolResult(f"[error] unknown or disabled tool: {call.name}")
         try:
             result = tool.run(**call.arguments)
-            return result if isinstance(result, str) else json.dumps(result, default=str)
         except ToolError as exc:
-            return f"[error] {exc}"
+            return ToolResult(f"[error] {exc}")
         except Exception as exc:  # defensive: never let a tool kill the loop
-            return f"[error] tool '{call.name}' failed: {exc}"
+            return ToolResult(f"[error] tool '{call.name}' failed: {exc}")
+        if isinstance(result, ToolResult):
+            return result
+        if isinstance(result, str):
+            return ToolResult(result)
+        return ToolResult(json.dumps(result, default=str))
+
+    def dispatch(self, call: ToolCall) -> str:
+        """Run a tool call, returning just its text (back-compat convenience)."""
+        return self.dispatch_full(call).text
 
     def __len__(self) -> int:
         return len(self.active())

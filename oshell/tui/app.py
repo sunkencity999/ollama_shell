@@ -273,7 +273,12 @@ class OllamaShellTUI(App):
             self.query_one(Input).focus()
             return
         self.agent.model = name
-        self.sub_title = self._subtitle()  # header reflects the new model
+        # Rebuild the registry for the new model (GUI tools are vision-gated).
+        self.agent.registry = default_registry(
+            self.agent.provider, self.agent.config, model=name
+        )
+        self.query_one(ToolsPanel).render_for(self.agent)
+        self.sub_title = self._subtitle()  # header reflects the new model + tools
         # Persist as the default so it sticks across sessions (until changed).
         from ..config import update_local_config
 
@@ -581,6 +586,7 @@ def _summarize_result(result: str) -> str:
 def run_tui(model: str | None = None) -> None:
     config = Config.load()
     provider = get_provider(config)
-    registry = default_registry(provider, config)
-    agent = Agent(provider, registry, config, model=model)
+    m = model or config.default_model
+    registry = default_registry(provider, config, model=m)
+    agent = Agent(provider, registry, config, model=m)
     OllamaShellTUI(agent).run()

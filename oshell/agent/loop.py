@@ -46,6 +46,14 @@ def build_system_prompt(registry: ToolRegistry, base: str = DEFAULT_SYSTEM_PROMP
     listing = "\n".join(f"- {t.name}: {t.description}" for t in tools)
     prompt = f"{base}\n\nTools available to you (call them; do not invent results):\n{listing}"
 
+    if any(t.name == "screenshot" for t in tools):
+        prompt += (
+            "\n\nYou can control the desktop GUI (screenshot, gui_click, gui_type, gui_key), "
+            "but PREFER the terminal: use run_command for anything achievable in a shell, and "
+            "only use the GUI tools for genuine graphical tasks. When you do use the GUI, take a "
+            "screenshot first to see the screen, act, then screenshot again to verify."
+        )
+
     networked = [t.name for t in tools if not t.local_only]
     if networked:
         prompt += (
@@ -150,13 +158,20 @@ class Agent:
                 return
 
             # Execute each requested tool and feed results back as tool messages.
+            # A tool may return images (e.g. a screenshot) — attach them so the
+            # vision model can see them on the next round.
             for call in tool_calls:
                 yield ToolStarted(call.name, call.arguments)
-                result = self.registry.dispatch(call)
+                result = self.registry.dispatch_full(call)
                 self.messages.append(
-                    Message(role="tool", content=result, tool_call_id=call.id)
+                    Message(
+                        role="tool",
+                        content=result.text,
+                        tool_call_id=call.id,
+                        images=result.images,
+                    )
                 )
-                yield ToolFinished(call.name, result)
+                yield ToolFinished(call.name, result.text)
             # ...then loop so the model can use those results.
 
         yield LimitReached(self.config.max_tool_iterations)
