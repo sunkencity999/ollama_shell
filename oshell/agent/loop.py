@@ -102,10 +102,17 @@ class Agent:
         return [m for i, m in enumerate(self.messages) if i not in self.excluded]
 
     # ── the loop ─────────────────────────────────────────────────────────────
-    def send(self, user_text: str) -> Iterator[AgentEvent]:
-        """Run one user turn to completion, yielding events as they happen."""
-        self.messages.append(Message(role="user", content=user_text))
-        tools = self.registry.specs()
+    def send(self, user_text: str, images: list[str] | None = None) -> Iterator[AgentEvent]:
+        """Run one user turn to completion, yielding events as they happen.
+
+        ``images`` are base64-encoded image data attached to the user message
+        for vision-capable models (passed through to the backend verbatim).
+        """
+        self.messages.append(Message(role="user", content=user_text, images=images or []))
+        # Don't advertise tools on an image turn: many vision models (e.g. llava)
+        # don't support tool-calling and 400 if tools are present. Image analysis
+        # rarely needs tools anyway.
+        tools = None if images else (self.registry.specs() or None)
 
         for _ in range(self.config.max_tool_iterations):
             assistant_text = ""
@@ -113,7 +120,7 @@ class Agent:
             for chunk in self.provider.chat(
                 self._context(),
                 model=self.model,
-                tools=tools or None,
+                tools=tools,
                 temperature=self.config.temperature,
             ):
                 if chunk.content:

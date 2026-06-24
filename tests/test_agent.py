@@ -75,6 +75,14 @@ def test_iteration_cap():
     assert events[-1].iterations == 3
 
 
+def test_send_attaches_images():
+    agent, _ = _agent([[ChatChunk(content="ok", done=True)]])
+    list(agent.send("what is this?", images=["BASE64IMG"]))
+    user = next(m for m in agent.messages if m.role == "user")
+    assert user.images == ["BASE64IMG"]
+    assert user.to_wire()["images"] == ["BASE64IMG"]  # flows through to the backend
+
+
 def test_system_prompt_is_tool_aware():
     from oshell.tools.builtins import CurrentTimeTool
     from oshell.tools.web import WebSearchTool

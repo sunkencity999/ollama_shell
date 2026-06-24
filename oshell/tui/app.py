@@ -14,6 +14,8 @@ The agent loop is synchronous and streaming, so each turn runs in a worker
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from rich.markup import escape
 from textual import events
 from textual.app import App, ComposeResult
@@ -27,7 +29,14 @@ from ..capabilities import optional_features
 from ..config import Config
 from ..providers import get_provider
 from ..tools import default_registry
-from .menu import INSTALLABLE_FEATURES, FeaturesScreen, MenuScreen, ModelScreen, feature_installed
+from .menu import (
+    INSTALLABLE_FEATURES,
+    AttachImageScreen,
+    FeaturesScreen,
+    MenuScreen,
+    ModelScreen,
+    feature_installed,
+)
 
 
 class ChatInput(Input):
@@ -137,6 +146,7 @@ class OllamaShellTUI(App):
         self._spin = 0
         self._live_text = ""  # what the live region currently shows (for tests)
         self._pending_paste = ""  # multi-line pasted text, sent with the next message
+        self._pending_images: list[str] = []  # base64 images attached to next message
 
     _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -231,6 +241,8 @@ class OllamaShellTUI(App):
             self.run_worker(self._open_model_picker, thread=True, exclusive=True)
         elif choice == "features":
             self.push_screen(FeaturesScreen(), self._on_feature_choice)
+        elif choice == "attach":
+            self.push_screen(AttachImageScreen(), self._on_attach_image)
         elif choice == "finetune":
             self._menu_finetune()
         elif choice == "config":
@@ -271,6 +283,24 @@ class OllamaShellTUI(App):
         except Exception as exc:  # pragma: no cover - defensive
             note = f"[dim](not saved: {exc})[/dim]"
         self._conversation().write(f"[green]Model set to[/green] [bold]{name}[/bold] {note}")
+        self.query_one(Input).focus()
+
+    def _on_attach_image(self, source: str | None) -> None:
+        """Load an image (file path, or "" = clipboard) and queue it for the next turn."""
+        if source is None:
+            self.query_one(Input).focus()
+            return
+        try:
+            b64, label = (clipboard_image_b64(), "clipboard") if source == "" \
+                else (image_path_to_b64(source), Path(source).name)
+        except ValueError as exc:
+            self._conversation().write(f"[red]{escape(str(exc))}[/red]")
+            return
+        self._pending_images.append(b64)
+        self._conversation().write(
+            f"[dim]🖼 attached {escape(label)} ({len(self._pending_images)} pending) — "
+            "send a message; use a vision-capable model.[/dim]"
+        )
         self.query_one(Input).focus()
 
     def _on_feature_choice(self, fid: str | None) -> None:
@@ -399,19 +429,24 @@ class OllamaShellTUI(App):
         else:
             text = typed
             echo = escape(typed)
-        if not text:
+        images, self._pending_images = self._pending_images, []
+        if images:
+            echo += f" [dim](+{len(images)} image{'s' if len(images) > 1 else ''})[/dim]"
+        if not text and not images:
             return
+        if not text:
+            text = "Describe / analyze the attached image."
         self._conversation().write(f"[bold green]›[/] {echo}")
         # Engage the live indicator before the (possibly slow) first token.
         self._stream = ""
         self._status = "Thinking"
         self._busy = True
-        self.run_worker(lambda: self._worker(text), thread=True, exclusive=True)
+        self.run_worker(lambda: self._worker(text, images), thread=True, exclusive=True)
 
-    def _worker(self, text: str) -> None:
+    def _worker(self, text: str, images: list[str] | None = None) -> None:
         convo, activity = self._conversation(), self._activity()
         try:
-            for event in self.agent.send(text):
+            for event in self.agent.send(text, images=images):
                 if isinstance(event, TextDelta):
                     self._stream += event.text  # the spinner timer renders this live
                 elif isinstance(event, ToolStarted):
@@ -445,6 +480,40 @@ class OllamaShellTUI(App):
             self._busy = False
             self._stream = ""
             self.call_from_thread(self.query_one(ContextInspector).refresh_view, self.agent)
+
+
+def image_path_to_b64(path: str) -> str:
+    """Read an image file and return base64 (raises ValueError on problems)."""
+    import base64
+
+    p = Path(path).expanduser()
+    if not p.is_file():
+        raise ValueError(f"no such file: {path}")
+    if p.stat().st_size > 20_000_000:
+        raise ValueError("image too large (>20 MB)")
+    return base64.b64encode(p.read_bytes()).decode()
+
+
+def clipboard_image_b64() -> str:
+    """Grab an image from the system clipboard as base64 PNG (needs Pillow)."""
+    import base64
+    import io
+
+    try:
+        from PIL import ImageGrab  # type: ignore
+    except ImportError as exc:
+        raise ValueError(
+            "clipboard images need Pillow — install the 'vision' feature from the menu"
+        ) from exc
+    try:
+        img = ImageGrab.grabclipboard()
+    except Exception as exc:  # Linux without xclip/wl-paste, etc.
+        raise ValueError(f"could not read clipboard image: {exc}") from exc
+    if img is None or isinstance(img, list):  # list => file paths copied, not pixels
+        raise ValueError("no image on the clipboard (copy an image first)")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
 
 
 def run_streaming(cmd: list[str], on_line, timeout: float = 1800) -> int:

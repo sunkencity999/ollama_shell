@@ -228,14 +228,14 @@ def test_run_streaming_returns_nonzero_on_failure():
 async def test_features_menu_opens():
     from oshell.tui.menu import MENU_ITEMS, FeaturesScreen, MenuScreen
 
-    # "features" is item 4 in the menu order.
-    assert MENU_ITEMS[3][0] == "features"
+    # Find "features" by id rather than a hard-coded index (order may change).
+    num = next(i for i, (cid, *_rest) in enumerate(MENU_ITEMS, start=1) if cid == "features")
     app = _app()
     async with app.run_test() as pilot:
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, MenuScreen)
-        await pilot.press("4")
+        await pilot.press(str(num))
         await pilot.pause()
         assert isinstance(app.screen, FeaturesScreen)
 
@@ -303,6 +303,53 @@ async def test_singleline_paste_still_inserts_normally():
         await pilot.pause()
         assert inp.value == "just one line"  # normal Input paste behavior preserved
         assert app._pending_paste == ""
+
+
+def test_image_path_to_b64(tmp_path):
+    import base64
+
+    from oshell.tui.app import image_path_to_b64
+
+    f = tmp_path / "x.png"
+    f.write_bytes(b"\x89PNG\r\n_data_")
+    assert base64.b64decode(image_path_to_b64(str(f))) == b"\x89PNG\r\n_data_"
+    with pytest.raises(ValueError):
+        image_path_to_b64(str(tmp_path / "missing.png"))
+
+
+def test_clipboard_image_no_image(monkeypatch):
+    import PIL.ImageGrab
+
+    from oshell.tui.app import clipboard_image_b64
+
+    monkeypatch.setattr(PIL.ImageGrab, "grabclipboard", lambda: None)
+    with pytest.raises(ValueError, match="no image"):
+        clipboard_image_b64()
+
+
+async def test_attach_image_then_send_includes_it(tmp_path):
+    from textual.widgets import Input
+
+    f = tmp_path / "img.png"
+    f.write_bytes(b"\x89PNGfakepixels")
+    app = _app()
+    async with app.run_test() as pilot:
+        app._on_attach_image(str(f))  # attach by path
+        await pilot.pause()
+        assert len(app._pending_images) == 1
+        inp = app.query_one(Input)
+        inp.focus()
+        inp.value = "what is in this image?"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if any(m.role == "user" for m in app.agent.messages):
+                break
+        user = next(m for m in app.agent.messages if m.role == "user")
+        assert user.images and len(user.images) == 1
+        assert user.content == "what is in this image?"
+        assert app._pending_images == []  # consumed
 
 
 async def test_menu_shows_on_startup_when_enabled():

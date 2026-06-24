@@ -94,6 +94,14 @@ On startup (and any time you press **Esc**) an old-school, keyboard-driven
   vision, fine-tuning) into the running environment without leaving the app.
   Install output **streams live into the Activity tab** (with the current step
   on the spinner), and the Tools panel refreshes ✓ when it finishes.
+- **Attach image** — attach an image (by file path — drag a file into the
+  terminal to paste it — or from the clipboard with Pillow installed) to send to
+  a **vision-capable model** (e.g. `llava`, `gemma3`/`gemma4`, `llama3.2-vision`;
+  pick one in Models). Tools are suppressed on image turns so tool-less vision
+  models work.
+
+You can also **paste multi-line text** (logs, code) straight into the prompt —
+it's buffered and sent with your next message rather than truncated to one line.
 - Plus Chat, Tools, Knowledge base, Fine-tuning, Settings, Help, and Quit.
 
 ## Architecture

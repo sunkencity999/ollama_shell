@@ -14,7 +14,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import OptionList, Static
+from textual.widgets import Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 # (id, label, description) — order defines the numbering.
@@ -22,6 +22,7 @@ MENU_ITEMS: list[tuple[str, str, str]] = [
     ("chat", "Chat", "Talk to the model (close this menu)"),
     ("models", "Models", "Choose the active model"),
     ("tools", "Tools", "Show available tools & capabilities"),
+    ("attach", "Attach image", "Attach an image for a vision model"),
     ("features", "Install features", "Add optional capabilities (rag, docs, vision, finetune)"),
     ("knowledge", "Knowledge base", "How to store & recall local notes"),
     ("finetune", "Fine-tuning", "Detect training backend and list jobs"),
@@ -152,6 +153,39 @@ INSTALLABLE_FEATURES: list[tuple[str, str, list[str], tuple[str, ...]]] = [
 
 def feature_installed(modules: tuple[str, ...]) -> bool:
     return all(importlib.util.find_spec(m) is not None for m in modules)
+
+
+class AttachImageScreen(ModalScreen[str]):
+    """Prompt for an image to attach. Returns a path, "" (grab clipboard), or None."""
+
+    CSS = """
+    AttachImageScreen { align: center middle; }
+    #menu-box {
+        width: 72; height: auto; padding: 1 2;
+        border: round $accent; background: $surface;
+    }
+    #menu-title { padding-bottom: 1; }
+    """
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="menu-box"):
+            yield Static(
+                "[b]Attach image[/b]\n"
+                "[dim]Enter a file path (drag a file into the terminal to paste it), "
+                "or leave blank + Enter to grab from the clipboard. Esc cancels.[/dim]",
+                id="menu-title",
+            )
+            yield Input(placeholder="/path/to/image.png", id="attach-path")
+
+    def on_mount(self) -> None:
+        self.query_one(Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value.strip())  # "" -> clipboard
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 class FeaturesScreen(ModalScreen[str]):
