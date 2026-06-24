@@ -216,8 +216,13 @@ It takes **two** opt-ins (both one-time): install the backend, then turn it on.
 
 - Install the backend from the menu (**Install features → GUI computer-use**) or
   `./install.sh gui` (pyautogui). macOS needs **Screen Recording + Accessibility**
-  permission for your terminal; Linux X11 works out of the box (Wayland support is
-  a planned native backend).
+  permission **for the exact terminal app that launches `oshell`** (iTerm,
+  Terminal, etc.) — without Screen Recording, macOS returns wallpaper-only
+  screenshots (no window contents), so `screenshot` now refuses with a clear
+  message rather than handing the model a blank image. Grant it in System
+  Settings → Privacy & Security → Screen Recording, then fully restart the
+  terminal. Linux X11 works out of the box (Wayland support is a planned native
+  backend).
 - Turn it on from the menu (**Computer-use (GUI)** toggle) — this persists
   `gui.enabled` and the `screenshot`/`gui_*` tools appear in the Tools panel
   immediately (you'll see them go from absent to listed). Or set it by hand:

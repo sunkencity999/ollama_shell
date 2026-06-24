@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+import pytest
+
 from oshell.config import Config, GuiConfig
 from oshell.gui.controller import Controller, GuiUnavailable
 from oshell.providers.base import ChatChunk, LLMProvider, ToolCall
@@ -149,6 +151,29 @@ def test_gui_tools_absent_without_model():
     cfg = Config(gui=GuiConfig(enabled=True))
     names = {t.name for t in default_registry(_CapProvider({"vision", "tools"}), cfg).active()}
     assert "screenshot" not in names  # no model -> can't confirm vision -> skip
+
+
+def test_macos_permission_blocks_screenshot(monkeypatch):
+    # Simulate macOS without Screen Recording permission -> clear error, not a
+    # blank image that makes the model think the screen is empty.
+    import oshell.gui.controller as ctl
+
+    pytest.importorskip("pyautogui")
+    monkeypatch.setattr(ctl.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(ctl, "macos_screen_recording_ok", lambda: False)
+    monkeypatch.setattr(ctl, "_request_macos_screen_recording", lambda: None)
+    backend = ctl.PyAutoGuiBackend()
+    reg = ToolRegistry([ScreenshotTool(_Shared(backend))])
+    out = reg.dispatch(ToolCall(name="screenshot", arguments={}))
+    assert out.startswith("[error]") and "Screen Recording" in out
+
+
+def test_gui_prompt_tells_model_to_open_apps():
+    from oshell.agent.loop import build_system_prompt
+    from oshell.tools.gui import gui_tools
+
+    prompt = build_system_prompt(ToolRegistry([CurrentTimeTool(), *gui_tools()]))
+    assert "OPEN it yourself" in prompt and "run_command" in prompt
 
 
 def test_gui_tools_are_sensitive():

@@ -51,6 +51,37 @@ class GuiUnavailable(RuntimeError):
     """GUI control isn't available (missing deps, no display, or no permission)."""
 
 
+def macos_screen_recording_ok() -> bool | None:
+    """On macOS, whether THIS process has Screen Recording permission.
+
+    Returns True/False on macOS (None elsewhere or if the API is unavailable).
+    Without it, macOS returns wallpaper-only screenshots — no window contents —
+    which makes the model think the screen is empty. Permission is per-app: it
+    must be granted to the terminal app that launches oshell.
+    """
+    if platform.system().lower() != "darwin":
+        return None
+    try:
+        import Quartz  # type: ignore
+
+        if hasattr(Quartz, "CGPreflightScreenCaptureAccess"):
+            return bool(Quartz.CGPreflightScreenCaptureAccess())
+    except Exception:
+        return None
+    return None
+
+
+def _request_macos_screen_recording() -> None:
+    """Trigger the macOS Screen Recording permission prompt (best effort)."""
+    try:
+        import Quartz  # type: ignore
+
+        if hasattr(Quartz, "CGRequestScreenCaptureAccess"):
+            Quartz.CGRequestScreenCaptureAccess()
+    except Exception:
+        pass
+
+
 class Controller(ABC):
     """Minimal desktop-control surface."""
 
@@ -103,6 +134,16 @@ class PyAutoGuiBackend(Controller):
         return int(size[0]), int(size[1])
 
     def screenshot_png(self) -> bytes:
+        # On macOS a capture without Screen Recording permission returns only the
+        # wallpaper (no windows) — refuse with guidance instead of misleading the
+        # model into "I see nothing".
+        if macos_screen_recording_ok() is False:
+            _request_macos_screen_recording()  # pop the system prompt once
+            raise GuiUnavailable(
+                "macOS Screen Recording permission is not granted to this terminal app. "
+                "Enable it in System Settings → Privacy & Security → Screen Recording "
+                "(add your terminal, e.g. iTerm or Terminal), then fully restart it."
+            )
         img = self._g.screenshot()  # PIL Image
         buf = io.BytesIO()
         img.save(buf, format="PNG")

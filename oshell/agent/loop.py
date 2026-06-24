@@ -55,6 +55,10 @@ def build_system_prompt(registry: ToolRegistry, base: str = DEFAULT_SYSTEM_PROMP
             "but PREFER the terminal: use run_command for anything achievable in a shell, and "
             "only use the GUI tools for genuine graphical tasks. When you do use the GUI, take a "
             "screenshot first to see the screen, act, then screenshot again to verify. "
+            "If what the user wants isn't visible, OPEN it yourself and proceed — don't just "
+            "report an empty screen. Launch apps with run_command (macOS: "
+            "`open -a 'Google Chrome' <url>`; Windows: `start <url>`; Linux: `xdg-open <url>`), "
+            "then screenshot again. "
             f"This machine runs {os_name}; use OS-appropriate keys and paths "
             "(e.g. the super/meta key is Command on macOS, the Windows key on Windows)."
         )

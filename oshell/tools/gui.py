@@ -60,8 +60,11 @@ class ScreenshotTool(_GuiTool):
 
     def run(self, **_: Any) -> ToolResult:
         ctl = self._controller()
-        w, h = ctl.screen_size()
-        b64 = ctl.screenshot_b64()
+        try:
+            w, h = ctl.screen_size()
+            b64 = ctl.screenshot_b64()
+        except GuiUnavailable as exc:  # e.g. macOS Screen Recording not granted
+            raise ToolError(str(exc)) from exc
         return ToolResult(text=f"screenshot captured ({w}x{h})", images=[b64])
 
 
