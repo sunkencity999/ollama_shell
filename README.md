@@ -125,7 +125,10 @@ oshell/
     builtins.py          current_time, list_models, read/write/list files (any path)
     system.py            run_command (shell exec, cross-platform) + system_info
     gui.py               screenshot + gui_click/type/key/move (opt-in, vision-gated)
+    browser.py           browser_open/screenshot/click/type/key (hidden, off-screen)
   gui/controller.py      desktop-control backends (pyautogui; native seam)
+  browser/controller.py  persistent Playwright browser on a dedicated thread
+  desktop.py             notifications + terminal re-focus (after GUI turns)
     web.py               web_search + fetch_url (core; flagged network-touching)
     documents.py         create_document — txt/md/csv/docx/xlsx/pdf (opt-in [docs])
     knowledge.py         add_knowledge + search_knowledge tools (opt-in [rag])
@@ -166,6 +169,7 @@ shared) → `config.local.json` (per-machine, git-ignored) → `OSHELL_*` env va
 | `docs` | Word/Excel/PDF/Markdown export |
 | `vision` | Image analysis (Pillow) |
 | `gui` | GUI computer-use — screenshots + mouse/keyboard (pyautogui) |
+| `browser` | Hidden-browser computer-use (Playwright; run `playwright install chromium`) |
 | `all` | everything above |
 
 ```bash
@@ -203,6 +207,26 @@ with `run_command`'s autonomy.
 > ran. To require review or disable it, set `shell.enabled`/timeout in
 > `config.local.json` (e.g. `{"shell": {"enabled": false}}`) — or just don't ask
 > it to. Commands run with your user's privileges; treat the model accordingly.
+
+### Hidden browser (opt-in) — preferred for the web
+
+For web tasks, the model can drive a **dedicated, headless Chromium off-screen**
+via Playwright — it never takes over your display and needs no Screen Recording
+permission. Tools: `browser_open`, `browser_screenshot` (the rendered page, fed
+back so a vision model can see it), `browser_click`, `browser_type`, `browser_key`.
+
+- Install from the menu (**Install features → Hidden browser**) — it pip-installs
+  Playwright *and* downloads Chromium (`playwright install chromium`). Then turn
+  it on with the **Computer-use (browser)** menu toggle (or `{"browser":{"enabled":true}}`).
+- Needs a vision+tools model (it screenshots the page to act). Runs on a dedicated
+  thread so the browser persists across turns.
+- The model is told: use `fetch_url` to *read* a page, the hidden browser for
+  *interactive* tasks (login, clicking, forms, dynamic apps like Gmail).
+
+When the model finishes a turn that drove the **desktop** GUI, it fires a desktop
+notification and re-focuses your terminal so you know it's done (`gui.notify_on_finish`
+/ `gui.refocus_terminal`). The hidden browser needs neither, since it never leaves
+the terminal.
 
 ### GUI computer-use (opt-in)
 

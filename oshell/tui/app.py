@@ -280,6 +280,8 @@ class OllamaShellTUI(App):
             self.push_screen(FeaturesScreen(), self._on_feature_choice)
         elif choice == "gui_toggle":
             self._toggle_gui()
+        elif choice == "browser_toggle":
+            self._toggle_browser()
         elif choice == "attach":
             self.push_screen(AttachImageScreen(), self._on_attach_image)
         elif choice == "copy_reply":
@@ -389,6 +391,37 @@ class OllamaShellTUI(App):
                 "Pick a vision model (e.g. gemma3/4, llama3.2-vision) in Models."
             )
 
+    def _toggle_browser(self) -> None:
+        import importlib.util
+
+        from ..config import update_local_config
+
+        new = not self.agent.config.browser.enabled
+        self.agent.config.browser.enabled = new
+        try:
+            update_local_config({"browser": {"enabled": new}})
+        except Exception:
+            pass
+        self._rebuild_registry()
+        convo = self._conversation()
+        if not new:
+            convo.write("[yellow]Hidden browser is now OFF.[/yellow]")
+        elif any(t.name == "browser_open" for t in self.agent.registry.active()):
+            convo.write(
+                "[green]Hidden browser is now ON[/green] — browser_open/screenshot/click/"
+                "type/key are active (runs off-screen)."
+            )
+        elif importlib.util.find_spec("playwright") is None:
+            convo.write(
+                "[yellow]Browser turned on, but Playwright isn't installed[/yellow] — "
+                "Install features → Hidden browser first."
+            )
+        else:
+            convo.write(
+                "[yellow]Browser turned on, but the current model isn't vision+tools "
+                "capable.[/yellow] Pick a vision model in Models."
+            )
+
     def _on_feature_choice(self, fid: str | None) -> None:
         if not fid:
             self.query_one(Input).focus()
@@ -428,6 +461,13 @@ class OllamaShellTUI(App):
 
         try:
             rc = run_streaming(pip_install_cmd(packages), on_line)
+            # Playwright also needs its browser binary downloaded separately.
+            if rc == 0 and "playwright" in mods:
+                import sys
+
+                self._status = f"{label}: downloading Chromium"
+                pw_cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
+                rc = run_streaming(pw_cmd, on_line)
         except Exception as exc:  # pragma: no cover - subprocess env issues
             self.call_from_thread(convo.write, f"[red]Install failed: {exc}[/red]")
             return

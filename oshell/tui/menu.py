@@ -27,6 +27,7 @@ MENU_ITEMS: list[tuple[str, str, str]] = [
     ("attach", "Attach image", "Attach an image for a vision model"),
     ("features", "Install features", "Add optional capabilities (rag, docs, vision, finetune)"),
     ("gui_toggle", "Computer-use (GUI)", "Turn desktop GUI control on/off (needs a vision model)"),
+    ("browser_toggle", "Computer-use (browser)", "Turn the hidden browser on/off (vision model)"),
     ("knowledge", "Knowledge base", "How to store & recall local notes"),
     ("finetune", "Fine-tuning", "Detect training backend and list jobs"),
     ("config", "Settings", "Show resolved configuration (secrets redacted)"),
@@ -157,6 +158,7 @@ INSTALLABLE_FEATURES: list[tuple[str, str, list[str], tuple[str, ...]]] = [
         ["pyautogui>=0.9.54", "Pillow>=10.0.0"],
         ("pyautogui",),
     ),
+    ("browser", "Hidden browser (Playwright)", ["playwright>=1.40"], ("playwright",)),
 ]
 
 

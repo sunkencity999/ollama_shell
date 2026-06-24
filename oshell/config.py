@@ -60,6 +60,16 @@ class GuiConfig(BaseModel):
     refocus_terminal: bool = True  # bring the terminal back to front after a GUI turn
 
 
+class BrowserConfig(BaseModel):
+    """Hidden browser computer-use (Playwright). Opt-in; vision-model gated."""
+
+    enabled: bool = False  # off by default — needs the [browser] extra
+    headless: bool = True  # True = the browser never appears on screen
+    width: int = 1280
+    height: int = 800
+    timeout: float = 60.0
+
+
 class KnowledgeConfig(BaseModel):
     """Local vector knowledge base (the ``[rag]`` extra)."""
 
@@ -129,6 +139,9 @@ class Config(BaseModel):
 
     # GUI computer-use (opt-in)
     gui: GuiConfig = Field(default_factory=GuiConfig)
+
+    # Hidden browser computer-use (opt-in)
+    browser: BrowserConfig = Field(default_factory=BrowserConfig)
 
     # Agent loop
     max_tool_iterations: int = 8  # safety cap on tool-call rounds per turn

@@ -46,7 +46,18 @@ def build_system_prompt(registry: ToolRegistry, base: str = DEFAULT_SYSTEM_PROMP
     listing = "\n".join(f"- {t.name}: {t.description}" for t in tools)
     prompt = f"{base}\n\nTools available to you (call them; do not invent results):\n{listing}"
 
-    if any(t.name == "screenshot" for t in tools):
+    names = {t.name for t in tools}
+    if "browser_open" in names:
+        prompt += (
+            "\n\nWeb strategy: to merely READ a page's text, use fetch_url (cheapest). For "
+            "INTERACTIVE web tasks — logging in, clicking, filling forms, or dynamic apps "
+            "like Gmail/dashboards — use the HIDDEN BROWSER tools (browser_open, "
+            "browser_screenshot, browser_click, browser_type, browser_key): it runs "
+            "off-screen (no display takeover). Open a URL, screenshot to see the rendered "
+            "page, then click/type by the coordinates you see. Prefer the hidden browser "
+            "over the desktop GUI for anything in a browser."
+        )
+    if "screenshot" in names:
         import platform
 
         os_name = platform.system()  # Darwin / Linux / Windows

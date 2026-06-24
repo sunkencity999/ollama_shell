@@ -42,6 +42,7 @@ def optional_features(config: Config | None = None) -> list[Capability]:
         ("tui", _have("textual"), "[tui]"),
         ("finetune (mlx)", _have("mlx_lm"), "[finetune]"),
         ("gui (computer-use)", _have("pyautogui"), "[gui]"),
+        ("browser (hidden)", _have("playwright"), "[browser]"),
     ]
     out = [
         Capability(n, ok, "installed" if ok else f"pip install 'ollama-shell{extra}'")

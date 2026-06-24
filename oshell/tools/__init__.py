@@ -14,6 +14,7 @@ from .atlassian import (
     JiraSearchTool,
 )
 from .base import Tool, ToolError, ToolRegistry
+from .browser import _SharedBrowser, browser_tools
 from .builtins import (
     CurrentTimeTool,
     ListDirTool,
@@ -59,10 +60,12 @@ def default_registry(
     if confluence_configured(atl):
         tools += [ConfluenceSearchTool(atl), ConfluenceGetPageTool(atl)]
 
-    # GUI computer-use: opt-in, and only for a vision+tools-capable model (it
-    # must see screenshots and call action tools). Terminal stays the default.
-    if config.gui.enabled and model and _gui_capable(provider, model):
-        tools += gui_tools()
+    # Computer-use (opt-in, vision+tools models only — they must see screenshots).
+    if model and _gui_capable(provider, model):
+        if config.browser.enabled:  # hidden browser — preferred for web tasks
+            tools += browser_tools(_SharedBrowser(config.browser))
+        if config.gui.enabled:  # desktop GUI control
+            tools += gui_tools()
     return ToolRegistry(tools, enabled=config.enabled_tools)
 
 
