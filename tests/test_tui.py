@@ -468,6 +468,75 @@ async def test_markup_in_messages_does_not_crash():
         assert "the docs" in app.query_one(ContextInspector).text
 
 
+async def test_gui_turn_notifies_and_refocuses(monkeypatch):
+    from oshell import desktop
+    from oshell.tools.gui import ScreenshotTool
+
+    notified, refocused = [], []
+    monkeypatch.setattr(desktop, "notify", lambda *a: notified.append(a))
+    monkeypatch.setattr(desktop, "focus_terminal", lambda: refocused.append(True))
+
+    class _ScreenshotProvider(LLMProvider):
+        name = "s"
+
+        def __init__(self):
+            self.calls = 0
+
+        def list_models(self):
+            return ["m"]
+
+        def chat(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                yield ChatChunk(tool_calls=[ToolCall(name="screenshot", arguments={})], done=True)
+            else:
+                yield ChatChunk(content="done", done=True)
+
+    # A fake GUI controller so screenshot succeeds without a real screen.
+    class _FakeShared:
+        def get(self):
+            class _C:
+                def screen_size(self):
+                    return (10, 10)
+
+                def screenshot_b64(self):
+                    return "B64"
+
+            return _C()
+
+    reg = ToolRegistry([ScreenshotTool(_FakeShared())])
+    app = OllamaShellTUI(Agent(_ScreenshotProvider(), reg, Config()), show_menu_on_start=False)
+    async with app.run_test() as pilot:
+        app.query_one("Input").focus()
+        app.query_one("Input").value = "look at my screen"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(60):
+            await pilot.pause(0.05)
+            done = any(m.role == "assistant" and m.content for m in app.agent.messages)
+            if not app._busy and done:
+                break
+        assert notified and refocused  # GUI turn -> user is told + terminal raised
+
+
+async def test_normal_turn_does_not_notify(monkeypatch):
+    from oshell import desktop
+
+    notified = []
+    monkeypatch.setattr(desktop, "notify", lambda *a: notified.append(a))
+    app = _app()
+    async with app.run_test() as pilot:
+        app.query_one("Input").focus()
+        app.query_one("Input").value = "hello"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if not app._busy:
+                break
+        assert not notified  # no GUI used -> no notification spam
+
+
 async def test_menu_shows_on_startup_when_enabled():
     from oshell.tui.menu import MenuScreen
 

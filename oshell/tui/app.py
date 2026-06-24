@@ -25,6 +25,7 @@ from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widgets import Footer, Header, Input, RichLog, Static, TabbedContent, TabPane
 
+from .. import desktop
 from ..agent import Agent, LimitReached, TextDelta, ToolFinished, ToolStarted, TurnComplete
 from ..capabilities import optional_features
 from ..config import Config
@@ -537,11 +538,14 @@ class OllamaShellTUI(App):
 
     def _worker(self, text: str, images: list[str] | None = None) -> None:
         convo, activity = self._conversation(), self._activity()
+        used_gui = False  # did this turn drive the desktop GUI?
         try:
             for event in self.agent.send(text, images=images):
                 if isinstance(event, TextDelta):
                     self._stream += event.text  # the spinner timer renders this live
                 elif isinstance(event, ToolStarted):
+                    if event.name == "screenshot" or event.name.startswith("gui_"):
+                        used_gui = True
                     self._status = f"Running {event.name}"
                     self._stream = ""  # back to spinner while the tool runs
                     args = _compact_args(event.arguments)
@@ -580,6 +584,14 @@ class OllamaShellTUI(App):
                 self.call_from_thread(inspector.refresh_view, self.agent)
             except NoMatches:
                 pass
+            # After a turn that drove the desktop GUI, tell the user it's done and
+            # bring their terminal back to the front (it likely lost focus).
+            if used_gui:
+                gcfg = self.agent.config.gui
+                if gcfg.notify_on_finish:
+                    desktop.notify("Ollama Shell", "Finished controlling the screen.")
+                if gcfg.refocus_terminal:
+                    desktop.focus_terminal()
 
 
 def image_path_to_b64(path: str) -> str:

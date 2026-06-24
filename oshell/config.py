@@ -56,6 +56,8 @@ class GuiConfig(BaseModel):
     """GUI computer-use (desktop control). Opt-in; vision-model gated."""
 
     enabled: bool = False  # off by default — needs OS permissions + a vision model
+    notify_on_finish: bool = True  # desktop notification when a GUI turn completes
+    refocus_terminal: bool = True  # bring the terminal back to front after a GUI turn
 
 
 class KnowledgeConfig(BaseModel):
