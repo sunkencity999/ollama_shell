@@ -40,7 +40,12 @@ class ToolsPanel(Static):
     def render_for(self, agent: Agent) -> None:
         lines = ["[b]Active tools[/b]"]
         for t in agent.registry.active():
-            tag = "[green]local[/green]" if t.local_only else "[yellow]net[/yellow]"
+            if t.sensitive:
+                tag = "[red]exec[/red]"
+            elif t.local_only:
+                tag = "[green]local[/green]"
+            else:
+                tag = "[yellow]net[/yellow]"
             lines.append(f"  {tag} [bold]{t.name}[/bold]")
         lines.append("")
         lines.append("[b]Optional features[/b]")
@@ -145,6 +150,11 @@ class OllamaShellTUI(App):
             + (f"Network-capable tools: {', '.join(net)}." if net else "No networked tools active.")
         )
         self._conversation().write(banner)
+        if any(t.sensitive for t in self.agent.registry.active()):
+            self._conversation().write(
+                "[yellow]⚠ Autonomous shell:[/] the model can run commands on this machine "
+                "(run_command) without asking. Each command is shown inline."
+            )
         self._conversation().write("[dim]Press Esc for the menu.[/dim]")
         # Drives the live spinner / streaming preview.
         self.set_interval(0.1, self._tick)

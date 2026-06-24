@@ -39,6 +39,14 @@ class ProviderConfig(BaseModel):
     timeout: float = 120.0
 
 
+class ShellConfig(BaseModel):
+    """Local shell command execution (the run_command tool)."""
+
+    enabled: bool = True  # commands run with full autonomy by default
+    timeout: float = 60.0  # per-command wall-clock limit (seconds)
+    max_output: int = 10000  # truncate combined stdout/stderr to this many chars
+
+
 class KnowledgeConfig(BaseModel):
     """Local vector knowledge base (the ``[rag]`` extra)."""
 
@@ -102,6 +110,9 @@ class Config(BaseModel):
 
     # Atlassian (Jira/Confluence Server) — optional fallback for env creds
     atlassian: AtlassianConfig = Field(default_factory=AtlassianConfig)
+
+    # Local shell command execution
+    shell: ShellConfig = Field(default_factory=ShellConfig)
 
     # Agent loop
     max_tool_iterations: int = 8  # safety cap on tool-call rounds per turn

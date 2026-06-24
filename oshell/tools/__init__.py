@@ -23,6 +23,7 @@ from .builtins import (
 )
 from .documents import CreateDocumentTool
 from .knowledge import AddKnowledgeTool, SearchKnowledgeTool, _SharedKB
+from .system import RunCommandTool, SystemInfoTool
 from .web import FetchUrlTool, WebSearchTool
 
 __all__ = ["Tool", "ToolError", "ToolRegistry", "default_registry"]
@@ -37,6 +38,8 @@ def default_registry(
     tools: list[Tool] = [
         CurrentTimeTool(),
         ListModelsTool(provider),
+        SystemInfoTool(),
+        RunCommandTool(workspace, config.shell),
         ReadFileTool(workspace),
         WriteFileTool(workspace),
         ListDirTool(workspace),

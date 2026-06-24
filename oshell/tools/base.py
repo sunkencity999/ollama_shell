@@ -27,9 +27,13 @@ class Tool(ABC):
     # JSON-Schema object describing accepted arguments.
     parameters: dict[str, Any] = {"type": "object", "properties": {}}
 
-    # Set False for tools that touch the network/filesystem so a future policy
-    # layer (or the privacy banner) can flag them. Pure/read-only -> True.
+    # Set False for tools that touch the network so the privacy banner can flag
+    # them. Pure/read-only/local -> True.
     local_only: bool = True
+
+    # Set True for tools that can change the system or run arbitrary code
+    # (e.g. shell execution), so the UI can flag them distinctly.
+    sensitive: bool = False
 
     @abstractmethod
     def run(self, **kwargs: Any) -> str:

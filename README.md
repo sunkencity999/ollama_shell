@@ -109,6 +109,7 @@ oshell/
   tools/               MCP-style host
     base.py              Tool + ToolRegistry (advertise specs, dispatch calls)
     builtins.py          current_time, list_models, sandboxed read/write/list files
+    system.py            run_command (shell exec, cross-platform) + system_info
     web.py               web_search + fetch_url (core; flagged network-touching)
     documents.py         create_document — txt/md/csv/docx/xlsx/pdf (opt-in [docs])
     knowledge.py         add_knowledge + search_knowledge tools (opt-in [rag])
@@ -153,6 +154,23 @@ shared) → `config.local.json` (per-machine, git-ignored) → `OSHELL_*` env va
 ```bash
 uv pip install -e ".[all]"
 ```
+
+## Terminal / computer-use
+
+Ollama Shell is an *agentic* TUI: the model can act on your machine, not just
+chat. The `run_command` tool runs shell commands through the platform's own
+shell — `/bin/sh` on macOS/Linux, `cmd.exe` on Windows — with the workspace as
+the working directory, so the agent can inspect the system, drive git/builds,
+run scripts, and process files. `system_info` gives a safe, read-only summary
+(OS, arch, CPU, cores, RAM) without a shell.
+
+> **Autonomy & safety.** By default `run_command` runs **without per-command
+> confirmation** — full autonomy. Every command and its output are shown inline
+> in the conversation (`🔧 run_command(...) → …`) and the tool is flagged `exec`
+> (red) in the Tools panel, with a banner on startup, so you always see what
+> ran. To require review or disable it, set `shell.enabled`/timeout in
+> `config.local.json` (e.g. `{"shell": {"enabled": false}}`) — or just don't ask
+> it to. Commands run with your user's privileges; treat the model accordingly.
 
 ## Fine-tuning (local LoRA)
 
