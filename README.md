@@ -102,6 +102,12 @@ On startup (and any time you press **Esc**) an old-school, keyboard-driven
 
 You can also **paste multi-line text** (logs, code) straight into the prompt —
 it's buffered and sent with your next message rather than truncated to one line.
+
+**Copying out.** The TUI captures the mouse, so normal click-drag selection
+doesn't work in the window. Use **Ctrl+Y** to copy the model's last reply, or the
+menu's *Copy transcript* for the whole conversation (via your OS clipboard, with
+an OSC 52 fallback for SSH). To select text by hand, hold **Option** (macOS /
+iTerm2) or **Shift** (many terminals) while dragging to use native selection.
 - Plus Chat, Tools, Knowledge base, Fine-tuning, Settings, Help, and Quit.
 
 ## Architecture

@@ -22,6 +22,8 @@ MENU_ITEMS: list[tuple[str, str, str]] = [
     ("chat", "Chat", "Talk to the model (close this menu)"),
     ("models", "Models", "Choose the active model"),
     ("tools", "Tools", "Show available tools & capabilities"),
+    ("copy_reply", "Copy last reply", "Copy the model's last reply to the clipboard"),
+    ("copy_transcript", "Copy transcript", "Copy the whole conversation to the clipboard"),
     ("attach", "Attach image", "Attach an image for a vision model"),
     ("features", "Install features", "Add optional capabilities (rag, docs, vision, finetune)"),
     ("knowledge", "Knowledge base", "How to store & recall local notes"),

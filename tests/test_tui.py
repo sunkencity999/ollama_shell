@@ -353,6 +353,46 @@ async def test_attach_image_then_send_includes_it(tmp_path):
         assert app._pending_images == []  # consumed
 
 
+def test_transcript_builder():
+    app = _app()
+    app.agent.messages.append(Message(role="user", content="what is 2+2?"))
+    app.agent.messages.append(Message(role="assistant", content="4"))
+    t = app._transcript()
+    assert "> what is 2+2?" in t and "4" in t
+
+
+async def test_copy_reply_uses_clipboard(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "oshell.tui.app.clipboard_write", lambda text: captured.update(text=text) or True
+    )
+    app = _app()
+    async with app.run_test() as pilot:
+        app._last_reply = "the answer is 42"
+        app.action_copy_reply()  # Ctrl+Y path
+        await pilot.pause()
+        assert captured["text"] == "the answer is 42"
+
+
+async def test_copy_falls_back_to_osc52(monkeypatch):
+    monkeypatch.setattr("oshell.tui.app.clipboard_write", lambda text: False)  # no CLI clipboard
+    osc = {}
+    app = _app()
+    async with app.run_test() as pilot:
+        monkeypatch.setattr(app, "copy_to_clipboard", lambda text: osc.update(text=text))
+        app._copy("hello", "thing")
+        await pilot.pause()
+        assert osc["text"] == "hello"  # OSC52 fallback used
+
+
+async def test_copy_nothing_is_safe():
+    app = _app()
+    async with app.run_test() as pilot:
+        app._last_reply = ""
+        app.action_copy_reply()  # should not raise, just note
+        await pilot.pause()
+
+
 async def test_menu_shows_on_startup_when_enabled():
     from oshell.tui.menu import MenuScreen
 

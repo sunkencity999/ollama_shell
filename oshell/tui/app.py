@@ -126,6 +126,7 @@ class OllamaShellTUI(App):
     BINDINGS = [
         Binding("escape", "open_menu", "Menu"),
         Binding("ctrl+t", "show_tools", "Tools"),
+        Binding("ctrl+y", "copy_reply", "Copy reply"),
         Binding("ctrl+c", "quit", "Quit"),
         Binding("f2", "open_menu", "Menu", show=False),
         Binding("ctrl+o", "open_menu", "Menu", show=False),
@@ -148,6 +149,7 @@ class OllamaShellTUI(App):
         self._live_text = ""  # what the live region currently shows (for tests)
         self._pending_paste = ""  # multi-line pasted text, sent with the next message
         self._pending_images: list[str] = []  # base64 images attached to next message
+        self._last_reply = ""  # the model's most recent reply (for quick copy)
 
     _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -192,7 +194,10 @@ class OllamaShellTUI(App):
                 "[yellow]⚠ Autonomous shell:[/] the model can run commands on this machine "
                 "(run_command) without asking. Each command is shown inline."
             )
-        self._conversation().write("[dim]Press Esc for the menu.[/dim]")
+        self._conversation().write(
+            "[dim]Press Esc for the menu · Ctrl+Y copies the last reply "
+            "(Option/Shift+drag to select text).[/dim]"
+        )
         # Drives the live spinner / streaming preview.
         self.set_interval(0.1, self._tick)
         if self._show_menu_on_start:
@@ -229,6 +234,33 @@ class OllamaShellTUI(App):
     def action_show_tools(self) -> None:
         self.query_one(TabbedContent).active = "tab-tools"
 
+    # ── copy to clipboard (the TUI captures the mouse, so drag-select can't) ──
+    def action_copy_reply(self) -> None:
+        self._copy(self._last_reply, "last reply")
+
+    def _transcript(self) -> str:
+        lines = []
+        for m in self.agent.messages:
+            if m.role == "user":
+                lines.append(f"> {m.content}")
+            elif m.role == "assistant" and m.content:
+                lines.append(m.content)
+        return "\n\n".join(lines)
+
+    def _copy(self, text: str, label: str) -> None:
+        convo = self._conversation()
+        if not text.strip():
+            convo.write(f"[dim]nothing to copy ({label})[/dim]")
+            return
+        if clipboard_write(text):
+            convo.write(f"[green]copied {label}[/green] [dim]({len(text)} chars)[/dim]")
+            return
+        try:  # fall back to the terminal's clipboard via OSC 52 (works over SSH)
+            self.copy_to_clipboard(text)
+            convo.write(f"[green]copied {label}[/green] [dim](via terminal · {len(text)}c)[/dim]")
+        except Exception:
+            convo.write("[red]couldn't access the clipboard[/red]")
+
     # ── menu ─────────────────────────────────────────────────────────────────
     def action_open_menu(self) -> None:
         self.push_screen(MenuScreen(), self._on_menu_choice)
@@ -247,6 +279,10 @@ class OllamaShellTUI(App):
             self.push_screen(FeaturesScreen(), self._on_feature_choice)
         elif choice == "attach":
             self.push_screen(AttachImageScreen(), self._on_attach_image)
+        elif choice == "copy_reply":
+            self.action_copy_reply()
+        elif choice == "copy_transcript":
+            self._copy(self._transcript(), "transcript")
         elif choice == "finetune":
             self._menu_finetune()
         elif choice == "config":
@@ -412,7 +448,10 @@ class OllamaShellTUI(App):
         self._conversation().write(
             "[b]Help[/b]\n"
             "  The model drives: type a request and it calls tools as needed.\n"
-            "  Keys:  Esc menu · Ctrl+T tools · Ctrl+C quit · Tab/↑↓ navigate.\n"
+            "  Keys:  Esc menu · Ctrl+T tools · Ctrl+Y copy reply · Ctrl+C quit.\n"
+            "  Copy: Ctrl+Y copies the last reply; the menu also copies the transcript.\n"
+            "  Select text with the mouse: hold [b]Option[/b] (macOS/iTerm2) or "
+            "[b]Shift[/b] (many terminals) while dragging — the app captures normal drags.\n"
             "  Tabs:  Tools (roster) · Context (pin/exclude) · Activity (tool log)."
         )
 
@@ -476,6 +515,8 @@ class OllamaShellTUI(App):
                         activity.write, f"[dim]  ↳ {escape(event.result[:200])}[/dim]"
                     )
                 elif isinstance(event, TurnComplete):
+                    if event.text:
+                        self._last_reply = event.text  # for Ctrl+Y / menu copy
                     final = event.text or "[dim](no text)[/dim]"
                     self.call_from_thread(convo.write, final)
                 elif isinstance(event, LimitReached):
@@ -550,6 +591,36 @@ def run_streaming(cmd: list[str], on_line, timeout: float = 1800) -> int:
     finally:
         if proc.poll() is None:  # pragma: no cover - cleanup on error/timeout
             proc.kill()
+
+
+def clipboard_write(text: str) -> bool:
+    """Write text to the OS clipboard via the platform tool. Returns success.
+
+    Used because a Textual app captures the mouse, so the terminal's native
+    drag-to-select-and-copy doesn't work inside the window.
+    """
+    import os
+    import shutil
+    import subprocess
+
+    cmd: list[str] | None = None
+    if shutil.which("pbcopy"):  # macOS
+        cmd = ["pbcopy"]
+    elif shutil.which("wl-copy"):  # Wayland
+        cmd = ["wl-copy"]
+    elif shutil.which("xclip"):  # X11
+        cmd = ["xclip", "-selection", "clipboard"]
+    elif shutil.which("xsel"):
+        cmd = ["xsel", "--clipboard", "--input"]
+    elif os.name == "nt":  # Windows
+        cmd = ["clip"]
+    if cmd is None:
+        return False
+    try:
+        subprocess.run(cmd, input=text, text=True, check=True, timeout=5)
+        return True
+    except Exception:
+        return False
 
 
 def pip_install_cmd(packages: list[str]) -> list[str]:
