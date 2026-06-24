@@ -69,10 +69,8 @@ class RunCommandTool(Tool):
     def __init__(self, workspace: Path | str = ".", config: ShellConfig | None = None):
         self.workspace = str(Path(workspace).expanduser())
         self.config = config or ShellConfig()
-        self._session: Any = None  # lazily-created ShellSession (POSIX persistent)
-
-    def _use_session(self) -> bool:
-        return self.config.persistent and platform.system().lower() != "windows"
+        self._session: Any = None  # lazily-created ShellSession (persistent)
+        self._session_failed = False  # set if the persistent session won't start
 
     def run(self, command: str = "", timeout: int | None = None, **_: Any) -> str:
         if not self.config.enabled:
@@ -84,8 +82,12 @@ class RunCommandTool(Tool):
         except (TypeError, ValueError):
             secs = self.config.timeout
 
-        if self._use_session():
-            out, code = self._run_persistent(command, secs)
+        session = self._get_session()
+        if session is not None:
+            try:
+                out, code = session.run(command, secs)
+            except TimeoutError:
+                raise ToolError(f"command timed out after {secs:g}s: {command}") from None
         else:
             out, code = self._run_oneshot(command, secs)
 
@@ -96,15 +98,25 @@ class RunCommandTool(Tool):
         code_str = "?" if code is None else code
         return f"$ {command}\n[exit {code_str}]\n{body}"
 
-    def _run_persistent(self, command: str, secs: float) -> tuple[str, int | None]:
-        from .shell_session import ShellSession
+    def _get_session(self):
+        """Return a healthy persistent ShellSession, or None to use one-shot.
 
+        Probes a freshly-created session once; if it isn't responsive (e.g. a
+        Windows PowerShell setup that doesn't stream over pipes), we permanently
+        fall back to one-shot for this tool instance.
+        """
+        if not self.config.persistent or self._session_failed:
+            return None
         if self._session is None:
-            self._session = ShellSession(self.workspace)
-        try:
-            return self._session.run(command, secs)
-        except TimeoutError:
-            raise ToolError(f"command timed out after {secs:g}s: {command}") from None
+            from .shell_session import ShellSession
+
+            s = ShellSession(self.workspace)
+            if not s.healthy():
+                s.close()
+                self._session_failed = True
+                return None
+            self._session = s
+        return self._session
 
     def _run_oneshot(self, command: str, secs: float) -> tuple[str, int | None]:
         args, use_shell = shell_invocation(command, windows_shell=self.config.windows_shell)

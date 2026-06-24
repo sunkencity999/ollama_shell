@@ -177,12 +177,13 @@ run scripts, and process files. `system_info` gives a safe, read-only summary
 
 **Cross-platform.** Commands run through the platform's own shell: `/bin/sh` on
 macOS/Linux, **PowerShell** on Windows (`pwsh` if present, else `powershell`;
-force `cmd` with `{"shell":{"windows_shell":"cmd"}}`). On macOS/Linux the shell
-is **persistent** — `cd`, env vars, and activated virtualenvs carry across
-`run_command` calls (a long-lived `/bin/sh`); Windows runs each command one-shot.
-GUI key chords are normalized per-OS (`cmd`→`win` on Windows, `command` on
-macOS), and the model is told which OS it's on. Disable persistence with
-`{"shell": {"persistent": false}}`.
+force `cmd` with `{"shell":{"windows_shell":"cmd"}}`). The shell is **persistent**
+— `cd`, env vars, and activated virtualenvs carry across `run_command` calls (a
+long-lived `/bin/sh`, or PowerShell on Windows). A new session is health-probed
+and **falls back to one-shot automatically** if it isn't responsive, so it can
+never hang. GUI key chords are normalized per-OS (`cmd`→`win` on Windows,
+`command` on macOS) and the model is told which OS it's on. Disable persistence
+with `{"shell": {"persistent": false}}`.
 
 > **Autonomy & safety.** By default `run_command` runs **without per-command
 > confirmation** — full autonomy. Every command and its output are shown inline

@@ -153,20 +153,49 @@ def test_persistent_run_command_tool_keeps_cwd(tmp_path):
     assert "deep" in out and "[exit 0]" in out
 
 
-def test_windows_uses_oneshot_not_persistent(tmp_path, monkeypatch):
-    import oshell.tools.system as sysmod
+def test_session_kind_selected_by_platform(monkeypatch):
+    import oshell.tools.shell_session as ss
 
-    monkeypatch.setattr(sysmod.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(ss.platform, "system", lambda: "Windows")
+    assert ss.ShellSession()._kind == "powershell"
+    monkeypatch.setattr(ss.platform, "system", lambda: "Linux")
+    assert ss.ShellSession()._kind == "posix"
+
+
+def test_powershell_session_construction():
+    from oshell.tools.shell_session import ShellSession
+
+    s = ShellSession(kind="powershell")
+    argv = s._shell_argv()
+    assert argv[0].lower().endswith(("powershell", "powershell.exe", "pwsh", "pwsh.exe"))
+    assert "-NoProfile" in argv
+    marker = s._marker_cmd("SENT")
+    assert "Write-Output" in marker and "SENT" in marker and "LASTEXITCODE" in marker
+    assert s._setup_lines()  # quiets the PowerShell prompt
+
+
+def test_run_command_falls_back_when_session_unhealthy(tmp_path, monkeypatch):
+    # Simulate a persistent shell that won't start (e.g. PowerShell-over-pipe on
+    # an environment where it doesn't stream): the tool must fall back to one-shot.
+    import oshell.tools.shell_session as ss
+
+    monkeypatch.setattr(ss.ShellSession, "healthy", lambda self, timeout=6.0: False)
     tool = RunCommandTool(tmp_path, ShellConfig(persistent=True))
-    assert tool._use_session() is False  # Windows -> one-shot PowerShell
+    out = tool.run(command=_py("print('fallback-ok')"))
+    assert "fallback-ok" in out and "[exit 0]" in out
+    assert tool._session_failed is True  # latched -> stays on one-shot
 
 
-def test_posix_uses_persistent_when_enabled(tmp_path, monkeypatch):
-    import oshell.tools.system as sysmod
+def test_session_healthy_probe_posix(tmp_path):
+    if _sys.platform == "win32":  # pragma: no cover
+        return
+    from oshell.tools.shell_session import ShellSession
 
-    monkeypatch.setattr(sysmod.platform, "system", lambda: "Darwin")
-    assert RunCommandTool(tmp_path, ShellConfig(persistent=True))._use_session() is True
-    assert RunCommandTool(tmp_path, ShellConfig(persistent=False))._use_session() is False
+    s = ShellSession(tmp_path, kind="posix")
+    try:
+        assert s.healthy() is True
+    finally:
+        s.close()
 
 
 @posix_only
