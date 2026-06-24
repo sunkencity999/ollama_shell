@@ -196,6 +196,52 @@ async def test_tool_call_is_shown_inline():
         assert "↳" in text  # ...with its result summary
 
 
+def test_pip_install_cmd_builder():
+    from oshell.tui.app import pip_install_cmd
+
+    cmd = pip_install_cmd(["chromadb>=0.4.18", "sentence-transformers"])
+    assert "install" in cmd
+    assert "chromadb>=0.4.18" in cmd and "sentence-transformers" in cmd
+
+
+async def test_features_menu_opens():
+    from oshell.tui.menu import MENU_ITEMS, FeaturesScreen, MenuScreen
+
+    # "features" is item 4 in the menu order.
+    assert MENU_ITEMS[3][0] == "features"
+    app = _app()
+    async with app.run_test() as pilot:
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, MenuScreen)
+        await pilot.press("4")
+        await pilot.pause()
+        assert isinstance(app.screen, FeaturesScreen)
+
+
+async def test_already_installed_feature_reports_without_installing(monkeypatch):
+    # Pretend every feature is already installed -> no subprocess, just a note.
+    monkeypatch.setattr("oshell.tui.app.feature_installed", lambda mods: True)
+    app = _app()
+    async with app.run_test() as pilot:
+        app._on_feature_choice("rag")
+        await pilot.pause()
+        assert "already installed" in _convo_text(app)
+
+
+async def test_model_choice_persists_default(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.chdir(tmp_path)  # update_local_config writes to cwd
+    app = _app()
+    async with app.run_test() as pilot:
+        app._on_model_choice("my-chosen-model")
+        await pilot.pause()
+    assert app.agent.model == "my-chosen-model"
+    saved = json.loads((tmp_path / "config.local.json").read_text())
+    assert saved["default_model"] == "my-chosen-model"
+
+
 async def test_menu_shows_on_startup_when_enabled():
     from oshell.tui.menu import MenuScreen
 

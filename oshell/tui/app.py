@@ -25,7 +25,7 @@ from ..capabilities import optional_features
 from ..config import Config
 from ..providers import get_provider
 from ..tools import default_registry
-from .menu import MenuScreen, ModelScreen
+from .menu import INSTALLABLE_FEATURES, FeaturesScreen, MenuScreen, ModelScreen, feature_installed
 
 
 class ToolsPanel(Static):
@@ -193,6 +193,8 @@ class OllamaShellTUI(App):
             self.query_one(TabbedContent).active = "tab-tools"
         elif choice == "models":
             self.run_worker(self._open_model_picker, thread=True, exclusive=True)
+        elif choice == "features":
+            self.push_screen(FeaturesScreen(), self._on_feature_choice)
         elif choice == "finetune":
             self._menu_finetune()
         elif choice == "config":
@@ -224,8 +226,70 @@ class OllamaShellTUI(App):
             return
         self.agent.model = name
         self.sub_title = self._subtitle()  # header reflects the new model
-        self._conversation().write(f"[green]Model set to[/green] [bold]{name}[/bold]")
+        # Persist as the default so it sticks across sessions (until changed).
+        from ..config import update_local_config
+
+        try:
+            update_local_config({"default_model": name})
+            note = "[dim](saved as default)[/dim]"
+        except Exception as exc:  # pragma: no cover - defensive
+            note = f"[dim](not saved: {exc})[/dim]"
+        self._conversation().write(f"[green]Model set to[/green] [bold]{name}[/bold] {note}")
         self.query_one(Input).focus()
+
+    def _on_feature_choice(self, fid: str | None) -> None:
+        if not fid:
+            self.query_one(Input).focus()
+            return
+        feat = next((f for f in INSTALLABLE_FEATURES if f[0] == fid), None)
+        if feat is None:
+            return
+        _, label, packages, mods = feat
+        if feature_installed(mods):
+            self._conversation().write(f"[dim]{label} is already installed.[/dim]")
+            return
+        self.run_worker(lambda: self._install_feature(label, packages, mods), thread=True)
+
+    def _install_feature(self, label: str, packages: list[str], mods: tuple[str, ...]) -> None:
+        """Install an extra's packages into the running env (worker thread)."""
+        import importlib
+        import subprocess
+
+        convo = self._conversation()
+        self._status = f"Installing {label}"
+        self._busy = True
+        try:
+            self.call_from_thread(
+                convo.write,
+                f"[cyan]Installing {label}…[/cyan] [dim]{escape(' '.join(packages))} "
+                "(this can take a few minutes)[/dim]",
+            )
+            cmd = pip_install_cmd(packages)
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+            except Exception as exc:  # pragma: no cover - subprocess env issues
+                self.call_from_thread(convo.write, f"[red]Install failed: {exc}[/red]")
+                return
+            out = (proc.stdout or "") + (proc.stderr or "")
+            for line in out.strip().splitlines()[-3:]:
+                self.call_from_thread(convo.write, f"[dim]{escape(line)}[/dim]")
+            if proc.returncode == 0:
+                importlib.invalidate_caches()  # let find_spec see the new packages
+                ok = feature_installed(mods)
+                msg = (
+                    f"[green]Installed {label} — ready to use now.[/green]"
+                    if ok
+                    else f"[yellow]Installed {label}; restart oshell to pick it up.[/yellow]"
+                )
+                self.call_from_thread(convo.write, msg)
+                self.call_from_thread(self.query_one(ToolsPanel).render_for, self.agent)
+            else:
+                self.call_from_thread(
+                    convo.write, f"[red]Install of {label} failed (exit {proc.returncode}).[/red]"
+                )
+        finally:
+            self._busy = False
+            self._stream = ""
 
     def _menu_finetune(self) -> None:
         from ..finetune import FineTuneManager, detect_hardware
@@ -319,6 +383,20 @@ class OllamaShellTUI(App):
             self._busy = False
             self._stream = ""
             self.call_from_thread(self.query_one(ContextInspector).refresh_view, self.agent)
+
+
+def pip_install_cmd(packages: list[str]) -> list[str]:
+    """Build the install command for the *current* interpreter's environment.
+
+    Prefer `uv pip install --python <this-python>` (works even when the env has
+    no pip, e.g. uv tool venvs); fall back to `python -m pip`.
+    """
+    import shutil
+    import sys
+
+    if shutil.which("uv"):
+        return ["uv", "pip", "install", "--python", sys.executable, *packages]
+    return [sys.executable, "-m", "pip", "install", *packages]
 
 
 def _compact_args(args: dict) -> str:

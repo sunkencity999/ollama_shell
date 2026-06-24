@@ -8,6 +8,8 @@ runs the matching action.
 
 from __future__ import annotations
 
+import importlib.util
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
@@ -20,6 +22,7 @@ MENU_ITEMS: list[tuple[str, str, str]] = [
     ("chat", "Chat", "Talk to the model (close this menu)"),
     ("models", "Models", "Choose the active model"),
     ("tools", "Tools", "Show available tools & capabilities"),
+    ("features", "Install features", "Add optional capabilities (rag, docs, vision, finetune)"),
     ("knowledge", "Knowledge base", "How to store & recall local notes"),
     ("finetune", "Fine-tuning", "Detect training backend and list jobs"),
     ("config", "Settings", "Show resolved configuration (secrets redacted)"),
@@ -123,6 +126,74 @@ class ModelScreen(ModalScreen[str]):
             if 1 <= n <= min(9, len(self._models)):
                 event.stop()
                 self.dismiss(self._models[n - 1])
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+# (extra id, label, pip package specs, import-probe module names)
+INSTALLABLE_FEATURES: list[tuple[str, str, list[str], tuple[str, ...]]] = [
+    (
+        "rag",
+        "Knowledge base (RAG)",
+        ["chromadb>=0.4.18", "sentence-transformers>=2.2.2"],
+        ("chromadb", "sentence_transformers"),
+    ),
+    (
+        "docs",
+        "Document export (docx/xlsx/pdf)",
+        ["python-docx>=1.0.0", "openpyxl>=3.1.0", "weasyprint>=60.1", "PyPDF2>=3.0.0"],
+        ("docx", "openpyxl"),
+    ),
+    ("vision", "Image analysis", ["Pillow>=10.0.0"], ("PIL",)),
+    ("finetune", "Fine-tuning (MLX, Apple Silicon)", ["mlx-lm>=0.20.0"], ("mlx_lm",)),
+]
+
+
+def feature_installed(modules: tuple[str, ...]) -> bool:
+    return all(importlib.util.find_spec(m) is not None for m in modules)
+
+
+class FeaturesScreen(ModalScreen[str]):
+    """Pick an optional feature to install into the running environment."""
+
+    CSS = """
+    FeaturesScreen { align: center middle; }
+    #menu-box {
+        width: 70; height: auto; padding: 1 2;
+        border: round $accent; background: $surface;
+    }
+    #menu-title { padding-bottom: 1; }
+    #menu-list { height: auto; }
+    """
+    BINDINGS = [Binding("escape", "cancel", "Back")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="menu-box"):
+            yield Static(
+                "[b]Install features[/b]\n"
+                "[dim]↑/↓ + Enter or a number; Esc to cancel. "
+                "Installs into this app's environment.[/dim]",
+                id="menu-title",
+            )
+            opts = []
+            for i, (fid, label, _pkgs, mods) in enumerate(INSTALLABLE_FEATURES):
+                tag = "  [green](installed)[/green]" if feature_installed(mods) else ""
+                opts.append(Option(f" {i + 1}.  {label}{tag}", id=fid))
+            yield OptionList(*opts, id="menu-list")
+
+    def on_mount(self) -> None:
+        self.query_one(OptionList).focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option.id)
+
+    def on_key(self, event) -> None:
+        if event.character and event.character.isdigit():
+            n = int(event.character)
+            if 1 <= n <= len(INSTALLABLE_FEATURES):
+                event.stop()
+                self.dismiss(INSTALLABLE_FEATURES[n - 1][0])
 
     def action_cancel(self) -> None:
         self.dismiss(None)

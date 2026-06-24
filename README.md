@@ -84,10 +84,16 @@ spinner with the current status (*Thinking…*, *Running web_search…*) and the
 **streams the reply token-by-token** as it's generated — no more staring at a
 blank space.
 
-On startup (and any time you press **F2**) an old-school, keyboard-driven
-**menu** pops up — navigate with ↑/↓ + Enter or just press a number — for Chat,
-Models, Tools, Knowledge base, Fine-tuning, Settings, Help, and Quit. Esc drops
-back to the conversation.
+On startup (and any time you press **Esc**) an old-school, keyboard-driven
+**menu** pops up — navigate with ↑/↓ + Enter or just press a number. From it you can:
+
+- **Models** — pick the active model from those on the backend. Your choice is
+  **saved as the default** (to `config.local.json`) and persists across sessions
+  until you change it.
+- **Install features** — install optional capabilities (RAG, docs export,
+  vision, fine-tuning) into the running environment without leaving the app;
+  progress streams into the conversation and the Tools panel refreshes when done.
+- Plus Chat, Tools, Knowledge base, Fine-tuning, Settings, Help, and Quit.
 
 ## Architecture
 

@@ -128,6 +128,23 @@ class Config(BaseModel):
         return Path(self.history_file).expanduser()
 
 
+def update_local_config(
+    updates: dict[str, Any], root: Path | str | None = None, filename: str = "config.local.json"
+) -> Path:
+    """Merge ``updates`` into the machine-local config file and write it back.
+
+    Used to persist user choices (e.g. the selected default model) without
+    clobbering anything else already in ``config.local.json`` (like Atlassian
+    creds). The file is git-ignored.
+    """
+    root = Path(root) if root else Path.cwd()
+    path = root / filename
+    data: dict[str, Any] = _read_json(path) if path.is_file() else {}
+    _deep_update(data, updates)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))

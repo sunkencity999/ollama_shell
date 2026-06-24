@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from oshell.config import Config
+from oshell.config import Config, update_local_config
 
 
 def test_defaults_are_sane():
@@ -41,6 +41,23 @@ def test_env_bool_coercion(tmp_path, monkeypatch):
     monkeypatch.setenv("OSHELL_VERBOSE", "true")
     cfg = Config.load(tmp_path)
     assert cfg.verbose is True
+
+
+def test_update_local_config_merges_and_persists(tmp_path):
+    # Pre-existing local config with Atlassian creds must be preserved.
+    (tmp_path / "config.local.json").write_text(
+        json.dumps({"atlassian": {"jira_url": "https://j", "jira_token": "t"}})
+    )
+    update_local_config({"default_model": "picked-model"}, root=tmp_path)
+    cfg = Config.load(tmp_path)
+    assert cfg.default_model == "picked-model"      # new value persisted
+    assert cfg.atlassian.jira_url == "https://j"    # existing value untouched
+
+
+def test_update_local_config_creates_file(tmp_path):
+    update_local_config({"default_model": "m"}, root=tmp_path)
+    assert (tmp_path / "config.local.json").is_file()
+    assert Config.load(tmp_path).default_model == "m"
 
 
 def test_roundtrip_save_load(tmp_path):
