@@ -172,6 +172,11 @@ the working directory, so the agent can inspect the system, drive git/builds,
 run scripts, and process files. `system_info` gives a safe, read-only summary
 (OS, arch, CPU, cores, RAM) without a shell.
 
+On macOS/Linux the shell is **persistent**: `cd`, environment variables, and
+activated virtualenvs carry across `run_command` calls within a session (a
+long-lived `/bin/sh` behind the scenes). Windows runs each command one-shot in
+PowerShell. Disable with `{"shell": {"persistent": false}}`.
+
 > **Autonomy & safety.** By default `run_command` runs **without per-command
 > confirmation** — full autonomy. Every command and its output are shown inline
 > in the conversation (`🔧 run_command(...) → …`) and the tool is flagged `exec`

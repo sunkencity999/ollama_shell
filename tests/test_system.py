@@ -103,3 +103,60 @@ def test_shell_invocation_windows_uses_powershell():
 def test_shell_invocation_windows_cmd_override():
     args, use_shell = shell_invocation("dir", system="Windows", windows_shell="cmd")
     assert args == "dir" and use_shell is True  # cmd.exe via the shell
+
+
+# ── persistent shell (POSIX) ────────────────────────────────────────────────
+import sys as _sys  # noqa: E402
+
+import pytest  # noqa: E402
+
+posix_only = pytest.mark.skipif(_sys.platform == "win32", reason="persistent shell is POSIX-only")
+
+
+@posix_only
+def test_exit_line_parsing():
+    from oshell.tools.shell_session import _parse_exit
+
+    assert _parse_exit("SENT 0", "SENT") == 0
+    assert _parse_exit("noise SENT 3", "SENT") == 3
+    assert _parse_exit("SENT notanumber", "SENT") is None
+
+
+@posix_only
+def test_persistent_cwd_and_env_persist(tmp_path):
+    from oshell.tools.shell_session import ShellSession
+
+    (tmp_path / "sub").mkdir()
+    s = ShellSession(tmp_path)
+    try:
+        out, code = s.run("cd sub && echo in-sub", 10)
+        assert code == 0 and "in-sub" in out
+        # cwd persisted from the previous command:
+        out, code = s.run("basename $(pwd)", 10)
+        assert out.strip() == "sub"
+        # env var set earlier is still present:
+        s.run("export OSHELL_TESTVAR=persisted", 10)
+        out, _ = s.run("echo $OSHELL_TESTVAR", 10)
+        assert out.strip() == "persisted"
+    finally:
+        s.close()
+
+
+@posix_only
+def test_persistent_run_command_tool_keeps_cwd(tmp_path):
+    from oshell.config import ShellConfig
+
+    (tmp_path / "deep").mkdir()
+    tool = RunCommandTool(tmp_path, ShellConfig(persistent=True))
+    tool.run(command="cd deep")
+    out = tool.run(command="basename $(pwd)")
+    assert "deep" in out and "[exit 0]" in out
+
+
+@posix_only
+def test_persistent_timeout_raises(tmp_path):
+    from oshell.config import ShellConfig
+
+    reg = ToolRegistry([RunCommandTool(tmp_path, ShellConfig(persistent=True, timeout=0.5))])
+    out = reg.dispatch(ToolCall(name="run_command", arguments={"command": "sleep 5"}))
+    assert out.startswith("[error]") and "timed out" in out

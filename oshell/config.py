@@ -47,6 +47,9 @@ class ShellConfig(BaseModel):
     max_output: int = 10000  # truncate combined stdout/stderr to this many chars
     # Which shell to use on Windows: auto -> pwsh, else powershell; or force "cmd".
     windows_shell: str = "auto"  # auto | powershell | pwsh | cmd
+    # Keep one long-lived shell so cd / env / activated venvs persist across
+    # commands (POSIX only; Windows always runs one-shot PowerShell).
+    persistent: bool = True
 
 
 class KnowledgeConfig(BaseModel):

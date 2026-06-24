@@ -69,6 +69,10 @@ class RunCommandTool(Tool):
     def __init__(self, workspace: Path | str = ".", config: ShellConfig | None = None):
         self.workspace = str(Path(workspace).expanduser())
         self.config = config or ShellConfig()
+        self._session: Any = None  # lazily-created ShellSession (POSIX persistent)
+
+    def _use_session(self) -> bool:
+        return self.config.persistent and platform.system().lower() != "windows"
 
     def run(self, command: str = "", timeout: int | None = None, **_: Any) -> str:
         if not self.config.enabled:
@@ -79,6 +83,30 @@ class RunCommandTool(Tool):
             secs = float(timeout) if timeout else self.config.timeout
         except (TypeError, ValueError):
             secs = self.config.timeout
+
+        if self._use_session():
+            out, code = self._run_persistent(command, secs)
+        else:
+            out, code = self._run_oneshot(command, secs)
+
+        cap = self.config.max_output
+        if len(out) > cap:
+            out = out[:cap].rstrip() + "\n…[output truncated]"
+        body = out.strip() or "(no output)"
+        code_str = "?" if code is None else code
+        return f"$ {command}\n[exit {code_str}]\n{body}"
+
+    def _run_persistent(self, command: str, secs: float) -> tuple[str, int | None]:
+        from .shell_session import ShellSession
+
+        if self._session is None:
+            self._session = ShellSession(self.workspace)
+        try:
+            return self._session.run(command, secs)
+        except TimeoutError:
+            raise ToolError(f"command timed out after {secs:g}s: {command}") from None
+
+    def _run_oneshot(self, command: str, secs: float) -> tuple[str, int | None]:
         args, use_shell = shell_invocation(command, windows_shell=self.config.windows_shell)
         try:
             proc = subprocess.run(
@@ -93,13 +121,7 @@ class RunCommandTool(Tool):
             raise ToolError(f"command timed out after {secs:g}s: {command}") from None
         except Exception as exc:  # pragma: no cover - spawn failures are rare
             raise ToolError(f"could not run command: {exc}") from exc
-
-        out = (proc.stdout or "") + (proc.stderr or "")
-        cap = self.config.max_output
-        if len(out) > cap:
-            out = out[:cap].rstrip() + "\n…[output truncated]"
-        body = out.strip() or "(no output)"
-        return f"$ {command}\n[exit {proc.returncode}]\n{body}"
+        return (proc.stdout or "") + (proc.stderr or ""), proc.returncode
 
 
 class SystemInfoTool(Tool):
