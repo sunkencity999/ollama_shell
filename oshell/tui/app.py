@@ -21,6 +21,7 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widgets import Footer, Header, Input, RichLog, Static, TabbedContent, TabPane
 
@@ -213,7 +214,10 @@ class OllamaShellTUI(App):
 
     def _set_live(self, markup: str) -> None:
         self._live_text = markup
-        self.query_one("#live", Static).update(markup)
+        try:
+            self.query_one("#live", Static).update(markup)
+        except NoMatches:
+            pass  # widget gone (app is shutting down) — the spinner timer can race teardown
 
     # ── widget shortcuts ─────────────────────────────────────────────────────
     def _conversation(self) -> RichLog:
@@ -481,10 +485,14 @@ class OllamaShellTUI(App):
         except Exception as exc:  # surface backend errors instead of a silent hang
             self.call_from_thread(convo.write, f"[red]Error: {exc}[/red]")
         finally:
-            # Stop the indicator and refresh the context view.
+            # Stop the indicator and refresh the context view (guard teardown race).
             self._busy = False
             self._stream = ""
-            self.call_from_thread(self.query_one(ContextInspector).refresh_view, self.agent)
+            try:
+                inspector = self.query_one(ContextInspector)
+                self.call_from_thread(inspector.refresh_view, self.agent)
+            except NoMatches:
+                pass
 
 
 def image_path_to_b64(path: str) -> str:
