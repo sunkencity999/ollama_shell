@@ -101,6 +101,14 @@ class Agent:
         """The messages actually sent to the model (excluded ones dropped)."""
         return [m for i, m in enumerate(self.messages) if i not in self.excluded]
 
+    def _model_supports_tools(self) -> bool:
+        """Whether the active model accepts tool definitions. Unknown -> assume yes."""
+        try:
+            caps = self.provider.capabilities(self.model)
+        except Exception:
+            caps = set()
+        return (not caps) or ("tools" in caps)
+
     # ── the loop ─────────────────────────────────────────────────────────────
     def send(self, user_text: str, images: list[str] | None = None) -> Iterator[AgentEvent]:
         """Run one user turn to completion, yielding events as they happen.
@@ -109,10 +117,13 @@ class Agent:
         for vision-capable models (passed through to the backend verbatim).
         """
         self.messages.append(Message(role="user", content=user_text, images=images or []))
-        # Don't advertise tools on an image turn: many vision models (e.g. llava)
-        # don't support tool-calling and 400 if tools are present. Image analysis
-        # rarely needs tools anyway.
-        tools = None if images else (self.registry.specs() or None)
+        # Capability-aware: only advertise tools to models that support them.
+        # This keeps tools on for image turns with models that do both (e.g.
+        # gemma3/4), but suppresses them for vision-only models (e.g. llava) that
+        # 400 when tools are present — on any turn.
+        tools = self.registry.specs() or None
+        if tools and not self._model_supports_tools():
+            tools = None
 
         for _ in range(self.config.max_tool_iterations):
             assistant_text = ""

@@ -84,6 +84,15 @@ class LLMProvider(ABC):
     def list_models(self) -> list[str]:
         """Return the model names available on this backend."""
 
+    def capabilities(self, model: str) -> set[str]:
+        """Return capability tags for a model (e.g. {"vision", "tools"}).
+
+        Empty set means "unknown" — callers should assume the model supports
+        whatever they need rather than disabling it. Backends that can introspect
+        (Ollama) override this.
+        """
+        return set()
+
     def health(self) -> bool:
         """Cheap reachability check; defaults to 'can we list models'."""
         try:

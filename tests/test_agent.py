@@ -75,6 +75,49 @@ def test_iteration_cap():
     assert events[-1].iterations == 3
 
 
+class _CapProvider(LLMProvider):
+    """Records the tools it was given; reports configurable capabilities."""
+
+    name = "cap"
+
+    def __init__(self, caps):
+        self._caps = set(caps)
+        self.last_tools = "unset"
+
+    def list_models(self):
+        return ["m"]
+
+    def capabilities(self, model):
+        return self._caps
+
+    def chat(self, messages, *, model, tools=None, **kwargs):
+        self.last_tools = tools
+        yield ChatChunk(content="ok", done=True)
+
+
+def _cap_agent(caps):
+    prov = _CapProvider(caps)
+    return Agent(prov, ToolRegistry([CurrentTimeTool()]), Config()), prov
+
+
+def test_tools_suppressed_for_non_tool_model():
+    agent, prov = _cap_agent({"vision"})  # vision-only, no tools (like llava)
+    list(agent.send("hi"))
+    assert prov.last_tools is None  # not advertised -> no 400
+
+
+def test_tools_kept_for_capable_model_even_with_image():
+    agent, prov = _cap_agent({"vision", "tools"})  # e.g. gemma3/4
+    list(agent.send("look", images=["B64"]))
+    assert prov.last_tools is not None  # capable model keeps tools on image turns
+
+
+def test_tools_assumed_when_capabilities_unknown():
+    agent, prov = _cap_agent(set())  # unknown -> assume capable
+    list(agent.send("hi"))
+    assert prov.last_tools is not None
+
+
 def test_send_attaches_images():
     agent, _ = _agent([[ChatChunk(content="ok", done=True)]])
     list(agent.send("what is this?", images=["BASE64IMG"]))

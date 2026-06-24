@@ -24,11 +24,28 @@ class OllamaProvider(LLMProvider):
     def __init__(self, host: str = "http://localhost:11434", timeout: float = 120.0):
         self.host = host.rstrip("/")
         self.timeout = timeout
+        self._caps_cache: dict[str, set[str]] = {}
 
     def list_models(self) -> list[str]:
         resp = requests.get(f"{self.host}/api/tags", timeout=self.timeout)
         resp.raise_for_status()
         return [m["name"] for m in resp.json().get("models", [])]
+
+    def capabilities(self, model: str) -> set[str]:
+        """Capability tags from /api/show (e.g. completion, vision, tools), cached."""
+        if model in self._caps_cache:
+            return self._caps_cache[model]
+        caps: set[str] = set()
+        try:
+            resp = requests.post(
+                f"{self.host}/api/show", json={"model": model}, timeout=self.timeout
+            )
+            resp.raise_for_status()
+            caps = set(resp.json().get("capabilities", []))
+        except Exception:  # unknown -> empty (callers assume capable)
+            caps = set()
+        self._caps_cache[model] = caps
+        return caps
 
     def chat(
         self,
