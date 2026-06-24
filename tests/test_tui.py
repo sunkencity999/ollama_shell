@@ -204,6 +204,27 @@ def test_pip_install_cmd_builder():
     assert "chromadb>=0.4.18" in cmd and "sentence-transformers" in cmd
 
 
+def test_run_streaming_emits_lines_live():
+    import sys
+
+    from oshell.tui.app import run_streaming
+
+    seen = []
+    script = "import sys\nfor i in range(3): print('step', i); sys.stdout.flush()"
+    rc = run_streaming([sys.executable, "-c", script], seen.append)
+    assert rc == 0
+    assert seen == ["step 0", "step 1", "step 2"]  # streamed in order, blank lines dropped
+
+
+def test_run_streaming_returns_nonzero_on_failure():
+    import sys
+
+    from oshell.tui.app import run_streaming
+
+    rc = run_streaming([sys.executable, "-c", "import sys; sys.exit(3)"], lambda _l: None)
+    assert rc == 3
+
+
 async def test_features_menu_opens():
     from oshell.tui.menu import MENU_ITEMS, FeaturesScreen, MenuScreen
 

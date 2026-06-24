@@ -251,45 +251,53 @@ class OllamaShellTUI(App):
         self.run_worker(lambda: self._install_feature(label, packages, mods), thread=True)
 
     def _install_feature(self, label: str, packages: list[str], mods: tuple[str, ...]) -> None:
-        """Install an extra's packages into the running env (worker thread)."""
-        import importlib
-        import subprocess
+        """Install an extra's packages into the running env (worker thread).
 
-        convo = self._conversation()
+        Output streams live: each line goes to the Activity tab and the most
+        recent line drives the spinner status, so progress is visible.
+        """
+        import importlib
+
+        convo, activity = self._conversation(), self._activity()
         self._status = f"Installing {label}"
         self._busy = True
+        # Bring progress to the foreground.
+        self.call_from_thread(setattr, self.query_one(TabbedContent), "active", "tab-activity")
+        self.call_from_thread(
+            convo.write,
+            f"[cyan]Installing {label}…[/cyan] [dim]{escape(' '.join(packages))} "
+            "(watch the Activity tab; this can take a few minutes)[/dim]",
+        )
+
+        def on_line(line: str) -> None:
+            # Live status on the spinner + full detail in the Activity log.
+            self._status = f"{label}: {line[:70]}"
+            self.call_from_thread(activity.write, f"[dim]{escape(line)}[/dim]")
+
         try:
-            self.call_from_thread(
-                convo.write,
-                f"[cyan]Installing {label}…[/cyan] [dim]{escape(' '.join(packages))} "
-                "(this can take a few minutes)[/dim]",
-            )
-            cmd = pip_install_cmd(packages)
-            try:
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
-            except Exception as exc:  # pragma: no cover - subprocess env issues
-                self.call_from_thread(convo.write, f"[red]Install failed: {exc}[/red]")
-                return
-            out = (proc.stdout or "") + (proc.stderr or "")
-            for line in out.strip().splitlines()[-3:]:
-                self.call_from_thread(convo.write, f"[dim]{escape(line)}[/dim]")
-            if proc.returncode == 0:
-                importlib.invalidate_caches()  # let find_spec see the new packages
-                ok = feature_installed(mods)
-                msg = (
-                    f"[green]Installed {label} — ready to use now.[/green]"
-                    if ok
-                    else f"[yellow]Installed {label}; restart oshell to pick it up.[/yellow]"
-                )
-                self.call_from_thread(convo.write, msg)
-                self.call_from_thread(self.query_one(ToolsPanel).render_for, self.agent)
-            else:
-                self.call_from_thread(
-                    convo.write, f"[red]Install of {label} failed (exit {proc.returncode}).[/red]"
-                )
+            rc = run_streaming(pip_install_cmd(packages), on_line)
+        except Exception as exc:  # pragma: no cover - subprocess env issues
+            self.call_from_thread(convo.write, f"[red]Install failed: {exc}[/red]")
+            return
         finally:
             self._busy = False
             self._stream = ""
+
+        if rc == 0:
+            importlib.invalidate_caches()  # let find_spec see the new packages
+            ok = feature_installed(mods)
+            msg = (
+                f"[green]✓ Installed {label} — ready to use now.[/green]"
+                if ok
+                else f"[yellow]Installed {label}; restart oshell to pick it up.[/yellow]"
+            )
+            self.call_from_thread(convo.write, msg)
+            self.call_from_thread(self.query_one(ToolsPanel).render_for, self.agent)
+        else:
+            self.call_from_thread(
+                convo.write,
+                f"[red]Install of {label} failed (exit {rc}) — see the Activity tab.[/red]",
+            )
 
     def _menu_finetune(self) -> None:
         from ..finetune import FineTuneManager, detect_hardware
@@ -383,6 +391,29 @@ class OllamaShellTUI(App):
             self._busy = False
             self._stream = ""
             self.call_from_thread(self.query_one(ContextInspector).refresh_view, self.agent)
+
+
+def run_streaming(cmd: list[str], on_line, timeout: float = 1800) -> int:
+    """Run ``cmd``, calling ``on_line(line)`` for each output line as it arrives.
+
+    stdout+stderr are merged and line-buffered so progress is visible live rather
+    than only at the end. Returns the process exit code.
+    """
+    import subprocess
+
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+    )
+    try:
+        assert proc.stdout is not None
+        for raw in proc.stdout:
+            line = raw.rstrip("\n")
+            if line.strip():
+                on_line(line)
+        return proc.wait(timeout=timeout)
+    finally:
+        if proc.poll() is None:  # pragma: no cover - cleanup on error/timeout
+            proc.kill()
 
 
 def pip_install_cmd(packages: list[str]) -> list[str]:

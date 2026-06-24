@@ -91,8 +91,9 @@ On startup (and any time you press **Esc**) an old-school, keyboard-driven
   **saved as the default** (to `config.local.json`) and persists across sessions
   until you change it.
 - **Install features** — install optional capabilities (RAG, docs export,
-  vision, fine-tuning) into the running environment without leaving the app;
-  progress streams into the conversation and the Tools panel refreshes when done.
+  vision, fine-tuning) into the running environment without leaving the app.
+  Install output **streams live into the Activity tab** (with the current step
+  on the spinner), and the Tools panel refreshes ✓ when it finishes.
 - Plus Chat, Tools, Knowledge base, Fine-tuning, Settings, Help, and Quit.
 
 ## Architecture
