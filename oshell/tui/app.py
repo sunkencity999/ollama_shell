@@ -102,7 +102,7 @@ class ContextInspector(Static):
         for i, msg in enumerate(agent.messages):
             mark = "📌" if i in agent.pinned else ("🚫" if i in agent.excluded else "  ")
             raw = msg.content or f"<{len(msg.tool_calls)} tool call(s)>"
-            preview = raw[:28].replace("\n", " ")
+            preview = escape(raw[:28].replace("\n", " "))  # message text may contain [..] markup
             lines.append(f"{mark} [dim]{i:>2}[/dim] [cyan]{msg.role[:4]}[/cyan] {preview}")
         self.text = "\n".join(lines)
         self.update(self.text)
@@ -512,8 +512,12 @@ class OllamaShellTUI(App):
         if self._pending_paste:
             pasted, self._pending_paste = self._pending_paste, ""
             text = f"{pasted}\n\n{typed}" if typed else pasted
-            echo = f"{typed} [dim](+{pasted.count(chr(10)) + 1} pasted lines)[/dim]" if typed \
-                else f"[dim](pasted {pasted.count(chr(10)) + 1} lines)[/dim]"
+            n = pasted.count(chr(10)) + 1
+            echo = (
+                f"{escape(typed)} [dim](+{n} pasted lines)[/dim]"
+                if typed
+                else f"[dim](pasted {n} lines)[/dim]"
+            )
         else:
             text = typed
             echo = escape(typed)
@@ -557,7 +561,9 @@ class OllamaShellTUI(App):
                 elif isinstance(event, TurnComplete):
                     if event.text:
                         self._last_reply = event.text  # for Ctrl+Y / menu copy
-                    final = event.text or "[dim](no text)[/dim]"
+                    # Escape: the model's reply may contain [..] that Rich would
+                    # parse as markup (markdown links, arrays) and crash on.
+                    final = escape(event.text) if event.text else "[dim](no text)[/dim]"
                     self.call_from_thread(convo.write, final)
                 elif isinstance(event, LimitReached):
                     self.call_from_thread(
@@ -692,11 +698,13 @@ def _summarize_result(result: str) -> str:
     Surfaces empty/error results plainly so the user can tell when a tool found
     nothing — and the model is just talking.
     """
+    # Plain text only — the caller escapes this before rendering, so any Rich
+    # markup tags here would be shown literally rather than styled.
     r = (result or "").strip()
     if not r or r == "(no results)":
-        return "[yellow]no results[/yellow]"
+        return "no results"
     if r.startswith("[error]"):
-        return f"[red]{r[:120]}[/red]"
+        return r[:120]
     first = r.replace("\n", " ")
     n = len(r)
     return f"{n} chars · {first[:90]}{'…' if len(first) > 90 else ''}"

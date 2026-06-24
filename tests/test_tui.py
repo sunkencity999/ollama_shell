@@ -146,7 +146,8 @@ def test_result_summary_is_honest():
 
     assert "no results" in _summarize_result("(no results)")
     assert "no results" in _summarize_result("")
-    assert "red" in _summarize_result("[error] web search failed: boom")
+    # plain text (no Rich markup — the caller escapes it)
+    assert _summarize_result("[error] web search failed: boom").startswith("[error]")
     s = _summarize_result("Title\nhttps://x\nbody text")
     assert "chars" in s and "Title" in s
     assert _compact_args({"query": "hi", "max_results": 5}) == "query=hi, max_results=5"
@@ -431,6 +432,40 @@ async def test_gui_toggle_activates_tools(monkeypatch, tmp_path):
         await pilot.pause()
         assert app.agent.config.gui.enabled is False
         assert "screenshot" not in {t.name for t in app.agent.registry.active()}
+
+
+async def test_markup_in_messages_does_not_crash():
+    # Regression: message content with Rich-markup-like brackets (e.g. a markdown
+    # link or a stray [/dim]) must not crash the context inspector or conversation.
+    from oshell.tui.app import ContextInspector
+
+    class _MarkupProvider(LLMProvider):
+        name = "mk"
+
+        def list_models(self):
+            return ["m"]
+
+        def chat(self, messages, **kwargs):
+            yield ChatChunk(content="see [the docs](http://x) and a stray [/dim] tag", done=True)
+
+    app = OllamaShellTUI(
+        Agent(_MarkupProvider(), ToolRegistry([CurrentTimeTool()]), Config()),
+        show_menu_on_start=False,
+    )
+    async with app.run_test() as pilot:
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "give me a [link] please"  # brackets in the user message too
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if app.agent.messages[-1].role == "assistant":
+                break
+        # No exception bubbled; the inspector rendered with the bracketed content.
+        app.query_one(ContextInspector).refresh_view(app.agent)
+        await pilot.pause()
+        assert "the docs" in app.query_one(ContextInspector).text
 
 
 async def test_menu_shows_on_startup_when_enabled():
