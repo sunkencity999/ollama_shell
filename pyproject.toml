@@ -19,18 +19,15 @@ dependencies = [
     "prompt_toolkit>=3.0.39",
     "requests>=2.31.0",
     "pydantic>=2.5.0",
+    # Web access is core, not optional — an agent that can't search/read the web
+    # is missing table-stakes functionality. Both are lightweight.
+    "ddgs>=2.0",            # web_search (renamed from duckduckgo-search)
+    "beautifulsoup4>=4.12.0",  # fetch_url readable-text extraction
 ]
 
-# ─── Opt-in capability bundles (pip install "ollama-shell[web,tui]") ─────────
+# ─── Opt-in capability bundles (pip install "ollama-shell[rag,tui]") ─────────
 [project.optional-dependencies]
 tui = ["textual>=0.50.0"]
-web = [
-    "ddgs>=2.0",  # renamed from duckduckgo-search
-    "beautifulsoup4>=4.12.0",
-    "html2text>=2020.1.16",
-    "selenium>=4.15.0",
-    "webdriver-manager>=4.0.0",
-]
 rag = ["chromadb>=0.4.18", "sentence-transformers>=2.2.2"]
 finetune = ["mlx-lm>=0.20.0"]  # Apple Silicon LoRA training (NVIDIA: see Unsloth)
 docs = [
@@ -50,7 +47,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.8",
 ]
-all = ["ollama-shell[tui,web,rag,docs,vision]"]
+all = ["ollama-shell[tui,rag,docs,vision]"]
 
 [project.scripts]
 # New clean entrypoint. The legacy monolith remains runnable as `python ollama_shell.py`.

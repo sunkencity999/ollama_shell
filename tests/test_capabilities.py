@@ -7,10 +7,11 @@ from oshell.capabilities import optional_features
 
 def test_lists_expected_features():
     names = {c.name for c in optional_features()}
-    assert any("web" in n for n in names)
     assert any("rag" in n for n in names)
     assert any("finetune" in n for n in names)
     assert any("jira" in n for n in names)
+    # web is a core dependency now, not an optional feature.
+    assert not any("web" in n for n in names)
 
 
 def test_atlassian_reflects_env(monkeypatch):

@@ -3,8 +3,8 @@
 #
 # Usage:
 #   ./install.sh              # core + tui (interactive default)
-#   ./install.sh all          # everything: tui, web, rag, docs, vision, finetune
-#   ./install.sh web,rag      # a custom subset of extras
+#   ./install.sh all          # everything: tui, rag, docs, vision, finetune
+#   ./install.sh rag          # a custom subset of extras (web search is built in)
 #
 # Prefers `uv tool install` (manages a PATH-linked bin dir, editable from this
 # repo). Falls back to a local .venv + a symlink into ~/.local/bin.

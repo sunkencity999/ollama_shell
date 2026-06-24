@@ -35,8 +35,8 @@ def optional_features(config: Config | None = None) -> list[Capability]:
     not just environment variables.
     """
     from .integrations.atlassian import confluence_configured, jira_configured
+    # Note: web (search/fetch) is now a core dependency, not an optional feature.
     feats = [
-        ("web (search/fetch)", _have("duckduckgo_search", "bs4"), "[web]"),
         ("rag (knowledge base)", _have("chromadb", "sentence_transformers"), "[rag]"),
         ("docs (docx/xlsx/pdf)", _have("docx", "openpyxl"), "[docs]"),
         ("tui", _have("textual"), "[tui]"),

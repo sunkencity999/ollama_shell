@@ -56,9 +56,9 @@ class WebSearchTool(Tool):
                 from ddgs import DDGS  # type: ignore
             except ImportError:
                 from duckduckgo_search import DDGS  # type: ignore
-        except ImportError as exc:  # pragma: no cover - exercised via extras
+        except ImportError as exc:  # pragma: no cover - ddgs is a core dep
             raise ToolError(
-                "web search needs the optional 'web' extra: pip install 'ollama-shell[web]'"
+                "web search backend missing (ddgs). Reinstall: pip install -e . / ./install.sh"
             ) from exc
 
         if not query.strip():
@@ -110,9 +110,9 @@ class FetchUrlTool(Tool):
             raise ToolError("url must be an absolute http(s) URL")
         try:
             from bs4 import BeautifulSoup  # type: ignore
-        except ImportError as exc:  # pragma: no cover - exercised via extras
+        except ImportError as exc:  # pragma: no cover - bs4 is a core dep
             raise ToolError(
-                "fetch_url needs the optional 'web' extra: pip install 'ollama-shell[web]'"
+                "fetch backend missing (beautifulsoup4). Reinstall: pip install -e . / ./install.sh"
             ) from exc
 
         try:

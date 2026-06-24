@@ -2,8 +2,8 @@
 #
 # Usage:
 #   .\install.ps1              # core + tui (interactive default)
-#   .\install.ps1 all          # everything: tui, web, rag, docs, vision, finetune
-#   .\install.ps1 web,rag      # a custom subset of extras
+#   .\install.ps1 all          # everything: tui, rag, docs, vision, finetune
+#   .\install.ps1 rag          # a custom subset of extras (web search is built in)
 #
 # Prefers `uv tool install` (manages a PATH-linked bin dir, editable from this
 # repo). Falls back to a local .venv + adding its Scripts dir to the user PATH.

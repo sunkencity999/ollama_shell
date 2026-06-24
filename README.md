@@ -21,9 +21,9 @@ Created by Christopher Bradford · [contact@christopherdanielbradford.com](mailt
 
 | Principle | What it means in practice |
 |-----------|---------------------------|
-| **Local-first** | Inference is local (Ollama/MLX/LM Studio). Every networked tool is flagged and shown in a privacy banner; the base install reaches nothing. |
+| **Local-first** | Inference is local (Ollama/MLX/LM Studio). Network-touching tools (web search/fetch, Atlassian) are flagged in a privacy banner and only run when the model calls them — nothing phones home on its own. |
 | **Agent as the shell** | Chat, file ops, web search, etc. are *tools* the model invokes in a loop — not bolted-on commands. New capabilities are additive: register a tool, done. |
-| **Light core, opt-in power** | The core install is 5 pure-Python deps. Heavy features (web, RAG, docs export, fine-tuning) are optional `pip` extras. |
+| **Light core, opt-in power** | A small core (chat, agent loop, **web search + fetch**, files). Heavy features (RAG, docs export, fine-tuning, the TUI) are optional `pip` extras. |
 
 ## Quick start
 
@@ -31,8 +31,8 @@ Created by Christopher Bradford · [contact@christopherdanielbradford.com](mailt
 # 1. Install. Puts `oshell` on your PATH (via `uv tool install`, editable;
 #    falls back to a venv + symlink). Warns if Ollama isn't running.
 ./install.sh            # macOS / Linux — core + tui (interactive default)
-./install.sh all        # everything: tui, web, rag, docs, vision, finetune
-./install.sh web,rag    # or a custom subset of extras
+./install.sh all        # everything: tui, rag, docs, vision, finetune
+./install.sh rag        # or a custom subset of extras (web search is built in)
 #   Windows (PowerShell):  .\install.ps1   (same arguments)
 
 # 2. Make sure Ollama is running (https://ollama.com), then — from anywhere:
@@ -102,7 +102,7 @@ oshell/
   tools/               MCP-style host
     base.py              Tool + ToolRegistry (advertise specs, dispatch calls)
     builtins.py          current_time, list_models, sandboxed read/write/list files
-    web.py               web_search + fetch_url (opt-in [web]; flagged network-touching)
+    web.py               web_search + fetch_url (core; flagged network-touching)
     documents.py         create_document — txt/md/csv/docx/xlsx/pdf (opt-in [docs])
     knowledge.py         add_knowledge + search_knowledge tools (opt-in [rag])
     atlassian.py         jira_search/get_issue + confluence_search/get_page (Server/DC)
@@ -137,7 +137,6 @@ shared) → `config.local.json` (per-machine, git-ignored) → `OSHELL_*` env va
 | Extra | Adds |
 |-------|------|
 | `tui` | Textual workspace |
-| `web` | DuckDuckGo search + scraping (BeautifulSoup, Selenium) |
 | `rag` | ChromaDB + sentence-transformers knowledge base |
 | `finetune` | MLX-LM LoRA fine-tuning (Apple Silicon) |
 | `docs` | Word/Excel/PDF/Markdown export |
