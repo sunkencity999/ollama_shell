@@ -7,7 +7,7 @@ import sys
 from oshell.config import ShellConfig
 from oshell.providers.base import ToolCall
 from oshell.tools import ToolRegistry
-from oshell.tools.system import RunCommandTool, SystemInfoTool, _total_ram_gb
+from oshell.tools.system import RunCommandTool, SystemInfoTool, _total_ram_gb, shell_invocation
 
 
 def _py(code: str) -> str:
@@ -83,3 +83,23 @@ def test_system_info_reports_platform():
 def test_total_ram_is_positive_or_none():
     ram = _total_ram_gb()
     assert ram is None or ram > 0
+
+
+def test_shell_invocation_posix_uses_sh():
+    for sysname in ("Linux", "Darwin"):
+        args, use_shell = shell_invocation("uname -a", system=sysname)
+        assert args == "uname -a" and use_shell is True
+
+
+def test_shell_invocation_windows_uses_powershell():
+    args, use_shell = shell_invocation("Get-Process", system="Windows")
+    assert use_shell is False
+    assert isinstance(args, list)
+    assert args[0].lower().endswith(("powershell", "powershell.exe", "pwsh", "pwsh.exe"))
+    assert "-Command" in args and args[-1] == "Get-Process"
+    assert "-NoProfile" in args
+
+
+def test_shell_invocation_windows_cmd_override():
+    args, use_shell = shell_invocation("dir", system="Windows", windows_shell="cmd")
+    assert args == "dir" and use_shell is True  # cmd.exe via the shell

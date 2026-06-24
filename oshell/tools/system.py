@@ -15,12 +15,36 @@ from __future__ import annotations
 
 import os
 import platform
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from ..config import ShellConfig
 from .base import Tool, ToolError
+
+
+def shell_invocation(
+    command: str, system: str | None = None, windows_shell: str = "auto"
+) -> tuple[str | list[str], bool]:
+    """Return ``(args, use_shell)`` for running ``command`` on this platform.
+
+    * Windows → PowerShell (``pwsh`` if present, else ``powershell``) via an
+      explicit argv, unless ``windows_shell == "cmd"`` (then cmd.exe via shell).
+    * POSIX (macOS/Linux) → the command string run through ``/bin/sh``.
+
+    Factored out (and platform-parameterized) so the choice is unit-testable
+    without actually being on Windows.
+    """
+    system = (system or platform.system()).lower()
+    if system == "windows" and windows_shell != "cmd":
+        if windows_shell in ("auto", "pwsh"):
+            exe = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
+        else:  # "powershell"
+            exe = shutil.which("powershell") or "powershell"
+        return ([exe, "-NoProfile", "-NonInteractive", "-Command", command], False)
+    # POSIX sh, or Windows cmd.exe when forced — both via the shell.
+    return (command, True)
 
 
 class RunCommandTool(Tool):
@@ -55,10 +79,11 @@ class RunCommandTool(Tool):
             secs = float(timeout) if timeout else self.config.timeout
         except (TypeError, ValueError):
             secs = self.config.timeout
+        args, use_shell = shell_invocation(command, windows_shell=self.config.windows_shell)
         try:
             proc = subprocess.run(
-                command,
-                shell=True,  # use the platform shell (sh / cmd.exe) for portability
+                args,
+                shell=use_shell,  # PowerShell argv on Windows; sh on macOS/Linux
                 cwd=self.workspace,
                 capture_output=True,
                 text=True,

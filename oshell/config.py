@@ -45,6 +45,8 @@ class ShellConfig(BaseModel):
     enabled: bool = True  # commands run with full autonomy by default
     timeout: float = 60.0  # per-command wall-clock limit (seconds)
     max_output: int = 10000  # truncate combined stdout/stderr to this many chars
+    # Which shell to use on Windows: auto -> pwsh, else powershell; or force "cmd".
+    windows_shell: str = "auto"  # auto | powershell | pwsh | cmd
 
 
 class KnowledgeConfig(BaseModel):
