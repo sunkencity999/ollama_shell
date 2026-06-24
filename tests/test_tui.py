@@ -393,6 +393,46 @@ async def test_copy_nothing_is_safe():
         await pilot.pause()
 
 
+async def test_gui_toggle_activates_tools(monkeypatch, tmp_path):
+    # A vision+tools model so GUI tools can actually register when toggled on.
+    monkeypatch.chdir(tmp_path)  # persist gui flag into a throwaway config.local.json
+
+    class _VisionProvider(LLMProvider):
+        name = "v"
+
+        def list_models(self):
+            return ["vmodel"]
+
+        def capabilities(self, model):
+            return {"vision", "tools"}
+
+        def chat(self, messages, **kwargs):
+            yield ChatChunk(content="ok", done=True)
+
+    # pyautogui is installed in the dev env, so the controller import path is fine.
+    pytest.importorskip("pyautogui")
+    cfg = Config()
+    app = OllamaShellTUI(
+        Agent(_VisionProvider(), ToolRegistry([CurrentTimeTool()]), cfg, model="vmodel"),
+        show_menu_on_start=False,
+    )
+    # The agent's registry starts without GUI; rebuild via the app on toggle.
+    async with app.run_test() as pilot:
+        assert not app.agent.config.gui.enabled
+        app._toggle_gui()
+        await pilot.pause()
+        assert app.agent.config.gui.enabled is True
+        names = {t.name for t in app.agent.registry.active()}
+        assert "screenshot" in names and "gui_click" in names
+        # The model is now told about them:
+        assert "screenshot" in app.agent.messages[0].content
+        # Toggle back off:
+        app._toggle_gui()
+        await pilot.pause()
+        assert app.agent.config.gui.enabled is False
+        assert "screenshot" not in {t.name for t in app.agent.registry.active()}
+
+
 async def test_menu_shows_on_startup_when_enabled():
     from oshell.tui.menu import MenuScreen
 

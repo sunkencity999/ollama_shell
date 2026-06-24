@@ -26,6 +26,7 @@ MENU_ITEMS: list[tuple[str, str, str]] = [
     ("copy_transcript", "Copy transcript", "Copy the whole conversation to the clipboard"),
     ("attach", "Attach image", "Attach an image for a vision model"),
     ("features", "Install features", "Add optional capabilities (rag, docs, vision, finetune)"),
+    ("gui_toggle", "Computer-use (GUI)", "Turn desktop GUI control on/off (needs a vision model)"),
     ("knowledge", "Knowledge base", "How to store & recall local notes"),
     ("finetune", "Fine-tuning", "Detect training backend and list jobs"),
     ("config", "Settings", "Show resolved configuration (secrets redacted)"),

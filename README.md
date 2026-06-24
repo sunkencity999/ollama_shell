@@ -207,15 +207,26 @@ screenshot, then click/type/press keys — for tasks a shell can't do. It's
 *see* the screen). The terminal stays the autonomous default; the model is told
 to prefer `run_command` and use the GUI only when a task genuinely needs it.
 
-```jsonc
-// config.local.json
-{ "gui": { "enabled": true } }
-```
+It takes **two** opt-ins (both one-time): install the backend, then turn it on.
 
 - Install the backend from the menu (**Install features → GUI computer-use**) or
   `./install.sh gui` (pyautogui). macOS needs **Screen Recording + Accessibility**
   permission for your terminal; Linux X11 works out of the box (Wayland support is
   a planned native backend).
+- Turn it on from the menu (**Computer-use (GUI)** toggle) — this persists
+  `gui.enabled` and the `screenshot`/`gui_*` tools appear in the Tools panel
+  immediately (you'll see them go from absent to listed). Or set it by hand:
+
+  ```jsonc
+  // config.local.json
+  { "gui": { "enabled": true } }
+  ```
+
+> If the toggle says it's on but no GUI tools appear, the active model isn't
+> vision-capable — pick one in **Models**. The Tools panel's *Optional features*
+> line only reflects whether a package is **installed**, not whether a feature is
+> switched on; the **Active tools** list is the source of truth for what the model
+> can actually call.
 - Select a vision+tools model (e.g. `gemma3`/`gemma4`, `llama3.2-vision`) in
   **Models** — the GUI tools (`screenshot`, `gui_click`, `gui_type`, `gui_key`,
   `gui_move`) appear only then, flagged `exec` (red).

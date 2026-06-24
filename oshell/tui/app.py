@@ -277,6 +277,8 @@ class OllamaShellTUI(App):
             self.run_worker(self._open_model_picker, thread=True, exclusive=True)
         elif choice == "features":
             self.push_screen(FeaturesScreen(), self._on_feature_choice)
+        elif choice == "gui_toggle":
+            self._toggle_gui()
         elif choice == "attach":
             self.push_screen(AttachImageScreen(), self._on_attach_image)
         elif choice == "copy_reply":
@@ -313,12 +315,9 @@ class OllamaShellTUI(App):
             self.query_one(Input).focus()
             return
         self.agent.model = name
-        # Rebuild the registry for the new model (GUI tools are vision-gated).
-        self.agent.registry = default_registry(
-            self.agent.provider, self.agent.config, model=name
-        )
-        self.query_one(ToolsPanel).render_for(self.agent)
-        self.sub_title = self._subtitle()  # header reflects the new model + tools
+        # Rebuild tools for the new model (GUI tools are vision-gated) and refresh
+        # the system prompt so the model knows what it now has.
+        self._rebuild_registry()
         # Persist as the default so it sticks across sessions (until changed).
         from ..config import update_local_config
 
@@ -347,6 +346,47 @@ class OllamaShellTUI(App):
             "send a message; use a vision-capable model.[/dim]"
         )
         self.query_one(Input).focus()
+
+    def _rebuild_registry(self) -> None:
+        """Rebuild tools for the current model/config and tell the model about them."""
+        self.agent.registry = default_registry(
+            self.agent.provider, self.agent.config, model=self.agent.model
+        )
+        self.agent.rebuild_system_prompt()
+        self.query_one(ToolsPanel).render_for(self.agent)
+        self.sub_title = self._subtitle()
+
+    def _toggle_gui(self) -> None:
+        import importlib.util
+
+        from ..config import update_local_config
+
+        new = not self.agent.config.gui.enabled
+        self.agent.config.gui.enabled = new
+        try:
+            update_local_config({"gui": {"enabled": new}})
+        except Exception:
+            pass
+        self._rebuild_registry()
+        convo = self._conversation()
+        if not new:
+            convo.write("[yellow]Computer-use (GUI) is now OFF.[/yellow]")
+            return
+        if any(t.name == "screenshot" for t in self.agent.registry.active()):
+            convo.write(
+                "[green]Computer-use (GUI) is now ON[/green] — screenshot/gui_click/gui_type/"
+                "gui_key/gui_move are active. (macOS: grant Screen Recording + Accessibility.)"
+            )
+        elif importlib.util.find_spec("pyautogui") is None:
+            convo.write(
+                "[yellow]GUI turned on, but pyautogui isn't installed[/yellow] — "
+                "Install features → GUI computer-use first."
+            )
+        else:
+            convo.write(
+                "[yellow]GUI turned on, but the current model isn't vision+tools capable.[/yellow] "
+                "Pick a vision model (e.g. gemma3/4, llama3.2-vision) in Models."
+            )
 
     def _on_feature_choice(self, fid: str | None) -> None:
         if not fid:

@@ -44,7 +44,7 @@ def optional_features(config: Config | None = None) -> list[Capability]:
         ("gui (computer-use)", _have("pyautogui"), "[gui]"),
     ]
     out = [
-        Capability(n, ok, "enabled" if ok else f"pip install 'ollama-shell{extra}'")
+        Capability(n, ok, "installed" if ok else f"pip install 'ollama-shell{extra}'")
         for n, ok, extra in feats
     ]
 

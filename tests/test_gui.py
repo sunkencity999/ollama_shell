@@ -156,6 +156,32 @@ def test_gui_tools_are_sensitive():
     assert CurrentTimeTool().sensitive is False
 
 
+def test_rebuild_system_prompt_reflects_new_tools():
+    # When GUI tools are added to the registry, the system prompt must mention them.
+    from oshell.agent import Agent
+    from oshell.tools.gui import gui_tools
+
+    agent = Agent(_CapProvider({"vision", "tools"}), ToolRegistry([CurrentTimeTool()]), Config())
+    assert "screenshot" not in agent.messages[0].content
+    agent.registry = ToolRegistry([CurrentTimeTool(), *gui_tools()])
+    agent.rebuild_system_prompt()
+    assert "screenshot" in agent.messages[0].content
+    assert "PREFER the terminal" in agent.messages[0].content
+
+
+def test_rebuild_system_prompt_respects_custom():
+    from oshell.agent import Agent
+
+    agent = Agent(
+        _CapProvider(set()),
+        ToolRegistry([CurrentTimeTool()]),
+        Config(),
+        system_prompt="CUSTOM",
+    )
+    agent.rebuild_system_prompt()
+    assert agent.messages[0].content == "CUSTOM"  # explicit prompt preserved
+
+
 # ── cross-platform key normalization ─────────────────────────────────────---
 def test_key_normalization_maps_meta_per_platform(monkeypatch):
     import oshell.gui.controller as ctl

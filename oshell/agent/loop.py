@@ -94,11 +94,18 @@ class Agent:
         self.config = config
         self.model = model or config.default_model
         # Build a tool-aware prompt unless the caller supplies an explicit one.
+        self._custom_prompt = system_prompt
         content = system_prompt if system_prompt is not None else build_system_prompt(registry)
         self.messages: list[Message] = [Message(role="system", content=content)]
         # Context management: indices into ``self.messages``.
         self.pinned: set[int] = {0}  # system prompt is pinned by default
         self.excluded: set[int] = set()
+
+    def rebuild_system_prompt(self) -> None:
+        """Refresh the system message after the registry changes (tools toggled,
+        model switched) so the model is told about the now-active tools."""
+        if self._custom_prompt is None and self.messages and self.messages[0].role == "system":
+            self.messages[0].content = build_system_prompt(self.registry)
 
     # ── context management ───────────────────────────────────────────────────
     def pin(self, index: int) -> None:
