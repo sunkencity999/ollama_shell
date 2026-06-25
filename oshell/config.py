@@ -52,6 +52,14 @@ class ShellConfig(BaseModel):
     persistent: bool = True
 
 
+class MemoryConfig(BaseModel):
+    """Lightweight, always-on persistent memory (facts about the user)."""
+
+    enabled: bool = True  # on by default — dependency-free
+    path: str = "~/.oshell/memory.json"
+    max_inject: int = 40  # most-recent memories injected into the system prompt
+
+
 class GuiConfig(BaseModel):
     """GUI computer-use (desktop control). Opt-in; vision-model gated."""
 
@@ -124,6 +132,9 @@ class Config(BaseModel):
 
     # Backend
     provider: ProviderConfig = Field(default_factory=ProviderConfig)
+
+    # Always-on persistent memory (facts about the user)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
 
     # Local vector knowledge base
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)

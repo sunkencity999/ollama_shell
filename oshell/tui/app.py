@@ -292,6 +292,8 @@ class OllamaShellTUI(App):
             self._menu_finetune()
         elif choice == "config":
             self._menu_config()
+        elif choice == "memory":
+            self._menu_memory()
         elif choice == "knowledge":
             self._menu_knowledge()
         elif choice == "help":
@@ -353,7 +355,7 @@ class OllamaShellTUI(App):
     def _rebuild_registry(self) -> None:
         """Rebuild tools for the current model/config and tell the model about them."""
         self.agent.registry = default_registry(
-            self.agent.provider, self.agent.config, model=self.agent.model
+            self.agent.provider, self.agent.config, model=self.agent.model, memory=self.agent.memory
         )
         self.agent.rebuild_system_prompt()
         self.query_one(ToolsPanel).render_for(self.agent)
@@ -516,6 +518,22 @@ class OllamaShellTUI(App):
             "[dim]Full config (secrets redacted): run `oshell config`.[/dim]"
         )
 
+    def _menu_memory(self) -> None:
+        mem = self.agent.memory
+        if mem is None:
+            self._conversation().write("[dim]Memory is disabled.[/dim]")
+            return
+        items = mem.all()
+        if not items:
+            self._conversation().write(
+                "[b]Memory[/b] is empty. The assistant will remember durable facts as you "
+                "chat (shown as 📝). Say 'forget X' to remove one."
+            )
+            return
+        lines = [f"[b]Memory[/b] — {len(items)} fact(s) (say 'forget X' or 'forget all'):"]
+        lines += [f"  • {escape(m['text'])}" for m in items[-40:]]
+        self._conversation().write("\n".join(lines))
+
     def _menu_knowledge(self) -> None:
         self._conversation().write(
             "[b]Knowledge base[/b] (local vectors)\n"
@@ -579,6 +597,7 @@ class OllamaShellTUI(App):
     def _worker(self, text: str, images: list[str] | None = None) -> None:
         convo, activity = self._conversation(), self._activity()
         used_gui = False  # did this turn drive the desktop GUI?
+        used_memory = False  # did this turn change long-term memory?
         try:
             for event in self.agent.send(text, images=images):
                 if isinstance(event, TextDelta):
@@ -586,19 +605,27 @@ class OllamaShellTUI(App):
                 elif isinstance(event, ToolStarted):
                     if event.name == "screenshot" or event.name.startswith("gui_"):
                         used_gui = True
+                    if event.name in ("remember", "forget"):
+                        used_memory = True
                     self._status = f"Running {event.name}"
                     self._stream = ""  # back to spinner while the tool runs
-                    args = _compact_args(event.arguments)
-                    # Show the real call INLINE so the user can trust (or catch) it.
-                    self.call_from_thread(
-                        convo.write, f"[cyan]🔧 {event.name}[/cyan][dim]({escape(args)})[/dim]"
-                    )
+                    if event.name == "remember":  # nicer, visible memory capture
+                        fact = escape(str(event.arguments.get("text", "")))
+                        line = f"[magenta]📝 remembered:[/magenta] {fact}"
+                        self.call_from_thread(convo.write, line)
+                    else:
+                        args = _compact_args(event.arguments)
+                        # Show the real call INLINE so the user can trust (or catch) it.
+                        self.call_from_thread(
+                            convo.write, f"[cyan]🔧 {event.name}[/cyan][dim]({escape(args)})[/dim]"
+                        )
                     act = f"[dim]⚙ {event.name}({event.arguments})[/dim]"
                     self.call_from_thread(activity.write, act)
                 elif isinstance(event, ToolFinished):
                     self._status = "Thinking"
-                    summary = _summarize_result(event.result)
-                    self.call_from_thread(convo.write, f"[dim]   ↳ {escape(summary)}[/dim]")
+                    if event.name != "remember":  # already shown as "📝 remembered: …"
+                        summary = _summarize_result(event.result)
+                        self.call_from_thread(convo.write, f"[dim]   ↳ {escape(summary)}[/dim]")
                     self.call_from_thread(
                         activity.write, f"[dim]  ↳ {escape(event.result[:200])}[/dim]"
                     )
@@ -619,6 +646,9 @@ class OllamaShellTUI(App):
             # Stop the indicator and refresh the context view (guard teardown race).
             self._busy = False
             self._stream = ""
+            if used_memory:
+                # Re-inject updated memory so later turns reflect what was just saved.
+                self.agent.rebuild_system_prompt()
             try:
                 inspector = self.query_one(ContextInspector)
                 self.call_from_thread(inspector.refresh_view, self.agent)
@@ -763,9 +793,12 @@ def _summarize_result(result: str) -> str:
 
 
 def run_tui(model: str | None = None) -> None:
+    from ..memory import MemoryStore
+
     config = Config.load()
     provider = get_provider(config)
     m = model or config.default_model
-    registry = default_registry(provider, config, model=m)
-    agent = Agent(provider, registry, config, model=m)
+    memory = MemoryStore(config.memory.path)
+    registry = default_registry(provider, config, model=m, memory=memory)
+    agent = Agent(provider, registry, config, model=m, memory=memory)
     OllamaShellTUI(agent).run()

@@ -38,10 +38,13 @@ app.add_typer(finetune_app, name="finetune")
 
 
 def _build_agent(config: Config, model: str | None) -> Agent:
+    from .memory import MemoryStore
+
     provider = get_provider(config)
     m = model or config.default_model
-    registry = default_registry(provider, config, model=m)
-    return Agent(provider, registry, config, model=m)
+    memory = MemoryStore(config.memory.path)
+    registry = default_registry(provider, config, model=m, memory=memory)
+    return Agent(provider, registry, config, model=m, memory=memory)
 
 
 def _privacy_banner(agent: Agent) -> Panel:

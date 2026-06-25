@@ -272,6 +272,22 @@ The control layer is a `Controller` abstraction (`oshell/gui/`) with a pyautogui
 backend today and a clean seam for native backends (Wayland `grim`/`ydotool`,
 macOS `screencapture`/`cliclick`).
 
+## Memory
+
+Ollama Shell keeps a lightweight, **always-on memory** of durable facts about you
+(name, tools you use, how you like answers, ongoing projects) so it carries
+context across sessions — separate from the heavier, opt-in RAG knowledge base.
+
+- **Hybrid capture**: the model saves a fact on its own when it clearly matters,
+  shown inline as `📝 remembered: …` so you see (and can correct) it. You can
+  also just say "remember that …".
+- **Auto-recall**: stored facts are **injected into the system prompt**, so the
+  model simply *knows* them next launch — no manual search. (`recall` lets it
+  search the full set when memory grows.)
+- Dependency-free, stored at `~/.oshell/memory.json`. View it via **menu →
+  Memory**; remove with "forget X" or "forget all". Disable with
+  `{"memory":{"enabled":false}}`.
+
 ## Fine-tuning (local LoRA)
 
 On Apple Silicon, `oshell finetune` drives MLX-LM LoRA training; jobs are tracked

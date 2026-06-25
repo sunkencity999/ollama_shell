@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from ..config import Config
 from ..integrations.atlassian import confluence_configured, jira_configured
@@ -32,11 +33,17 @@ __all__ = ["Tool", "ToolError", "ToolRegistry", "default_registry"]
 
 
 def default_registry(
-    provider: LLMProvider, config: Config, workspace: Path | str = ".", model: str | None = None
+    provider: LLMProvider,
+    config: Config,
+    workspace: Path | str = ".",
+    model: str | None = None,
+    memory: Any = None,
 ) -> ToolRegistry:
     """Assemble the standard toolset. ``config.enabled_tools`` gates which are
     advertised to the model (``["*"]`` = all). GUI computer-use tools are added
-    only when opted in *and* the active model is vision-capable."""
+    only when opted in *and* the active model is vision-capable. ``memory`` (a
+    MemoryStore) is shared with the agent so injected facts and the remember tool
+    use the same store."""
     kb = _SharedKB(config)  # one lazy knowledge base shared by both KB tools
     tools: list[Tool] = [
         CurrentTimeTool(),
@@ -52,6 +59,12 @@ def default_registry(
         AddKnowledgeTool(kb),
         SearchKnowledgeTool(kb),
     ]
+    if config.memory.enabled:
+        from ..memory import MemoryStore
+        from .memory import memory_tools
+
+        store = memory if memory is not None else MemoryStore(config.memory.path)
+        tools += memory_tools(store)
     # Atlassian tools appear only when their server is configured (env or
     # config.local.json), so we don't advertise unusable tools to the model.
     atl = config.atlassian

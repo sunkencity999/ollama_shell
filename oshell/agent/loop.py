@@ -12,6 +12,7 @@ the TUI's context inspector can visualize and edit exactly what the model sees.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Any
 
 from ..config import Config
 from ..providers.base import LLMProvider, Message
@@ -32,13 +33,16 @@ DEFAULT_SYSTEM_PROMPT = (
 )
 
 
-def build_system_prompt(registry: ToolRegistry, base: str = DEFAULT_SYSTEM_PROMPT) -> str:
+def build_system_prompt(
+    registry: ToolRegistry, base: str = DEFAULT_SYSTEM_PROMPT, memory: Any = None
+) -> str:
     """Compose a tool-aware system prompt.
 
     Small local models otherwise fall back to an "I'm an offline LLM with no
     internet" persona and refuse perfectly-doable requests. We therefore list
     the *actual* available tools and, when any reach the network, state plainly
-    that the model is NOT disconnected and must use them.
+    that the model is NOT disconnected and must use them. Stored memories are
+    injected so the model remembers the user across sessions.
     """
     tools = registry.active()
     if not tools:
@@ -89,6 +93,19 @@ def build_system_prompt(registry: ToolRegistry, base: str = DEFAULT_SYSTEM_PROMP
             "search returns nothing useful, say so plainly and offer to refine the query — "
             "never fabricate an answer to seem helpful."
         )
+
+    if "remember" in names:
+        prompt += (
+            "\n\nLong-term memory: when the user shares a durable preference or fact about "
+            "themselves worth keeping for future sessions (their name, tools they use, how "
+            "they like answers, ongoing projects), call remember(...) with one concise "
+            "sentence. Don't store secrets/passwords or transient details unless asked."
+        )
+    if memory is not None:
+        items = memory.recent(40)
+        if items:
+            facts = "\n".join(f"- {m['text']}" for m in items)
+            prompt += f"\n\nThings you remember about the user (long-term memory):\n{facts}"
     return prompt
 
 
@@ -103,14 +120,20 @@ class Agent:
         *,
         model: str | None = None,
         system_prompt: str | None = None,
+        memory: Any = None,
     ):
         self.provider = provider
         self.registry = registry
         self.config = config
+        self.memory = memory  # MemoryStore (or None) — injected facts + remember tool
         self.model = model or config.default_model
         # Build a tool-aware prompt unless the caller supplies an explicit one.
         self._custom_prompt = system_prompt
-        content = system_prompt if system_prompt is not None else build_system_prompt(registry)
+        content = (
+            system_prompt
+            if system_prompt is not None
+            else build_system_prompt(registry, memory=memory)
+        )
         self.messages: list[Message] = [Message(role="system", content=content)]
         # Context management: indices into ``self.messages``.
         self.pinned: set[int] = {0}  # system prompt is pinned by default
@@ -118,9 +141,9 @@ class Agent:
 
     def rebuild_system_prompt(self) -> None:
         """Refresh the system message after the registry changes (tools toggled,
-        model switched) so the model is told about the now-active tools."""
+        model switched) or memory updates, so the model has the current tools+facts."""
         if self._custom_prompt is None and self.messages and self.messages[0].role == "system":
-            self.messages[0].content = build_system_prompt(self.registry)
+            self.messages[0].content = build_system_prompt(self.registry, memory=self.memory)
 
     # ── context management ───────────────────────────────────────────────────
     def pin(self, index: int) -> None:
