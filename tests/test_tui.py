@@ -121,15 +121,16 @@ async def test_f2_still_opens_menu():
 
 
 async def test_models_menu_opens_picker_and_sets_model():
-    from oshell.tui.menu import MenuScreen, ModelScreen
+    from oshell.tui.menu import MENU_ITEMS, MenuScreen, ModelScreen
 
+    num = next(i for i, (cid, *_r) in enumerate(MENU_ITEMS, start=1) if cid == "models")
     app = _app()  # starts on default model "llama3"
     assert app.agent.model != "scripted-model"
     async with app.run_test() as pilot:
         await pilot.press("escape")  # open menu
         await pilot.pause()
         assert isinstance(app.screen, MenuScreen)
-        await pilot.press("2")  # "2. Models" -> opens the picker (in a worker)
+        await pilot.press(str(num))  # "Models" -> opens the picker (in a worker)
         for _ in range(40):
             await pilot.pause(0.05)
             if isinstance(app.screen, ModelScreen):
@@ -535,6 +536,48 @@ async def test_normal_turn_does_not_notify(monkeypatch):
             if not app._busy:
                 break
         assert not notified  # no GUI used -> no notification spam
+
+
+async def test_session_persist_and_resume(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # config.local.json writes isolated
+    cfg = Config()
+    cfg.session.path = str(tmp_path / "sess.json")
+
+    def make_app():
+        return OllamaShellTUI(
+            Agent(_Scripted(), ToolRegistry([CurrentTimeTool()]), cfg), show_menu_on_start=False
+        )
+
+    # First app: have a turn, which persists the transcript.
+    app1 = make_app()
+    async with app1.run_test() as pilot:
+        app1.query_one("Input").focus()
+        app1.query_one("Input").value = "remember the alamo"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if not app1._busy and any(m.role == "assistant" for m in app1.agent.messages):
+                break
+
+    # Second app with the same session path resumes the prior messages.
+    app2 = make_app()
+    async with app2.run_test():
+        contents = [m.content for m in app2.agent.messages]
+        assert "remember the alamo" in contents
+        assert "hello from the model" in contents
+
+
+async def test_new_conversation_clears(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    app = _app()
+    app.agent.config.session.path = str(tmp_path / "sess.json")
+    async with app.run_test() as pilot:
+        app.agent.messages.append(Message(role="user", content="something"))
+        app._new_conversation()
+        await pilot.pause()
+        # Only the system message remains.
+        assert [m.role for m in app.agent.messages] == ["system"]
 
 
 async def test_menu_shows_on_startup_when_enabled():

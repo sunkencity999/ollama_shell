@@ -20,6 +20,7 @@ from textual.widgets.option_list import Option
 # (id, label, description) — order defines the numbering.
 MENU_ITEMS: list[tuple[str, str, str]] = [
     ("chat", "Chat", "Talk to the model (close this menu)"),
+    ("new_chat", "New conversation", "Clear the transcript and start fresh"),
     ("models", "Models", "Choose the active model"),
     ("tools", "Tools", "Show available tools & capabilities"),
     ("copy_reply", "Copy last reply", "Copy the model's last reply to the clipboard"),

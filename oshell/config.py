@@ -52,6 +52,14 @@ class ShellConfig(BaseModel):
     persistent: bool = True
 
 
+class SessionConfig(BaseModel):
+    """Persist & resume the conversation transcript across runs."""
+
+    persist: bool = True
+    path: str = "~/.oshell/last_session.json"
+    max_messages: int = 200
+
+
 class MemoryConfig(BaseModel):
     """Lightweight, always-on persistent memory (facts about the user)."""
 
@@ -135,6 +143,9 @@ class Config(BaseModel):
 
     # Always-on persistent memory (facts about the user)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+
+    # Conversation persistence / resume
+    session: SessionConfig = Field(default_factory=SessionConfig)
 
     # Local vector knowledge base
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)

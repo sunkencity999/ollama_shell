@@ -199,10 +199,32 @@ class OllamaShellTUI(App):
             "[dim]Press Esc for the menu · Ctrl+Y copies the last reply "
             "(Option/Shift+drag to select text).[/dim]"
         )
+        self._maybe_resume_session()
         # Drives the live spinner / streaming preview.
         self.set_interval(0.1, self._tick)
         if self._show_menu_on_start:
             self.action_open_menu()
+
+    def _maybe_resume_session(self) -> None:
+        """Load and render the previous conversation, if any."""
+        scfg = self.agent.config.session
+        if not scfg.persist:
+            return
+        from .. import session as session_mod
+
+        prior = session_mod.load_session(scfg.path)
+        if not prior:
+            return
+        self.agent.messages.extend(prior)  # keep [system] + restored turns
+        convo = self._conversation()
+        convo.write(f"[dim]— resumed {len(prior)} earlier messages —[/dim]")
+        for m in prior:
+            if m.role == "user":
+                convo.write(f"[bold green]›[/] {escape(m.content)}")
+            elif m.role == "assistant" and m.content:
+                convo.write(escape(m.content))
+                self._last_reply = m.content
+        self.query_one(ContextInspector).refresh_view(self.agent)
 
     def _tick(self) -> None:
         """Render the live region: spinner+status while working, or streamed text."""
@@ -274,6 +296,8 @@ class OllamaShellTUI(App):
             self.exit()
         elif choice == "tools":
             self.query_one(TabbedContent).active = "tab-tools"
+        elif choice == "new_chat":
+            self._new_conversation()
         elif choice == "models":
             self.run_worker(self._open_model_picker, thread=True, exclusive=True)
         elif choice == "features":
@@ -518,6 +542,34 @@ class OllamaShellTUI(App):
             "[dim]Full config (secrets redacted): run `oshell config`.[/dim]"
         )
 
+    def _save_session(self) -> None:
+        scfg = self.agent.config.session
+        if not scfg.persist:
+            return
+        from .. import session as session_mod
+
+        try:
+            session_mod.save_session(self.agent.messages, scfg.path, scfg.max_messages)
+        except Exception:  # pragma: no cover - never let persistence break a turn
+            pass
+
+    def _new_conversation(self) -> None:
+        """Start fresh: clear the transcript, the saved session, and the screen."""
+        from .. import session as session_mod
+
+        system = self.agent.messages[0] if self.agent.messages else None
+        self.agent.messages = [system] if system else []
+        self.agent.pinned = {0}
+        self.agent.excluded = set()
+        self._last_reply = ""
+        try:
+            session_mod.clear_session(self.agent.config.session.path)
+        except Exception:
+            pass
+        self._conversation().clear()
+        self._conversation().write("[dim]— new conversation —[/dim]")
+        self.query_one(ContextInspector).refresh_view(self.agent)
+
     def _menu_memory(self) -> None:
         mem = self.agent.memory
         if mem is None:
@@ -649,6 +701,7 @@ class OllamaShellTUI(App):
             if used_memory:
                 # Re-inject updated memory so later turns reflect what was just saved.
                 self.agent.rebuild_system_prompt()
+            self._save_session()
             try:
                 inspector = self.query_one(ContextInspector)
                 self.call_from_thread(inspector.refresh_view, self.agent)

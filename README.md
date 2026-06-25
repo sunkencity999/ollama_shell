@@ -288,6 +288,11 @@ context across sessions — separate from the heavier, opt-in RAG knowledge base
   Memory**; remove with "forget X" or "forget all". Disable with
   `{"memory":{"enabled":false}}`.
 
+**Conversation resume.** The transcript is saved to `~/.oshell/last_session.json`
+after each turn, so closing and reopening `oshell tui` picks the conversation
+back up where you left off (prior turns are re-rendered). Start over with **menu →
+New conversation**. Disable with `{"session":{"persist":false}}`.
+
 ## Fine-tuning (local LoRA)
 
 On Apple Silicon, `oshell finetune` drives MLX-LM LoRA training; jobs are tracked
