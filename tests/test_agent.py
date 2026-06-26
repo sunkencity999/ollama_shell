@@ -160,3 +160,44 @@ def test_context_pin_exclude():
 
     with pytest.raises(ValueError):
         agent.exclude(0)
+
+
+def test_unfulfilled_promise_gets_one_nudge_then_acts():
+    # Round 1: model announces a search but calls no tool -> loop nudges it.
+    # Round 2: model actually calls the tool. Round 3: it answers.
+    script = [
+        [ChatChunk(content="I'm going to search for that now. One moment!", done=True)],
+        [ChatChunk(tool_calls=[ToolCall(name="current_time", arguments={})], done=True)],
+        [ChatChunk(content="Here is the answer.", done=True)],
+    ]
+    agent, provider = _agent(script)
+    events = list(agent.send("look it up"))
+    assert provider.calls == 3  # promise -> nudge -> tool -> answer
+    assert isinstance(events[-1], TurnComplete)
+    assert events[-1].text == "Here is the answer."
+    # The nudge was threaded in as a user message.
+    assert any(
+        m.role == "user" and "didn't call any tool" in m.content for m in agent.messages
+    )
+
+
+def test_promise_nudged_at_most_once():
+    # The model keeps narrating without ever calling a tool: we nudge once, then
+    # accept its text as the final answer instead of looping forever.
+    script = [
+        [ChatChunk(content="I'll look that up for you.", done=True)],
+        [ChatChunk(content="I'll go and search now, hold on.", done=True)],
+    ]
+    agent, provider = _agent(script)
+    events = list(agent.send("look it up"))
+    assert provider.calls == 2  # exactly one nudge
+    assert isinstance(events[-1], TurnComplete)
+    assert events[-1].text == "I'll go and search now, hold on."
+
+
+def test_plain_answer_is_not_nudged():
+    # A normal final answer (no future-intent + action verb) must not trigger a nudge.
+    agent, provider = _agent([[ChatChunk(content="The answer is 42.", done=True)]])
+    events = list(agent.send("what is the answer?"))
+    assert provider.calls == 1
+    assert isinstance(events[-1], TurnComplete)

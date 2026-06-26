@@ -30,7 +30,61 @@ DEFAULT_SYSTEM_PROMPT = (
     "You are Ollama Shell, a local-first assistant that runs on the user's "
     "machine but can act on the world through the tools listed below. "
     "Prefer calling a tool over guessing or declining. Be concise."
+    "\n\nNever announce an action and then stop. If you say you will search, "
+    "fetch a page, write a file, or do anything else with a tool, CALL THAT "
+    "TOOL in the same turn — do not end your reply with 'one moment', 'let me "
+    "look that up', or 'I'll go do that' and no tool call. Either perform the "
+    "action now or give your final answer."
 )
+
+# Future-intent cues + action verbs. When a turn ends with text that pairs the
+# two but emits NO tool call, the model has *promised* an action without doing
+# it (a common small-model failure that leaves the user hanging). We nudge once.
+_FUTURE_CUES = (
+    "i'll",
+    "i will",
+    "i am going to",
+    "i'm going to",
+    "i am about to",
+    "going to",
+    "let me",
+    "one moment",
+    "hold on",
+    "give me a moment",
+    "moment while",
+    "stand by",
+    "bear with me",
+)
+_ACTION_CUES = (
+    "search",
+    "look",
+    "fetch",
+    "find",
+    "check",
+    "research",
+    "re-verify",
+    "verify",
+    "rewrite",
+    "update",
+    "write",
+    "save",
+    "overwrite",
+    "perform",
+    "create",
+    "generate",
+    "download",
+    "open",
+    "browse",
+    "query",
+)
+
+
+def _looks_like_unfulfilled_promise(text: str) -> bool:
+    """True if the text announces an imminent tool action but performs none."""
+    if not text:
+        return False
+    t = text.lower()
+    return any(f in t for f in _FUTURE_CUES) and any(a in t for a in _ACTION_CUES)
 
 
 def build_system_prompt(
@@ -183,6 +237,7 @@ class Agent:
         if tools and not self._model_supports_tools():
             tools = None
 
+        nudged = False  # we issue at most one "you promised — now do it" nudge
         for _ in range(self.config.max_tool_iterations):
             assistant_text = ""
             tool_calls = []
@@ -204,6 +259,21 @@ class Agent:
             )
 
             if not tool_calls:
+                # The model promised an action but called no tool — nudge it once
+                # to actually carry it out instead of leaving the user hanging.
+                if tools and not nudged and _looks_like_unfulfilled_promise(assistant_text):
+                    nudged = True
+                    self.messages.append(
+                        Message(
+                            role="user",
+                            content=(
+                                "You described an action but didn't call any tool. "
+                                "Carry it out now by calling the appropriate tool, "
+                                "or give your final answer if you are actually done."
+                            ),
+                        )
+                    )
+                    continue
                 yield TurnComplete(assistant_text)
                 return
 
