@@ -79,7 +79,10 @@ def _render_turn(agent: Agent, text: str) -> None:
         elif isinstance(event, TurnComplete):
             console.print()
         elif isinstance(event, LimitReached):
-            console.print(f"\n[red]Stopped after {event.iterations} tool rounds.[/red]")
+            console.print(
+                f"\n[yellow]Reached the {event.iterations}-round tool limit — "
+                "wrapping up with what I have.[/yellow]"
+            )
 
 
 SLASH_HELP = """\

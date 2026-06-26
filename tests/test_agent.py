@@ -64,15 +64,22 @@ def test_tool_call_round_trip():
 def test_iteration_cap():
     from oshell.agent import LimitReached
 
-    # Always asks for a tool -> never terminates on its own.
+    # Always asks for a tool -> never terminates on its own. After the cap, the
+    # loop does ONE tool-free call so the user still gets a final answer.
     cfg = Config(max_tool_iterations=3)
     provider = ScriptedProvider(
         [[ChatChunk(tool_calls=[ToolCall(name="current_time", arguments={})], done=True)]] * 3
+        + [[ChatChunk(content="Best answer with what I gathered.", done=True)]]
     )
     agent = Agent(provider, ToolRegistry([CurrentTimeTool()]), cfg)
     events = list(agent.send("loop forever"))
-    assert isinstance(events[-1], LimitReached)
-    assert events[-1].iterations == 3
+    # The cap is reported...
+    lim = next(e for e in events if isinstance(e, LimitReached))
+    assert lim.iterations == 3
+    # ...but the turn still ends with a usable answer, not a dead stop.
+    assert isinstance(events[-1], TurnComplete)
+    assert events[-1].text == "Best answer with what I gathered."
+    assert provider.calls == 4  # 3 capped tool rounds + 1 tool-free finalization
 
 
 class _CapProvider(LLMProvider):

@@ -300,4 +300,28 @@ class Agent:
                 yield ToolFinished(call.name, result.text)
             # ...then loop so the model can use those results.
 
+        # Cap reached. Rather than dead-stopping mid-research, give the model one
+        # final, tool-free turn to deliver a usable answer from what it gathered.
         yield LimitReached(self.config.max_tool_iterations)
+        self.messages.append(
+            Message(
+                role="user",
+                content=(
+                    "You've hit the tool-call limit for this turn. Do not call any more "
+                    "tools — give your best final answer now using what you've already "
+                    "gathered, and briefly note anything you could not finish."
+                ),
+            )
+        )
+        final_text = ""
+        for chunk in self.provider.chat(
+            self._context(),
+            model=self.model,
+            tools=None,
+            temperature=self.config.temperature,
+        ):
+            if chunk.content:
+                final_text += chunk.content
+                yield TextDelta(chunk.content)
+        self.messages.append(Message(role="assistant", content=final_text))
+        yield TurnComplete(final_text)

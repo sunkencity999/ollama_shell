@@ -166,7 +166,7 @@ class Config(BaseModel):
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
 
     # Agent loop
-    max_tool_iterations: int = 8  # safety cap on tool-call rounds per turn
+    max_tool_iterations: int = 16  # safety cap on tool-call rounds per turn (research + write)
     max_promise_nudges: int = 2  # times to prod a model that announces an action but calls no tool
     enabled_tools: list[str] = Field(default_factory=lambda: ["*"])  # "*" = all registered
 

@@ -757,7 +757,9 @@ class OllamaShellTUI(App):
                     self.call_from_thread(convo.write, final)
                 elif isinstance(event, LimitReached):
                     self.call_from_thread(
-                        convo.write, f"[red]Stopped after {event.iterations} tool rounds.[/red]"
+                        convo.write,
+                        f"[yellow]Reached the {event.iterations}-round tool limit — "
+                        "wrapping up with what I have.[/yellow]",
                     )
         except Exception as exc:  # surface backend errors instead of a silent hang
             self.call_from_thread(convo.write, f"[red]Error: {exc}[/red]")
