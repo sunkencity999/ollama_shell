@@ -291,7 +291,11 @@ context across sessions — separate from the heavier, opt-in RAG knowledge base
 **Conversation resume.** The transcript is saved to `~/.oshell/last_session.json`
 after each turn, so closing and reopening `oshell tui` picks the conversation
 back up where you left off (prior turns are re-rendered). Start over with **menu →
-New conversation**. Disable with `{"session":{"persist":false}}`.
+New conversation** or by typing **`/clear`** at the prompt. Disable with
+`{"session":{"persist":false}}`.
+
+**Slash commands.** At the prompt: `/clear` (start a new conversation), `/menu`
+(open the menu), `/help` (show keys and commands).
 
 ## Fine-tuning (local LoRA)
 

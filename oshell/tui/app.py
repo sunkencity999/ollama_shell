@@ -599,6 +599,7 @@ class OllamaShellTUI(App):
         self._conversation().write(
             "[b]Help[/b]\n"
             "  The model drives: type a request and it calls tools as needed.\n"
+            "  Commands:  /clear (new conversation) · /menu · /help.\n"
             "  Keys:  Esc menu · Ctrl+T tools · Ctrl+Y copy reply · Ctrl+C quit.\n"
             "  Copy: Ctrl+Y copies the last reply; the menu also copies the transcript.\n"
             "  Select text with the mouse: hold [b]Option[/b] (macOS/iTerm2) or "
@@ -615,11 +616,40 @@ class OllamaShellTUI(App):
             f"[dim]📋 pasted {n} lines — type a message (or just press Enter) to send it.[/dim]"
         )
 
+    # ── slash commands ────────────────────────────────────────────────────────
+    def _handle_slash_command(self, typed: str) -> bool:
+        """Handle a ``/command`` typed at the prompt.
+
+        Returns ``True`` if the input was a (recognized or unknown) slash
+        command and should not be sent to the model.
+        """
+        cmd = typed[1:].split(maxsplit=1)[0].lower()
+        if cmd in ("clear", "new"):
+            self._new_conversation()
+            return True
+        if cmd == "help":
+            self._menu_help()
+            self._conversation().write(
+                "[dim]Commands: /clear (new conversation) · /help · /menu[/dim]"
+            )
+            return True
+        if cmd == "menu":
+            self.action_open_menu()
+            return True
+        self._conversation().write(
+            f"[dim]Unknown command [b]/{escape(cmd)}[/b]. "
+            "Try /clear, /help, or /menu.[/dim]"
+        )
+        return True
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         typed = event.value.strip()
         event.input.value = ""
         if self._busy:  # ignore submits while a turn is running
             return
+        if typed.startswith("/") and not self._pending_paste:
+            if self._handle_slash_command(typed):
+                return
         if self._pending_paste:
             pasted, self._pending_paste = self._pending_paste, ""
             text = f"{pasted}\n\n{typed}" if typed else pasted

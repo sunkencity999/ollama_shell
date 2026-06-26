@@ -580,6 +580,37 @@ async def test_new_conversation_clears(tmp_path, monkeypatch):
         assert [m.role for m in app.agent.messages] == ["system"]
 
 
+async def test_slash_clear_resets_conversation(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    app = _app()
+    app.agent.config.session.path = str(tmp_path / "sess.json")
+    async with app.run_test() as pilot:
+        app.agent.messages.append(Message(role="user", content="something"))
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "/clear"
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        # /clear behaves like New conversation: only the system message remains
+        # and the typed command is NOT sent to the model.
+        assert [m.role for m in app.agent.messages] == ["system"]
+
+
+async def test_slash_unknown_command_not_sent(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    app = _app()
+    async with app.run_test() as pilot:
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "/bogus"
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        # Unknown slash command is swallowed, never forwarded to the model.
+        assert not any(m.content == "/bogus" for m in app.agent.messages)
+
+
 async def test_menu_shows_on_startup_when_enabled():
     from oshell.tui.menu import MenuScreen
 
