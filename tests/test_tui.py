@@ -435,6 +435,24 @@ async def test_gui_toggle_activates_tools(monkeypatch, tmp_path):
         assert "screenshot" not in {t.name for t in app.agent.registry.active()}
 
 
+async def test_panels_survive_hostile_content():
+    # Regression: scraped/fetched content can carry ANSI escapes, control chars,
+    # stray markup tags and unbalanced brackets. A side-panel render must never
+    # crash the session mid-turn (which previously lost in-flight research).
+    from oshell.tui.app import ContextInspector, ToolsPanel
+
+    nasty = "\x1b[31mred\x1b[0m [b]unbalanced [/dim] \x00\x07 \\[ done](http://x"
+    app = _app()
+    async with app.run_test() as pilot:
+        app.agent.messages.append(Message(role="assistant", content=nasty))
+        app.query_one(ContextInspector).refresh_view(app.agent)
+        app.query_one(ToolsPanel).render_for(app.agent)
+        await pilot.pause()
+        # Readable text is still inspectable (plain, no exception bubbled).
+        assert "Context" in app.query_one(ContextInspector).text
+        assert "Active tools" in app.query_one(ToolsPanel).text
+
+
 async def test_markup_in_messages_does_not_crash():
     # Regression: message content with Rich-markup-like brackets (e.g. a markdown
     # link or a stray [/dim]) must not crash the context inspector or conversation.

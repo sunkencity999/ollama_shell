@@ -17,6 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rich.markup import escape
+from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -64,6 +65,24 @@ class ChatInput(Input):
             event.stop()
 
 
+def _safe_update(widget: Static, content: Text, plain: str) -> None:
+    """Update a Static, never letting a render error crash the session.
+
+    The side panels show model/tool output that can contain anything. We build
+    a ``rich.text.Text`` with explicit styles (no markup parsing of dynamic
+    content, so brackets/ANSI/control chars are inert), but still guard the
+    update so any unexpected render failure degrades to inert plain text rather
+    than taking down the whole app mid-turn.
+    """
+    try:
+        widget.update(content)
+    except Exception:
+        try:
+            widget.update(Text(plain or " "))
+        except Exception:
+            pass
+
+
 class ToolsPanel(Static):
     """Static roster: active tools (local/network) + optional-feature status.
 
@@ -74,23 +93,33 @@ class ToolsPanel(Static):
     text: str = ""
 
     def render_for(self, agent: Agent) -> None:
-        lines = ["[b]Active tools[/b]"]
+        body = Text()
+        plain: list[str] = ["Active tools"]
+        body.append("Active tools", style="bold")
         for t in agent.registry.active():
             if t.sensitive:
-                tag = "[red]exec[/red]"
+                tag, style = "exec", "red"
             elif t.local_only:
-                tag = "[green]local[/green]"
+                tag, style = "local", "green"
             else:
-                tag = "[yellow]net[/yellow]"
-            lines.append(f"  {tag} [bold]{t.name}[/bold]")
-        lines.append("")
-        lines.append("[b]Optional features[/b]")
+                tag, style = "net", "yellow"
+            body.append("\n  ")
+            body.append(tag, style=style)
+            body.append(" ")
+            body.append(t.name, style="bold")
+            plain.append(f"  {tag} {t.name}")
+        body.append("\n\n")
+        body.append("Optional features", style="bold")
+        plain += ["", "Optional features"]
         for cap in optional_features(agent.config):
-            mark = "[green]✓[/green]" if cap.available else "[dim]✗[/dim]"
-            # escape: detail may contain "[web]" etc. that Rich would eat as markup
-            lines.append(f"  {mark} {cap.name} [dim]({escape(cap.detail)})[/dim]")
-        self.text = "\n".join(lines)
-        self.update(self.text)
+            mark, mstyle = ("✓", "green") if cap.available else ("✗", "dim")
+            body.append("\n  ")
+            body.append(mark, style=mstyle)
+            body.append(f" {cap.name} ")
+            body.append(f"({cap.detail})", style="dim")
+            plain.append(f"  {mark} {cap.name} ({cap.detail})")
+        self.text = "\n".join(plain)
+        _safe_update(self, body, self.text)
 
 
 class ContextInspector(Static):
@@ -99,14 +128,22 @@ class ContextInspector(Static):
     text: str = ""
 
     def refresh_view(self, agent: Agent) -> None:
-        lines = ["[b]Context[/b]  📌 pinned  🚫 excluded"]
+        body = Text()
+        body.append("Context", style="bold")
+        body.append("  📌 pinned  🚫 excluded")
+        plain: list[str] = ["Context  📌 pinned  🚫 excluded"]
         for i, msg in enumerate(agent.messages):
             mark = "📌" if i in agent.pinned else ("🚫" if i in agent.excluded else "  ")
             raw = msg.content or f"<{len(msg.tool_calls)} tool call(s)>"
-            preview = escape(raw[:28].replace("\n", " "))  # message text may contain [..] markup
-            lines.append(f"{mark} [dim]{i:>2}[/dim] [cyan]{msg.role[:4]}[/cyan] {preview}")
-        self.text = "\n".join(lines)
-        self.update(self.text)
+            preview = raw[:28].replace("\n", " ")
+            body.append(f"\n{mark} ")
+            body.append(f"{i:>2}", style="dim")
+            body.append(" ")
+            body.append(msg.role[:4], style="cyan")
+            body.append(f" {preview}")
+            plain.append(f"{mark} {i:>2} {msg.role[:4]} {preview}")
+        self.text = "\n".join(plain)
+        _safe_update(self, body, self.text)
 
 
 class OllamaShellTUI(App):
