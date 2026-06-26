@@ -237,7 +237,7 @@ class Agent:
         if tools and not self._model_supports_tools():
             tools = None
 
-        nudged = False  # we issue at most one "you promised — now do it" nudge
+        nudges = 0  # how many "you promised — now do it" prods we've issued this turn
         for _ in range(self.config.max_tool_iterations):
             assistant_text = ""
             tool_calls = []
@@ -259,17 +259,23 @@ class Agent:
             )
 
             if not tool_calls:
-                # The model promised an action but called no tool — nudge it once
-                # to actually carry it out instead of leaving the user hanging.
-                if tools and not nudged and _looks_like_unfulfilled_promise(assistant_text):
-                    nudged = True
+                # The model promised an action but called no tool — prod it to
+                # actually carry it out instead of leaving the user hanging.
+                if (
+                    tools
+                    and nudges < self.config.max_promise_nudges
+                    and _looks_like_unfulfilled_promise(assistant_text)
+                ):
+                    nudges += 1
                     self.messages.append(
                         Message(
                             role="user",
                             content=(
-                                "You described an action but didn't call any tool. "
-                                "Carry it out now by calling the appropriate tool, "
-                                "or give your final answer if you are actually done."
+                                "Stop. You described an action but called no tool — the user "
+                                "sees only your message and nothing happens. Do NOT reply with "
+                                "more narration, apologies, or 'one moment'. Emit the tool call "
+                                "now (e.g. web_search / fetch_url / create_document). If you are "
+                                "genuinely finished, give the final answer with no promises."
                             ),
                         )
                     )

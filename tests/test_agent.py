@@ -176,21 +176,20 @@ def test_unfulfilled_promise_gets_one_nudge_then_acts():
     assert isinstance(events[-1], TurnComplete)
     assert events[-1].text == "Here is the answer."
     # The nudge was threaded in as a user message.
-    assert any(
-        m.role == "user" and "didn't call any tool" in m.content for m in agent.messages
-    )
+    assert any(m.role == "user" and "called no tool" in m.content for m in agent.messages)
 
 
-def test_promise_nudged_at_most_once():
-    # The model keeps narrating without ever calling a tool: we nudge once, then
-    # accept its text as the final answer instead of looping forever.
+def test_promise_nudged_at_most_max_times():
+    # The model keeps narrating without ever calling a tool: we prod it up to the
+    # configured cap, then accept its text instead of looping forever.
     script = [
         [ChatChunk(content="I'll look that up for you.", done=True)],
         [ChatChunk(content="I'll go and search now, hold on.", done=True)],
     ]
     agent, provider = _agent(script)
+    agent.config.max_promise_nudges = 1  # cap at a single nudge for a deterministic count
     events = list(agent.send("look it up"))
-    assert provider.calls == 2  # exactly one nudge
+    assert provider.calls == 2  # original + exactly one nudge
     assert isinstance(events[-1], TurnComplete)
     assert events[-1].text == "I'll go and search now, hold on."
 
