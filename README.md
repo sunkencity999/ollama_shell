@@ -295,7 +295,14 @@ New conversation** or by typing **`/clear`** at the prompt. Disable with
 `{"session":{"persist":false}}`.
 
 **Slash commands.** At the prompt: `/clear` (start a new conversation), `/menu`
-(open the menu), `/help` (show keys and commands).
+(open the menu), `/daydream` (see below), `/help` (show keys and commands).
+
+**Daydreams 💭.** Type **`/daydream`** (or **menu → Daydream**) and the model
+stops being useful for a moment: it free-associates a short, surreal vignette
+that drifts off from whatever you've been talking about. Grounded in your recent
+chat but deliberately good for nothing — a little inner life for a local-first
+machine. Daydreams are ephemeral (never added to the conversation history).
+Disable with `{"fun":{"daydreams":false}}`.
 
 ## Fine-tuning (local LoRA)
 

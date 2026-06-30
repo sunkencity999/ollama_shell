@@ -357,6 +357,8 @@ class OllamaShellTUI(App):
             self._menu_memory()
         elif choice == "knowledge":
             self._menu_knowledge()
+        elif choice == "daydream":
+            self._start_daydream()
         elif choice == "help":
             self._menu_help()
 
@@ -667,17 +669,56 @@ class OllamaShellTUI(App):
         if cmd == "help":
             self._menu_help()
             self._conversation().write(
-                "[dim]Commands: /clear (new conversation) · /help · /menu[/dim]"
+                "[dim]Commands: /clear (new conversation) · /daydream 💭 · /help · /menu[/dim]"
             )
             return True
         if cmd == "menu":
             self.action_open_menu()
             return True
+        if cmd in ("daydream", "dream"):
+            self._start_daydream()
+            return True
         self._conversation().write(
             f"[dim]Unknown command [b]/{escape(cmd)}[/b]. "
-            "Try /clear, /help, or /menu.[/dim]"
+            "Try /clear, /daydream, /help, or /menu.[/dim]"
         )
         return True
+
+    # ── daydreams 💭 ───────────────────────────────────────────────────────────
+    def _start_daydream(self) -> None:
+        """Let the model wander: a short, useless, delightful free-association."""
+        if not self.agent.config.fun.daydreams:
+            self._conversation().write("[dim]Daydreams are disabled.[/dim]")
+            return
+        if self._busy:
+            return
+        self._busy = True
+        self._stream = ""
+        self._status = "Daydreaming"
+        self.run_worker(self._daydream_worker, thread=True, exclusive=True)
+
+    def _daydream_worker(self) -> None:
+        from .. import fun
+
+        convo = self._conversation()
+        try:
+            motif = fun.pick_motif()
+            messages = fun.build_daydream_messages(self.agent.messages, motif)
+            text = ""
+            for piece in fun.daydream(self.agent.provider, self.agent.model, messages):
+                text += piece
+                self._stream = text  # render live in the dim indicator
+            dream = escape(text.strip()) or "…(its mind wandered off the edge of the screen)"
+            self.call_from_thread(
+                convo.write, f"[magenta]💭[/magenta] [italic dim]{dream}[/italic dim]"
+            )
+        except Exception as exc:
+            self.call_from_thread(
+                convo.write, f"[red]the daydream slipped away: {escape(str(exc))}[/red]"
+            )
+        finally:
+            self._busy = False
+            self._stream = ""
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         typed = event.value.strip()

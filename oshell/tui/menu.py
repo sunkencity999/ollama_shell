@@ -31,6 +31,7 @@ MENU_ITEMS: list[tuple[str, str, str]] = [
     ("browser_toggle", "Computer-use (browser)", "Turn the hidden browser on/off (vision model)"),
     ("memory", "Memory", "View what the assistant remembers (or clear it)"),
     ("knowledge", "Knowledge base", "How to store & recall local notes"),
+    ("daydream", "Daydream", "Let the model wander and free-associate 💭"),
     ("finetune", "Fine-tuning", "Detect training backend and list jobs"),
     ("config", "Settings", "Show resolved configuration (secrets redacted)"),
     ("help", "Help", "Keys and how the agent works"),

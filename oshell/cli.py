@@ -93,6 +93,7 @@ SLASH_HELP = """\
   /pin N           pin message N (keep in context)
   /exclude N       drop message N from context
   /tools           list active tools
+  /daydream        let the model wander and free-associate 💭
   /exit, /quit     leave
 """
 
@@ -113,6 +114,17 @@ def _handle_slash(agent: Agent, line: str) -> bool:
             console.print(f"  [bold]{t.name}[/bold]{tag} — {t.description}")
     elif cmd == "/context":
         console.print(f"pinned={sorted(agent.pinned)}  excluded={sorted(agent.excluded)}")
+    elif cmd in ("/daydream", "/dream"):
+        from . import fun
+
+        if not agent.config.fun.daydreams:
+            console.print("[dim]Daydreams are disabled.[/dim]")
+            return True
+        messages = fun.build_daydream_messages(agent.messages, fun.pick_motif())
+        console.print("[magenta]💭[/magenta] ", end="")
+        for piece in fun.daydream(agent.provider, agent.model, messages):
+            console.print(f"[italic dim]{piece}[/italic dim]", end="")
+        console.print()
     elif cmd in ("/pin", "/exclude") and len(parts) == 2 and parts[1].isdigit():
         idx = int(parts[1])
         try:

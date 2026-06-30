@@ -122,6 +122,12 @@ class FinetuneConfig(BaseModel):
     num_layers: int = 16  # LoRA layers to train
 
 
+class FunConfig(BaseModel):
+    """Quirky, non-essential delights (currently: daydreams)."""
+
+    daydreams: bool = True  # enable the /daydream command + menu entry
+
+
 class Config(BaseModel):
     """Top-level runtime configuration for the shell."""
 
@@ -164,6 +170,9 @@ class Config(BaseModel):
 
     # Hidden browser computer-use (opt-in)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
+
+    # Quirky delights
+    fun: FunConfig = Field(default_factory=FunConfig)
 
     # Agent loop
     max_tool_iterations: int = 16  # safety cap on tool-call rounds per turn (research + write)

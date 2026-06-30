@@ -598,6 +598,30 @@ async def test_new_conversation_clears(tmp_path, monkeypatch):
         assert [m.role for m in app.agent.messages] == ["system"]
 
 
+async def test_slash_daydream_runs_without_touching_history(tmp_path, monkeypatch):
+    from textual.widgets import RichLog
+
+    monkeypatch.chdir(tmp_path)
+    app = _app()
+    async with app.run_test() as pilot:
+        before = len(app.agent.messages)
+        n0 = len(app.query_one("#conversation", RichLog).lines)
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "/daydream"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if not app._busy:
+                break
+        assert app._busy is False
+        # A daydream is ephemeral: it must NOT append to conversation history...
+        assert len(app.agent.messages) == before
+        # ...but it did render something to the screen.
+        assert len(app.query_one("#conversation", RichLog).lines) > n0
+
+
 async def test_slash_clear_resets_conversation(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     app = _app()
