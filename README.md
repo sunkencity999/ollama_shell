@@ -1,59 +1,85 @@
 # Ollama Shell
 
-**A local-first, agentic shell for Ollama.** The model runs on *your* machine,
-can use *your* tools (files, time, models, the web), and never phones home
-unless a tool you can see explicitly reaches out.
+### A local-first AI that lives on *your* machine, uses *your* tools, and keeps *your* secrets.
+
+No API keys. No cloud round-trips. No telemetry. Just a capable, agentic model
+running on your own hardware — one that can read your files, run your shell,
+search the web when you ask, write you a report, drive a hidden browser… and,
+when the room goes quiet, sit there and **daydream**.
 
 Created by Christopher Bradford · [contact@christopherdanielbradford.com](mailto:contact@christopherdanielbradford.com)
 
-> **v0.2 — Reimagined.** This project began as a feature-rich chat REPL and grew
-> into a 4,600-line everything-client. v0.2 inverts the architecture around three
-> ideas: **(1) local-first / privacy-native**, **(2) the agent loop *is* the shell**
-> (capabilities are tools the model calls, MCP-style), and **(3) a light core
-> with opt-in power**. The v0.1 monolith has now been **fully retired** — every
-> capability was migrated into clean, tested tools (see
-> [migration](#legacy-migration-complete)). The original code lives on only in
-> git history and [`docs/LEGACY_README.md`](docs/LEGACY_README.md).
+> **v0.2 — Reimagined.** This began as a feature-rich chat REPL and grew into a
+> 4,600-line everything-client. v0.2 turns it inside out around three ideas:
+> **local-first & privacy-native**, **the agent loop *is* the shell** (every
+> capability is a tool the model calls, MCP-style), and **a light core with
+> opt-in power**. The v0.1 monolith is **fully retired** — every feature was
+> migrated into clean, tested tools ([see the table](#the-great-migration-complete)).
+> The old code lives on only in git history and [`docs/LEGACY_README.md`](docs/LEGACY_README.md).
 
 ---
 
-## Why this design
+## Why you might love it
+
+- 🔒 **It's genuinely private.** Inference runs locally (Ollama / MLX / LM Studio).
+  The only things that ever touch the network are tools *you* can see the model
+  call — web search, fetch, Atlassian — each flagged in a privacy banner. Nothing
+  phones home on its own. Ever.
+- 🧰 **It actually *does* things.** It's not a chatbot with buttons bolted on. The
+  model drives a loop — reading files, running commands, searching, writing
+  documents — and you watch each tool call happen inline, in real time.
+- 🪶 **It starts light and grows with you.** A small core (chat, agent loop, web
+  search + fetch, files). Everything heavier — RAG, document export, vision,
+  fine-tuning, the full TUI, computer-use — is an opt-in extra you can install
+  *from inside the app*.
+- 🧠 **It remembers you.** A dependency-free memory of durable facts ("I'm on
+  Apple Silicon", "I like terse answers") carries across sessions, and your last
+  conversation resumes right where you left it.
+- 💭 **It has an inner life.** Ask it to `/daydream` and it stops being useful for
+  a moment to free-associate a small, surreal vignette about whatever you'd been
+  discussing. Useless on purpose. Local-first, so indulging is free.
+
+If the design philosophy interests you, here it is in one table:
 
 | Principle | What it means in practice |
 |-----------|---------------------------|
-| **Local-first** | Inference is local (Ollama/MLX/LM Studio). Network-touching tools (web search/fetch, Atlassian) are flagged in a privacy banner and only run when the model calls them — nothing phones home on its own. |
-| **Agent as the shell** | Chat, file ops, web search, etc. are *tools* the model invokes in a loop — not bolted-on commands. New capabilities are additive: register a tool, done. |
-| **Light core, opt-in power** | A small core (chat, agent loop, **web search + fetch**, files). Heavy features (RAG, docs export, fine-tuning, the TUI) are optional `pip` extras. |
+| **Local-first** | Inference is local. Network-touching tools are flagged and only run when the model calls them. Your data stays yours. |
+| **Agent *is* the shell** | Chat, files, web, shell exec are *tools* invoked in a loop — not hardcoded commands. New power = register a tool. |
+| **Light core, opt-in power** | Small core + optional `pip` extras (RAG, docs, vision, finetune, TUI, computer-use), installable from the menu. |
 
 ## Quick start
 
 ```bash
-# 1. Install. Puts `oshell` on your PATH (via `uv tool install`, editable;
+# 1. Install. Puts `oshell` on your PATH (uv tool install, editable;
 #    falls back to a venv + symlink). Warns if Ollama isn't running.
-./install.sh            # macOS / Linux — core + tui (interactive default)
-./install.sh all        # everything: tui, rag, docs, vision, finetune
-./install.sh rag        # or a custom subset of extras (web search is built in)
+./install.sh            # macOS / Linux — core + tui (the interactive default)
+./install.sh all        # the works: tui, rag, docs, vision, finetune
+./install.sh rag        # …or any custom subset of extras (web search is built in)
 #   Windows (PowerShell):  .\install.ps1   (same arguments)
 
 # 2. Make sure Ollama is running (https://ollama.com), then — from anywhere:
 oshell                  # interactive agent chat (default command)
-oshell tui              # Textual workspace (needs [tui])
+oshell tui              # the Textual workspace (needs [tui]) — the good stuff
 oshell ask "What time is it? Use your tool."
 oshell models           # list backend models
-oshell config           # resolved config + which capabilities are available
+oshell config           # resolved config + which capabilities are live
 oshell finetune detect  # local LoRA training backend
 ```
 
-If `oshell` isn't found, open a new terminal (so the updated PATH loads) or add
-the printed bin dir to PATH. Prefer raw `uv`? `uv tool install --editable ".[tui]"`.
-For a dev checkout, `make install` builds a local `.venv`; `make run / tui / test`
-wrap the common flows. macOS users can also double-click **Start Ollama Shell.command**.
+`oshell` not found? Open a new terminal (so PATH reloads) or add the printed bin
+dir to PATH. Prefer raw `uv`? `uv tool install --editable ".[tui]"`. For a dev
+checkout, `make install` builds a local `.venv`; `make run / tui / test` wrap the
+common flows. On macOS you can also double-click **Start Ollama Shell.command**.
 
-## The TUI workspace
+> Because the install is **editable**, code changes take effect on the next
+> launch — but a *running* `oshell` won't hot-reload. After updating, quit and
+> relaunch to pick up changes.
 
-`oshell tui` opens a workspace instead of a scrolling REPL: the conversation on
-the left, and a tabbed sidebar — **Tools**, **Context**, **Activity** — on the
-right. The header shows the model, backend, tool count, and privacy posture.
+## What it feels like — the TUI workspace
+
+`oshell tui` opens a workspace, not a scrolling REPL: the conversation on the
+left, a tabbed sidebar — **Tools · Context · Activity** — on the right. The header
+shows the model, backend, tool count, and privacy posture at a glance.
 
 ```
 ┌────────────────────────────────┬──────────────────────────────┐
@@ -62,60 +88,204 @@ right. The header shows the model, backend, tool count, and privacy posture.
 │ Conversation                   │ [Tools] Context  Activity     │
 │ › what files are here?         │  Active tools                 │
 │ The directory contains …       │   local list_dir              │
-│                                │   net   web_search            │
+│ 🔧 list_dir(.) → 14 entries    │   net   web_search            │
 │                                │   …                           │
-│                                │  Optional features            │
-│                                │   ✓ rag (knowledge base)      │
+│ › /daydream                    │  Optional features            │
+│ 💭 a clock made of warm rain…  │   ✓ rag (knowledge base)      │
 │                                │   ✗ docs  (pip install …[docs])│
 ├────────────────────────────────┴──────────────────────────────┤
-│ Message the model…   (Ctrl+C quit · Ctrl+T tools)              │
+│ Message the model…   (Esc menu · Ctrl+T tools · Ctrl+Y copy)  │
 └─────────────────────────────────────────────────────────────--┘
 ```
 
-- **Tools** — the live tool roster (local vs network) plus which optional
-  features this install actually has. This is the TUI's source of truth for
-  what the app can currently do.
-- **Context** — the pin/exclude state, making the `/pin` and `/exclude` controls
-  visual: you see exactly which messages the model is shown.
-- **Activity** — a running log of tool calls and their results.
+- **Tools** — the live roster (local vs network) and which optional features this
+  install actually has. This panel is the source of truth for what the app can do
+  *right now*.
+- **Context** — the pin/exclude state made visual: you see exactly which messages
+  the model is shown.
+- **Activity** — a running log of every tool call and its result.
 
-While the model works, a live region under the conversation shows an animated
-spinner with the current status (*Thinking…*, *Running web_search…*) and then
-**streams the reply token-by-token** as it's generated — no more staring at a
-blank space.
+While the model works, a live region streams the reply **token-by-token** behind
+an animated status (*Thinking… · Running web_search…*) — no blank-screen waiting.
+And it's honest about its own actions: every tool call is echoed inline
+(`🔧 run_command(...) → …`) so you can trust — or catch — exactly what it did.
 
-On startup (and any time you press **Esc**) an old-school, keyboard-driven
-**menu** pops up — navigate with ↑/↓ + Enter or just press a number. From it you can:
+**The old-school menu.** On startup, and any time you press **Esc**, a
+keyboard-driven menu pops up — arrow keys + Enter, or just press a number. From it:
 
-- **Models** — pick the active model from those on the backend. Your choice is
-  **saved as the default** (to `config.local.json`) and persists across sessions
-  until you change it.
-- **Install features** — install optional capabilities (RAG, docs export,
-  vision, fine-tuning) into the running environment without leaving the app.
-  Install output **streams live into the Activity tab** (with the current step
-  on the spinner), and the Tools panel refreshes ✓ when it finishes.
-- **Attach image** — attach an image (by file path — drag a file into the
-  terminal to paste it — or from the clipboard with Pillow installed) to send to
-  a **vision-capable model** (e.g. `llava`, `gemma3`/`gemma4`, `llama3.2-vision`;
-  pick one in Models). The agent only advertises tools to models that support
-  them, so vision-only models like `llava` work too.
+- **Models** — pick the active model; your choice is **saved as the default** and
+  persists across sessions.
+- **Install features** — add RAG / docs / vision / fine-tuning / computer-use into
+  the running environment *without leaving the app*. Output streams live into the
+  Activity tab and the Tools panel ticks ✓ when it finishes.
+- **Attach image** — send an image (file path — drag a file into the terminal — or
+  the clipboard with Pillow) to a **vision-capable model** (`llava`, `gemma3`/
+  `gemma4`, `llama3.2-vision`).
+- Plus New conversation, Copy reply/transcript, Memory, Knowledge base,
+  **Daydream**, Fine-tuning, Settings, Help, and Quit.
 
-You can also **paste multi-line text** (logs, code) straight into the prompt —
-it's buffered and sent with your next message rather than truncated to one line.
+**Little niceties.** Paste **multi-line text** (logs, code) straight in — it's
+buffered and sent with your next message, not truncated. Copy out with **Ctrl+Y**
+(last reply) or *Copy transcript* (whole chat) via your OS clipboard, with an
+**OSC 52** fallback that even works over SSH. To hand-select text, hold **Option**
+(macOS/iTerm2) or **Shift** (many terminals) while dragging.
 
-**Copying out.** The TUI captures the mouse, so normal click-drag selection
-doesn't work in the window. Use **Ctrl+Y** to copy the model's last reply, or the
-menu's *Copy transcript* for the whole conversation (via your OS clipboard, with
-an OSC 52 fallback for SSH). To select text by hand, hold **Option** (macOS /
-iTerm2) or **Shift** (many terminals) while dragging to use native selection.
-- Plus Chat, Tools, Knowledge base, Fine-tuning, Settings, Help, and Quit.
+## 💭 Daydreams — the shell's inner life
 
-## Architecture
+Type **`/daydream`** (or pick **Daydream** from the menu) and the model drops the
+helpful-assistant act for a moment and just *dreams*. It free-associates a short,
+surreal vignette that drifts off from whatever you'd recently been discussing,
+coloured by a randomly chosen lens — *"as if you were a cat dozing on a warm
+CPU," "in the grammar of dreams, where verbs grow leaves," "like the last thought
+of a candle before it gutters out."*
+
+Talk about your G-Shock's backlight, then ask it to daydream, and you might get:
+
+> *A single click triggers a flood of green light that sprouts into heavy, velvet
+> vines along the silicon wrist. Verbs begin to leaf, their meanings unfurling
+> like emerald ferns in the humid warmth of a digital jungle. Every ticking
+> second is a seed falling into the dark, mossy soil of an infinite hour.*
+
+It's deliberately, gloriously useless. Some design choices I cared about:
+
+- **Ephemeral** — a daydream is *never* written to conversation history, so it
+  can't pollute the model's working context or your saved session. It floats by
+  in dim italic with a 💭, and it's gone.
+- **Grounded but divergent** — it riffs on your recent topics, but the random
+  motif and a higher temperature mean asking twice never gives the same dream.
+- **No tools, all imagination** — tool access is suppressed for the dream; it
+  can only wander.
+
+Works at the prompt (`/daydream` / `/dream`), in the menu, and in the plain CLI.
+Disable with `{"fun":{"daydreams":false}}`.
+
+## Memory & resume — it knows you next time
+
+A lightweight, **always-on memory** of durable facts about you (your name, the
+tools you use, how you like answers, ongoing projects) carries context across
+sessions — separate from the heavier, opt-in RAG knowledge base.
+
+- **Hybrid capture** — the model saves a fact on its own when it clearly matters
+  (shown inline as `📝 remembered: …` so you can see and correct it), or just say
+  *"remember that …"*.
+- **Auto-recall** — stored facts are injected into the system prompt, so it simply
+  *knows* them next launch. (`recall` lets it search the full set as memory grows.)
+- Dependency-free at `~/.oshell/memory.json`. View via **menu → Memory**; prune
+  with *"forget X"* / *"forget all"*. Disable with `{"memory":{"enabled":false}}`.
+
+**Conversation resume.** Your transcript is saved to `~/.oshell/last_session.json`
+after each turn, so reopening `oshell tui` picks up right where you left off.
+Start fresh with **menu → New conversation** or **`/clear`**. Disable with
+`{"session":{"persist":false}}`.
+
+**Slash commands.** `/clear` (new conversation), `/daydream` (wander 💭), `/menu`
+(open the menu), `/help` (keys + commands).
+
+## Computer-use — it can act, not just chat
+
+Ollama Shell is *agentic*: the model can do things on your machine.
+
+**The terminal (always on).** `run_command` runs shell commands through your
+platform's own shell — `/bin/sh` on macOS/Linux, **PowerShell** on Windows (`pwsh`
+if present, else `powershell`; force `cmd` with `{"shell":{"windows_shell":"cmd"}}`)
+— with the workspace as the working directory. So the agent can inspect the
+system, drive git/builds, run scripts, and crunch files. The shell is
+**persistent**: `cd`, env vars, and activated virtualenvs carry across calls. A new
+session is health-probed and **falls back to one-shot automatically** if it's
+unresponsive, so it can't hang. `system_info` gives a safe read-only summary
+(OS, arch, CPU, cores, RAM) with no shell at all.
+
+The file tools (`read_file`, `write_file`, `create_document`, `list_dir`) are
+**not sandboxed** — they accept absolute, `~`, or relative paths and read/write
+anywhere you can (e.g. drop a report in `~/Documents`), consistent with
+`run_command`'s autonomy.
+
+> **Autonomy & safety.** By default `run_command` runs with **full autonomy** — no
+> per-command confirmation. But it's fully transparent: every command and its
+> output appear inline, the tool is flagged `exec` (red) in the Tools panel, and a
+> banner warns you on startup. To require review or shut it off, set
+> `shell.enabled`/timeout in `config.local.json` (e.g. `{"shell":{"enabled":false}}`).
+> Commands run with your privileges — treat the model accordingly.
+
+**Hidden browser (opt-in) — the preferred way to do the web.** The model can drive
+a **dedicated, headless Chromium off-screen** via Playwright — it never hijacks
+your display and needs no Screen Recording permission. Tools: `browser_open`,
+`browser_screenshot` (the rendered page, fed back so a vision model can *see* it),
+`browser_click`, `browser_type`, `browser_key`.
+
+- Install from **Install features → Hidden browser** (pip-installs Playwright *and*
+  downloads Chromium), then flip the **Computer-use (browser)** toggle (or
+  `{"browser":{"enabled":true}}`).
+- Needs a vision+tools model; runs on a dedicated thread so it persists across
+  turns. The model is told: `fetch_url` to *read* a page, the hidden browser for
+  *interactive* tasks (login, forms, dynamic apps like Gmail).
+
+**Desktop GUI (opt-in).** For tasks a shell can't do, the model can screenshot the
+real desktop and click/type/press keys. It's **off by default** and only available
+with a **vision-capable model** (it has to *see* the screen), and the model is told
+to prefer the terminal. It takes two one-time opt-ins: install the backend
+(**Install features → GUI computer-use**, pyautogui) and flip the **Computer-use
+(GUI)** toggle.
+
+- **macOS** needs **Screen Recording + Accessibility** for the *exact terminal app*
+  that launches `oshell`. Without Screen Recording, macOS hands back wallpaper-only
+  screenshots — so `screenshot` refuses with a clear message rather than feeding the
+  model a blank image. Grant it, then fully restart the terminal. **Linux X11** works
+  out of the box (Wayland is a planned native backend).
+- After a turn that drove the desktop GUI, the model fires a desktop notification
+  and re-focuses your terminal so you know it's done (`gui.notify_on_finish` /
+  `gui.refocus_terminal`). A pyautogui failsafe (slam the mouse into a corner)
+  aborts a runaway loop.
+
+> If a toggle says "on" but no tools appear, the active model isn't vision-capable
+> — pick one in **Models**. *Optional features* reflects whether a package is
+> **installed**; **Active tools** is the truth for what the model can call now.
+
+The control layer is a `Controller` abstraction (`oshell/gui/`) — pyautogui today,
+with a clean seam for native backends (Wayland `grim`/`ydotool`, macOS
+`screencapture`/`cliclick`).
+
+## Optional extras
+
+| Extra | Adds |
+|-------|------|
+| `tui` | The Textual workspace |
+| `rag` | ChromaDB + sentence-transformers knowledge base |
+| `finetune` | MLX-LM LoRA fine-tuning (Apple Silicon) |
+| `docs` | Word / Excel / PDF / Markdown export |
+| `vision` | Image analysis (Pillow) |
+| `gui` | Desktop computer-use — screenshots + mouse/keyboard (pyautogui) |
+| `browser` | Hidden-browser computer-use (Playwright; `playwright install chromium`) |
+| `all` | everything above |
+
+```bash
+uv pip install -e ".[all]"     # …or just install them from the menu, live
+```
+
+## Fine-tuning (local LoRA)
+
+On Apple Silicon, `oshell finetune` drives MLX-LM LoRA training; jobs are tracked
+on disk under `~/.oshell/finetune`.
+
+```bash
+oshell finetune detect                                      # mlx / unsloth / cpu
+oshell finetune create my-run -m <hf-model> -d data.jsonl   # prep + register
+oshell finetune start <job-id>                              # launch mlx_lm.lora
+oshell finetune status <job-id>                             # running/completed/failed
+oshell finetune list
+```
+
+Datasets may be `.jsonl/.json/.csv/.tsv/.txt`; records are normalized to a
+`{"text": …}` set (plain text / prompt+completion / chat-messages all work). Needs
+the `finetune` extra (`mlx-lm`).
+
+## Under the hood
 
 ```
 oshell/
   config.py            Typed, layered config (defaults<config.json<config.local.json<env)
   capabilities.py      Reports which optional features/integrations are available
+  fun.py               Daydreams 💭 — motifs, grounding, prompt building, streaming
   providers/           LLMProvider abstraction
     base.py              Message / ToolCall / ChatChunk / LLMProvider
     ollama.py            Ollama REST + streaming (tool-aware)
@@ -123,32 +293,35 @@ oshell/
   tools/               MCP-style host
     base.py              Tool + ToolRegistry (advertise specs, dispatch calls)
     builtins.py          current_time, list_models, read/write/list files (any path)
-    system.py            run_command (shell exec, cross-platform) + system_info
+    system.py            run_command (cross-platform shell exec) + system_info
+    web.py               web_search + fetch_url (core; flagged network-touching)
+    documents.py         create_document — txt/md/csv/docx/xlsx/pdf (opt-in [docs])
+    knowledge.py         add_knowledge + search_knowledge (opt-in [rag])
+    memory.py            remember / recall / forget (always-on)
     gui.py               screenshot + gui_click/type/key/move (opt-in, vision-gated)
     browser.py           browser_open/screenshot/click/type/key (hidden, off-screen)
+    atlassian.py         jira_search/get_issue + confluence_search/get_page (Server/DC)
   gui/controller.py      desktop-control backends (pyautogui; native seam)
   browser/controller.py  persistent Playwright browser on a dedicated thread
   desktop.py             notifications + terminal re-focus (after GUI turns)
-    web.py               web_search + fetch_url (core; flagged network-touching)
-    documents.py         create_document — txt/md/csv/docx/xlsx/pdf (opt-in [docs])
-    knowledge.py         add_knowledge + search_knowledge tools (opt-in [rag])
-    atlassian.py         jira_search/get_issue + confluence_search/get_page (Server/DC)
   knowledge.py         KnowledgeBase: ChromaDB + sentence-transformers (lazy, on-disk, no telemetry)
+  memory.py            MemoryStore: dependency-free JSON facts, injected + searchable
   integrations/
     atlassian.py         Jira/Confluence Server REST clients (reuse JIRA_*/CONFLUENCE_* env)
   finetune/            detect hardware, prep datasets, manage jobs, run mlx_lm.lora
-    cli.py               `oshell finetune detect|create|start|status|list`
   agent/
-    loop.py              The loop: model drives, multi-round tool-use, pin/exclude
+    loop.py              The loop: model drives multi-round tool-use; pin/exclude; promise-nudge
     events.py            TextDelta / ToolStarted / ToolFinished / TurnComplete / LimitReached
   cli.py               Thin Typer/Rich front-end
   tui/app.py           Textual workspace (Tools / Context / Activity tabs)
 ```
 
-The agent loop emits a stream of **events**; the CLI and TUI are just renderers
-of that stream. Swapping the backend is a one-line config change
-(`provider.name`), because nothing above `providers/` knows which runtime it's
-talking to.
+The agent loop emits a stream of **events**; the CLI and TUI are just renderers of
+that stream. Swapping the backend is a one-line config change (`provider.name`),
+because nothing above `providers/` knows which runtime it's talking to. The loop
+also **nudges the model** when it announces an action but forgets to call the
+tool, and **finalizes gracefully** if it hits the tool-round cap — so it never
+leaves you hanging on a half-finished promise.
 
 ### Configuration
 
@@ -158,168 +331,6 @@ shared) → `config.local.json` (per-machine, git-ignored) → `OSHELL_*` env va
 
 > v0.1 silently un-tracked `config.json` via a blanket `*.json` .gitignore rule.
 > That's fixed: config is tracked; real secrets go in `.env` / `config.local.json`.
-
-### Optional extras
-
-| Extra | Adds |
-|-------|------|
-| `tui` | Textual workspace |
-| `rag` | ChromaDB + sentence-transformers knowledge base |
-| `finetune` | MLX-LM LoRA fine-tuning (Apple Silicon) |
-| `docs` | Word/Excel/PDF/Markdown export |
-| `vision` | Image analysis (Pillow) |
-| `gui` | GUI computer-use — screenshots + mouse/keyboard (pyautogui) |
-| `browser` | Hidden-browser computer-use (Playwright; run `playwright install chromium`) |
-| `all` | everything above |
-
-```bash
-uv pip install -e ".[all]"
-```
-
-## Terminal / computer-use
-
-Ollama Shell is an *agentic* TUI: the model can act on your machine, not just
-chat. The `run_command` tool runs shell commands through the platform's own
-shell — `/bin/sh` on macOS/Linux, `cmd.exe` on Windows — with the workspace as
-the working directory, so the agent can inspect the system, drive git/builds,
-run scripts, and process files. `system_info` gives a safe, read-only summary
-(OS, arch, CPU, cores, RAM) without a shell.
-
-**Cross-platform.** Commands run through the platform's own shell: `/bin/sh` on
-macOS/Linux, **PowerShell** on Windows (`pwsh` if present, else `powershell`;
-force `cmd` with `{"shell":{"windows_shell":"cmd"}}`). The shell is **persistent**
-— `cd`, env vars, and activated virtualenvs carry across `run_command` calls (a
-long-lived `/bin/sh`, or PowerShell on Windows). A new session is health-probed
-and **falls back to one-shot automatically** if it isn't responsive, so it can
-never hang. GUI key chords are normalized per-OS (`cmd`→`win` on Windows,
-`command` on macOS) and the model is told which OS it's on. Disable persistence
-with `{"shell": {"persistent": false}}`.
-
-The file tools (`read_file`, `write_file`, `create_document`, `list_dir`) are
-**not sandboxed** — they accept absolute, `~`, or working-dir-relative paths and
-can read/write anywhere you can (e.g. save a report to `~/Documents`), consistent
-with `run_command`'s autonomy.
-
-> **Autonomy & safety.** By default `run_command` runs **without per-command
-> confirmation** — full autonomy. Every command and its output are shown inline
-> in the conversation (`🔧 run_command(...) → …`) and the tool is flagged `exec`
-> (red) in the Tools panel, with a banner on startup, so you always see what
-> ran. To require review or disable it, set `shell.enabled`/timeout in
-> `config.local.json` (e.g. `{"shell": {"enabled": false}}`) — or just don't ask
-> it to. Commands run with your user's privileges; treat the model accordingly.
-
-### Hidden browser (opt-in) — preferred for the web
-
-For web tasks, the model can drive a **dedicated, headless Chromium off-screen**
-via Playwright — it never takes over your display and needs no Screen Recording
-permission. Tools: `browser_open`, `browser_screenshot` (the rendered page, fed
-back so a vision model can see it), `browser_click`, `browser_type`, `browser_key`.
-
-- Install from the menu (**Install features → Hidden browser**) — it pip-installs
-  Playwright *and* downloads Chromium (`playwright install chromium`). Then turn
-  it on with the **Computer-use (browser)** menu toggle (or `{"browser":{"enabled":true}}`).
-- Needs a vision+tools model (it screenshots the page to act). Runs on a dedicated
-  thread so the browser persists across turns.
-- The model is told: use `fetch_url` to *read* a page, the hidden browser for
-  *interactive* tasks (login, clicking, forms, dynamic apps like Gmail).
-
-When the model finishes a turn that drove the **desktop** GUI, it fires a desktop
-notification and re-focuses your terminal so you know it's done (`gui.notify_on_finish`
-/ `gui.refocus_terminal`). The hidden browser needs neither, since it never leaves
-the terminal.
-
-### GUI computer-use (opt-in)
-
-Beyond the terminal, the model can drive the **desktop GUI** — take a
-screenshot, then click/type/press keys — for tasks a shell can't do. It's
-**off by default** and only available with a **vision-capable model** (it has to
-*see* the screen). The terminal stays the autonomous default; the model is told
-to prefer `run_command` and use the GUI only when a task genuinely needs it.
-
-It takes **two** opt-ins (both one-time): install the backend, then turn it on.
-
-- Install the backend from the menu (**Install features → GUI computer-use**) or
-  `./install.sh gui` (pyautogui). macOS needs **Screen Recording + Accessibility**
-  permission **for the exact terminal app that launches `oshell`** (iTerm,
-  Terminal, etc.) — without Screen Recording, macOS returns wallpaper-only
-  screenshots (no window contents), so `screenshot` now refuses with a clear
-  message rather than handing the model a blank image. Grant it in System
-  Settings → Privacy & Security → Screen Recording, then fully restart the
-  terminal. Linux X11 works out of the box (Wayland support is a planned native
-  backend).
-- Turn it on from the menu (**Computer-use (GUI)** toggle) — this persists
-  `gui.enabled` and the `screenshot`/`gui_*` tools appear in the Tools panel
-  immediately (you'll see them go from absent to listed). Or set it by hand:
-
-  ```jsonc
-  // config.local.json
-  { "gui": { "enabled": true } }
-  ```
-
-> If the toggle says it's on but no GUI tools appear, the active model isn't
-> vision-capable — pick one in **Models**. The Tools panel's *Optional features*
-> line only reflects whether a package is **installed**, not whether a feature is
-> switched on; the **Active tools** list is the source of truth for what the model
-> can actually call.
-- Select a vision+tools model (e.g. `gemma3`/`gemma4`, `llama3.2-vision`) in
-  **Models** — the GUI tools (`screenshot`, `gui_click`, `gui_type`, `gui_key`,
-  `gui_move`) appear only then, flagged `exec` (red).
-- The model screenshots, the image is fed back so it can see, it acts, and
-  screenshots again to verify. A pyautogui failsafe (slam the mouse into a
-  screen corner) aborts a runaway loop.
-
-The control layer is a `Controller` abstraction (`oshell/gui/`) with a pyautogui
-backend today and a clean seam for native backends (Wayland `grim`/`ydotool`,
-macOS `screencapture`/`cliclick`).
-
-## Memory
-
-Ollama Shell keeps a lightweight, **always-on memory** of durable facts about you
-(name, tools you use, how you like answers, ongoing projects) so it carries
-context across sessions — separate from the heavier, opt-in RAG knowledge base.
-
-- **Hybrid capture**: the model saves a fact on its own when it clearly matters,
-  shown inline as `📝 remembered: …` so you see (and can correct) it. You can
-  also just say "remember that …".
-- **Auto-recall**: stored facts are **injected into the system prompt**, so the
-  model simply *knows* them next launch — no manual search. (`recall` lets it
-  search the full set when memory grows.)
-- Dependency-free, stored at `~/.oshell/memory.json`. View it via **menu →
-  Memory**; remove with "forget X" or "forget all". Disable with
-  `{"memory":{"enabled":false}}`.
-
-**Conversation resume.** The transcript is saved to `~/.oshell/last_session.json`
-after each turn, so closing and reopening `oshell tui` picks the conversation
-back up where you left off (prior turns are re-rendered). Start over with **menu →
-New conversation** or by typing **`/clear`** at the prompt. Disable with
-`{"session":{"persist":false}}`.
-
-**Slash commands.** At the prompt: `/clear` (start a new conversation), `/menu`
-(open the menu), `/daydream` (see below), `/help` (show keys and commands).
-
-**Daydreams 💭.** Type **`/daydream`** (or **menu → Daydream**) and the model
-stops being useful for a moment: it free-associates a short, surreal vignette
-that drifts off from whatever you've been talking about. Grounded in your recent
-chat but deliberately good for nothing — a little inner life for a local-first
-machine. Daydreams are ephemeral (never added to the conversation history).
-Disable with `{"fun":{"daydreams":false}}`.
-
-## Fine-tuning (local LoRA)
-
-On Apple Silicon, `oshell finetune` drives MLX-LM LoRA training; jobs are tracked
-on disk under `~/.oshell/finetune`.
-
-```bash
-oshell finetune detect                                   # mlx / unsloth / cpu
-oshell finetune create my-run -m <hf-model> -d data.jsonl  # prep + register
-oshell finetune start <job-id>                           # launch mlx_lm.lora
-oshell finetune status <job-id>                          # running/completed/failed
-oshell finetune list
-```
-
-Datasets may be `.jsonl/.json/.csv/.tsv/.txt`; records are normalized to a
-`{"text": …}` training set (text / prompt+completion / chat-messages all work).
-Needs the `finetune` extra (`mlx-lm`).
 
 ## Development
 
@@ -333,28 +344,27 @@ make fmt         # ruff --fix + format
 
 CI (GitHub Actions) runs ruff + mypy + pytest (`-m "not snapshot"`) on Python
 3.10–3.13. The TUI has a Textual SVG **layout snapshot** test (marked `snapshot`,
-run locally since baselines are pinned to a Textual version); regenerate it after
+run locally since baselines are pinned to a Textual version); regenerate after
 intentional layout changes with `make snapshot`.
 
-## Legacy migration (complete)
+## The great migration (complete)
 
 The v0.1 monolith (`ollama_shell.py`) and all its sibling modules have been
-**deleted**. Each capability was reimplemented as a clean, tested tool and
-verified before its legacy source was removed:
+**deleted**. Each capability was reimplemented as a clean, tested tool and verified
+*before* its legacy source was removed:
 
-| v0.1 module(s) | → v0.2 | Verification |
-|----------------|--------|--------------|
+| v0.1 module(s) | → v0.2 | Verified by |
+|----------------|--------|-------------|
 | `web_browsing` (extraction core) | `fetch_url` + `web_search` | live fetch of a real page |
 | `file_creation` + `fixed_file_handler` | `create_document` tool | model wrote a real `.docx` |
 | monolith `KnowledgeBase` | `oshell.knowledge` + `add/search_knowledge` | live semantic round-trip |
 | `finetune.py` + `finetune_modules/` | `oshell.finetune` + `oshell finetune` | command verified vs real `mlx_lm.lora` |
 | `*_mcp_integration` (Confluence/Jira) | `oshell.integrations.atlassian` + 4 tools | live read-only call to a real Server |
 
-**Not carried over** (available in git history if ever needed): the standalone
-filesystem-MCP server (the core read/write/list operations are covered by
-built-in sandboxed tools), the `task_manager` to-do subsystem, and the
-Glama/`mcp_browser` browser-automation integrations. Open an issue or ask if
-you want any of these migrated next.
+**Not carried over** (still in git history if ever needed): the standalone
+filesystem-MCP server (its read/write/list operations are covered by the built-in
+file tools), the `task_manager` to-do subsystem, and the Glama/`mcp_browser`
+browser-automation integrations. Open an issue if you'd like any migrated next.
 
 ### Repository layout
 
@@ -367,4 +377,4 @@ you want any of these migrated next.
 
 ## License
 
-MIT.
+MIT. Built with care, and a little imagination, on local hardware.
