@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ollama Shell — a local-first AI that dreams</title>
+<meta name="description" content="An animated demo of Ollama Shell: a private, local-first agentic terminal that runs on your machine, uses your tools… and daydreams." />
+<meta property="og:title" content="Ollama Shell — a local-first AI that dreams" />
+<meta property="og:description" content="Watch a late-night session: real tool calls, web search, a saved document, memory… and a daydream." />
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#0f1620; --panel2:#0c121b; --ink:#d7e2ee; --dim:#7c8ba0;
+    --accent:#4fd1c5; --accent2:#8b7cff; --cyan:#59c2d6; --green:#7bd88f;
+    --yellow:#e7c667; --red:#e06c75; --magenta:#c78be6;
+    --user:#7bd88f; --line:#1c2735; --glow:0 0 18px rgba(79,209,197,.18);
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono","Fira Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(139,124,255,.10), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(79,209,197,.10), transparent 55%),
+      var(--bg);
+    color:var(--ink); font-family:var(--mono);
+    display:flex; flex-direction:column; align-items:center;
+    padding:28px 16px 60px; min-height:100%;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent)}
+  .intro{max-width:820px; text-align:center; margin-bottom:20px}
+  .intro h1{font-size:clamp(22px,4vw,34px); margin:.2em 0; letter-spacing:.3px}
+  .intro h1 .sh{color:var(--accent)}
+  .intro p{color:var(--dim); margin:.4em auto; max-width:640px; line-height:1.5}
+  .badge{display:inline-block; font-size:12px; color:var(--accent2);
+    border:1px solid rgba(139,124,255,.35); border-radius:999px; padding:2px 10px; margin-top:6px}
+
+  /* ── the faux terminal ── */
+  .term{
+    width:min(920px,100%); background:var(--panel);
+    border:1px solid var(--line); border-radius:14px; overflow:hidden;
+    box-shadow:var(--glow), 0 20px 60px rgba(0,0,0,.5);
+    position:relative;
+  }
+  .stars{position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity 1.4s ease}
+  .term.dreaming .stars{opacity:1}
+  .star{position:absolute; width:2px; height:2px; border-radius:50%;
+    background:#cfe3ff; box-shadow:0 0 6px #9db8ff; animation:tw 3s infinite ease-in-out}
+  @keyframes tw{0%,100%{opacity:.15; transform:scale(.7)} 50%{opacity:.95; transform:scale(1.2)}}
+
+  .titlebar{display:flex; align-items:center; gap:8px; padding:10px 14px;
+    background:linear-gradient(180deg,#121b26,#0e151e); border-bottom:1px solid var(--line)}
+  .dot{width:12px;height:12px;border-radius:50%}
+  .dot.r{background:#ff5f57}.dot.y{background:#febc2e}.dot.g{background:#28c840}
+  .titlebar .name{margin-left:8px; color:var(--dim); font-size:12.5px}
+
+  .header{display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center;
+    padding:8px 14px; font-size:12px; color:var(--dim);
+    background:var(--panel2); border-bottom:1px solid var(--line)}
+  .header b{color:var(--ink); font-weight:600}
+  .header .priv{color:var(--yellow)}
+
+  .body{display:grid; grid-template-columns:1fr 260px; min-height:420px}
+  @media (max-width:680px){ .body{grid-template-columns:1fr} .sidebar{display:none} }
+
+  .convo{position:relative; padding:14px 16px; overflow-y:auto; max-height:52vh; min-height:420px;
+    font-size:13.5px; line-height:1.6; scroll-behavior:smooth}
+  .convo::-webkit-scrollbar{width:8px}
+  .convo::-webkit-scrollbar-thumb{background:#1e2b3b; border-radius:8px}
+
+  .msg{margin:2px 0 10px; white-space:pre-wrap; word-break:break-word}
+  .user{color:var(--user)} .user .caret-in{color:var(--user)}
+  .assistant{color:var(--ink)}
+  .tool{color:var(--cyan)} .tool .args{color:var(--dim)}
+  .toolres{color:var(--dim)}
+  .mem{color:var(--magenta)}
+  .sys{color:var(--dim); font-style:italic}
+  .limit{color:var(--yellow)}
+  .dream{color:#a9b7c9; font-style:italic}
+  .dream .lead{color:var(--magenta); font-style:normal}
+  .cursor{display:inline-block; width:8px; background:var(--accent);
+    animation:blink 1s steps(2) infinite; color:transparent; margin-left:1px}
+  @keyframes blink{50%{opacity:0}}
+
+  .sidebar{border-left:1px solid var(--line); background:var(--panel2); display:flex; flex-direction:column}
+  .tabs{display:flex; font-size:12px; border-bottom:1px solid var(--line)}
+  .tabs .tab{flex:1; text-align:center; padding:8px 4px; color:var(--dim); cursor:pointer; user-select:none}
+  .tabs .tab.active{color:var(--accent); border-bottom:2px solid var(--accent); background:rgba(79,209,197,.05)}
+  .panel{padding:10px 12px; font-size:12px; line-height:1.7; overflow-y:auto; flex:1; max-height:52vh}
+  .panel h4{margin:2px 0 6px; color:var(--dim); font-weight:600; text-transform:uppercase; letter-spacing:.6px; font-size:10.5px}
+  .roster .l{color:var(--green)} .roster .n{color:var(--yellow)} .roster .x{color:var(--red)}
+  .roster .name{color:var(--ink)}
+  .feat .on{color:var(--green)} .feat .off{color:var(--dim)}
+  .actlog div{color:var(--dim); margin-bottom:3px; white-space:pre-wrap}
+  .actlog .head{color:var(--cyan)}
+  .ctx div{color:var(--dim)}
+
+  .live{min-height:22px; padding:4px 16px; font-size:12.5px; color:var(--dim);
+    border-top:1px solid var(--line); background:var(--panel2)}
+  .spin{display:inline-block; color:var(--accent)}
+  .inputbar{display:flex; align-items:center; gap:8px; padding:10px 14px;
+    border-top:1px solid var(--line); background:var(--panel); font-size:13.5px}
+  .inputbar .prompt{color:var(--green); font-weight:700}
+  .inputbar .field{flex:1; color:var(--ink); min-height:18px; white-space:pre-wrap}
+  .inputbar .hint{color:var(--dim); font-size:11px}
+
+  .controls{display:flex; gap:10px; align-items:center; margin-top:16px; flex-wrap:wrap; justify-content:center}
+  .btn{background:#111a25; color:var(--ink); border:1px solid var(--line);
+    border-radius:9px; padding:8px 14px; font-family:var(--mono); font-size:13px; cursor:pointer;
+    transition:.15s}
+  .btn:hover{border-color:var(--accent); box-shadow:var(--glow)}
+  .btn.primary{border-color:var(--accent); color:var(--accent)}
+  .controls .note{color:var(--dim); font-size:12px; width:100%; text-align:center; margin-top:2px}
+  .footer{color:var(--dim); font-size:12px; margin-top:26px; text-align:center; max-width:640px; line-height:1.6}
+  .footer a{color:var(--accent2)}
+</style>
+</head>
+<body>
+  <div class="intro">
+    <div class="badge">a scripted demo · the real thing runs on your machine</div>
+    <h1><span class="sh">oshell</span> — a local-first AI that dreams</h1>
+    <p>A private, agentic terminal for Ollama. It uses <em>your</em> tools, keeps
+    <em>your</em> secrets, and when the night gets quiet… it daydreams. Press play
+    and watch a little late-night session unfold.</p>
+  </div>
+
+  <div class="term" id="term">
+    <div class="stars" id="stars"></div>
+    <div class="titlebar">
+      <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      <span class="name">oshell — the workspace</span>
+    </div>
+    <div class="header">
+      <span>Ollama Shell · <b>gemma4</b> · ollama</span>
+      <span>·&nbsp; <b>12</b> tools</span>
+      <span class="priv">·&nbsp; 🔒 local-first · network: web_search, fetch_url</span>
+    </div>
+    <div class="body">
+      <div class="convo" id="convo"></div>
+      <div class="sidebar">
+        <div class="tabs">
+          <div class="tab" data-tab="tools">Tools</div>
+          <div class="tab" data-tab="ctx">Context</div>
+          <div class="tab active" data-tab="act">Activity</div>
+        </div>
+        <div class="panel" id="panel"></div>
+      </div>
+    </div>
+    <div class="live" id="live"></div>
+    <div class="inputbar">
+      <span class="prompt">›</span>
+      <span class="field" id="field"></span>
+      <span class="hint">Esc menu · Ctrl+T tools · Ctrl+Y copy</span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn primary" id="replay">▶ Replay</button>
+    <button class="btn" id="speed">Speed: 1×</button>
+    <button class="btn" id="skip">⏭ Skip to the dream</button>
+    <div class="note">No install to watch this — but the real oshell is one
+      <code>./install.sh</code> away.</div>
+  </div>
+
+  <div class="footer">
+    Built with care, and a little imagination, on local hardware. ·
+    <a href="https://github.com/sunkencity999/ollama_shell">Source &amp; README on GitHub →</a>
+  </div>
+
+<script>
+(() => {
+  const convo = document.getElementById('convo');
+  const panel = document.getElementById('panel');
+  const live  = document.getElementById('live');
+  const field = document.getElementById('field');
+  const term  = document.getElementById('term');
+  const stars = document.getElementById('stars');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  let speed = 1;          // 1 = normal, 2 = fast
+  let run = 0;            // run token; bump to cancel a playthrough
+  const sleep = ms => new Promise(r => setTimeout(r, reduce ? Math.min(ms,120) : ms/speed));
+  const scroll = () => { convo.scrollTop = convo.scrollHeight; };
+
+  // ── sidebar panels ────────────────────────────────────────────────
+  const TOOLS_HTML = `
+    <div class="roster">
+      <h4>Active tools</h4>
+      <div><span class="l">local</span> <span class="name">current_time</span></div>
+      <div><span class="l">local</span> <span class="name">list_dir</span></div>
+      <div><span class="l">local</span> <span class="name">read_file</span></div>
+      <div><span class="l">local</span> <span class="name">write_file</span></div>
+      <div><span class="l">local</span> <span class="name">create_document</span></div>
+      <div><span class="l">local</span> <span class="name">remember</span></div>
+      <div><span class="n">net</span>&nbsp;&nbsp; <span class="name">web_search</span></div>
+      <div><span class="n">net</span>&nbsp;&nbsp; <span class="name">fetch_url</span></div>
+      <div class="feat" style="margin-top:8px">
+      <h4>Optional features</h4>
+      <div><span class="on">✓</span> rag <span class="off">(knowledge)</span></div>
+      <div><span class="on">✓</span> docs <span class="off">(export)</span></div>
+      <div><span class="off">✗ browser (hidden)</span></div>
+      </div>
+    </div>`;
+  let ctxCount = 1;
+  const ctxHTML = () => `<div class="ctx"><h4>Context 📌 pinned</h4>
+      <div>📌 0 · system prompt</div>
+      <div>${ctxCount>1?'&nbsp;&nbsp;'+(ctxCount-1)+' more message(s) in view':'&nbsp;&nbsp;waiting…'}</div></div>`;
+  let actItems = [];
+  const actHTML = () => `<div class="actlog"><h4>Activity</h4>${
+      actItems.length ? actItems.join('') : '<div>…quiet for now</div>'}</div>`;
+
+  let activeTab = 'act';
+  function renderPanel(){
+    panel.innerHTML = activeTab==='tools' ? TOOLS_HTML
+                    : activeTab==='ctx'   ? ctxHTML()
+                    : actHTML();
+  }
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active'); activeTab = t.dataset.tab; renderPanel();
+  }));
+  function focusTab(name){
+    activeTab = name;
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active', x.dataset.tab===name));
+    renderPanel();
+  }
+  function addActivity(head, sub){
+    actItems.push(`<div class="head">⚙ ${head}</div>` + (sub?`<div>&nbsp;&nbsp;↳ ${sub}</div>`:''));
+    if(activeTab==='act') renderPanel();
+  }
+
+  // ── conversation primitives ───────────────────────────────────────
+  function line(cls, html){
+    const d = document.createElement('div');
+    d.className = 'msg ' + cls; d.innerHTML = html; convo.appendChild(d); scroll();
+    return d;
+  }
+  async function typeField(text, cadence=42){
+    field.innerHTML = '';
+    const cur = document.createElement('span'); cur.className='cursor'; cur.textContent='.';
+    field.appendChild(cur);
+    for(const ch of text){
+      const t = run;
+      await sleep(cadence);
+      if(t!==run) return;
+      cur.insertAdjacentText('beforebegin', ch);
+    }
+    await sleep(320);
+    cur.remove();
+  }
+  async function submitUser(text){
+    await typeField(text);
+    field.textContent = '';
+    line('user', '<span class="caret-in">›</span> ' + esc(text));
+    ctxCount++;
+  }
+  async function stream(el, text, cls='', cadence=16){
+    const span = document.createElement('span'); el.appendChild(span);
+    const cur = document.createElement('span'); cur.className='cursor'; cur.textContent='.';
+    el.appendChild(cur);
+    for(const ch of text){
+      const t = run; await sleep(cadence); if(t!==run) return;
+      span.insertAdjacentText('beforeend', ch); scroll();
+    }
+    cur.remove();
+  }
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  // status / spinner
+  const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+  let spinTimer=null;
+  function setStatus(text){
+    clearInterval(spinTimer); let i=0;
+    if(!text){ live.innerHTML=''; return; }
+    const paint=()=>{ live.innerHTML = `<span class="spin">${frames[i=(i+1)%frames.length]}</span> <span>${text}…</span>`; };
+    paint(); spinTimer = setInterval(paint, 90);
+  }
+  function clearStatus(){ clearInterval(spinTimer); live.innerHTML=''; }
+
+  async function think(status, ms=1100){ setStatus(status); await sleep(ms); }
+
+  async function toolCall(name, args, kind, ms, resultText){
+    focusTab('act');
+    setStatus('Running ' + name);
+    line('tool', `🔧 <span>${name}</span><span class="args">(${esc(args)})</span>`);
+    addActivity(`${name}(${args})`);
+    await sleep(ms);
+    if(resultText){
+      line('toolres', `&nbsp;&nbsp;&nbsp;↳ ${esc(resultText)}`);
+      addActivity(name, esc(resultText.slice(0,60)));
+    }
+    setStatus('Thinking');
+    await sleep(500);
+  }
+
+  async function assistant(text){
+    setStatus('Thinking'); await sleep(600);
+    clearStatus();
+    const el = line('assistant', '');
+    await stream(el, text);
+    ctxCount++;
+  }
+
+  function makeStars(n=60){
+    stars.innerHTML='';
+    for(let i=0;i<n;i++){
+      const s=document.createElement('div'); s.className='star';
+      s.style.left=(Math.random()*100)+'%'; s.style.top=(Math.random()*100)+'%';
+      s.style.animationDelay=(Math.random()*3)+'s';
+      s.style.opacity=String(0.2+Math.random()*0.6);
+      stars.appendChild(s);
+    }
+  }
+
+  // ── the story ─────────────────────────────────────────────────────
+  async function story(){
+    const myRun = ++run;
+    convo.innerHTML=''; field.textContent=''; actItems=[]; ctxCount=1;
+    term.classList.remove('dreaming'); focusTab('act'); clearStatus();
+
+    line('sys', '— Ollama Shell · everything below runs on this machine —');
+    await sleep(reduce?300:900); if(myRun!==run) return;
+
+    // 1) a small utility ask
+    await submitUser("evening. what've I got going on in this folder?");
+    if(myRun!==run) return;
+    await think('Thinking', 900);
+    await toolCall('list_dir', '.', 'local', 900, '9 entries');
+    if(myRun!==run) return;
+    await assistant("A cozy little pile: `notes.md`, `taxes-2025/`, `gwg-1000-manual.pdf`, "
+      + "a half-finished `stargazing.md`, and — bravely — `misc/`. Want me to tidy, read, or build on any of it?");
+    await sleep(700); if(myRun!==run) return;
+
+    // 2) web (network tool, honest + visible)
+    await submitUser("will the sky be clear over Boulder Creek tonight?");
+    if(myRun!==run) return;
+    await think('Thinking', 800);
+    await toolCall('web_search', '"Boulder Creek CA clear skies tonight"', 'net', 950, '5 results');
+    if(myRun!==run) return;
+    await toolCall('fetch_url', 'weather.gov/…/boulder-creek', 'net', 900, 'Tonight: Clear. Low 48°F.');
+    if(myRun!==run) return;
+    await assistant("Clear and calm — low around 48°F, light wind. Genuinely good stargazing weather. "
+      + "New moon, too, so the sky'll be dark. Shall I turn `stargazing.md` into a proper plan?");
+    await sleep(650); if(myRun!==run) return;
+
+    // 3) write a document
+    await submitUser("yes! write it to my Documents, nice and short.");
+    if(myRun!==run) return;
+    await think('Thinking', 700);
+    await toolCall('create_document', '~/Documents/stargazing-tonight.md', 'local', 1050,
+      'wrote 1.2 KB (markdown)');
+    if(myRun!==run) return;
+    await assistant("Done → `~/Documents/stargazing-tonight.md`. Best window 10–11pm, look southeast for "
+      + "Saturn, bring the thermos. (Your files never left this machine.)");
+    await sleep(650); if(myRun!==run) return;
+
+    // 4) memory
+    await submitUser("remember I'm in Boulder Creek and I like short answers.");
+    if(myRun!==run) return;
+    await think('Thinking', 700);
+    setStatus('Running remember');
+    line('mem', '📝 remembered: <span>User is in Boulder Creek, CA and prefers short answers.</span>');
+    addActivity('remember(User is in Boulder Creek…)');
+    await sleep(900); if(myRun!==run) return;
+    await assistant("Got it — noted for next time. I'll keep it brief. 🤏");
+    await sleep(800); if(myRun!==run) return;
+
+    // 5) the dream
+    await dreamSequence(myRun);
+    if(myRun!==run) return;
+
+    setStatus(''); clearStatus();
+    line('sys', '— it waits, quietly, on your machine · press ▶ Replay to dream again —');
+    scroll();
+  }
+
+  async function dreamSequence(myRun){
+    await submitUser("/daydream");
+    if(myRun!==run) return;
+    setStatus('Daydreaming'); makeStars(); term.classList.add('dreaming');
+    await sleep(1200); if(myRun!==run) return;
+    clearStatus();
+    const el = line('dream', '<span class="lead">💭</span> ');
+    const dream =
+      "The wristwatch on the desk forgets it is a watch and remembers it is a lighthouse. "
+      + "It ticks out tides for little ships made of seconds, and each hour a paper boat "
+      + "slips over the edge of the screen into the dark, clear water of Boulder Creek — "
+      + "where the stars, off duty now, are learning at last how to float.";
+    await stream(el, dream, 'dream', 26);
+  }
+
+  // ── controls ──────────────────────────────────────────────────────
+  document.getElementById('replay').addEventListener('click', () => story());
+  document.getElementById('speed').addEventListener('click', (e) => {
+    speed = speed===1 ? 2 : 1; e.target.textContent = 'Speed: ' + speed + '×';
+  });
+  document.getElementById('skip').addEventListener('click', async () => {
+    const myRun = ++run;
+    convo.innerHTML=''; field.textContent=''; actItems=[]; ctxCount=6;
+    focusTab('act'); addActivity('list_dir(.)','9 entries');
+    addActivity('web_search','5 results'); addActivity('create_document','wrote 1.2 KB');
+    addActivity('remember','User is in Boulder Creek…');
+    line('sys','— skipping ahead to the quiet part —');
+    line('mem','📝 remembered: <span>User is in Boulder Creek, CA and prefers short answers.</span>');
+    await dreamSequence(myRun);
+    if(myRun!==run) return;
+    line('sys','— press ▶ Replay to watch the whole evening —');
+  });
+
+  renderPanel();
+  story();
+})();
+</script>
+</body>
+</html>

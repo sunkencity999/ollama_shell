@@ -7,6 +7,12 @@ running on your own hardware — one that can read your files, run your shell,
 search the web when you ask, write you a report, drive a hidden browser… and,
 when the room goes quiet, sit there and **daydream**.
 
+### ▶ [**Watch the live demo →**](https://sunkencity999.github.io/ollama_shell/)
+
+A 60-second animated playthrough — a late-night session with real tool calls, a
+web lookup, a saved document, memory… and, when it goes quiet, a daydream. No
+install required to watch.
+
 Created by Christopher Bradford · [contact@christopherdanielbradford.com](mailto:contact@christopherdanielbradford.com)
 
 > **v0.2 — Reimagined.** This began as a feature-rich chat REPL and grew into a
@@ -157,7 +163,8 @@ It's deliberately, gloriously useless. Some design choices I cared about:
   can only wander.
 
 Works at the prompt (`/daydream` / `/dream`), in the menu, and in the plain CLI.
-Disable with `{"fun":{"daydreams":false}}`.
+Disable with `{"fun":{"daydreams":false}}`. Want to see one before you install?
+[**▶ Watch the demo**](https://sunkencity999.github.io/ollama_shell/).
 
 ## Memory & resume — it knows you next time
 
