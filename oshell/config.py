@@ -123,9 +123,10 @@ class FinetuneConfig(BaseModel):
 
 
 class FunConfig(BaseModel):
-    """Quirky, non-essential delights (currently: daydreams)."""
+    """Quirky, non-essential delights (daydreams + ambient effects)."""
 
     daydreams: bool = True  # enable the /daydream command + menu entry
+    effects: bool = True  # ambient visuals: dream starfield, aurora, embers, fireflies
 
 
 class Config(BaseModel):

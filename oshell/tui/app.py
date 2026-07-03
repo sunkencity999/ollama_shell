@@ -14,6 +14,7 @@ The agent loop is synchronous and streaming, so each turn runs in a worker
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from rich.markup import escape
@@ -188,6 +189,9 @@ class OllamaShellTUI(App):
         self._pending_paste = ""  # multi-line pasted text, sent with the next message
         self._pending_images: list[str] = []  # base64 images attached to next message
         self._last_reply = ""  # the model's most recent reply (for quick copy)
+        # Ambient-effects state (see oshell/tui/ambient.py).
+        self._ember: tuple[str, float] | None = None  # (color, monotonic birth time)
+        self._idle_since = time.monotonic()  # for the idle fireflies
 
     _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -264,18 +268,42 @@ class OllamaShellTUI(App):
         self.query_one(ContextInspector).refresh_view(self.agent)
 
     def _tick(self) -> None:
-        """Render the live region: spinner+status while working, or streamed text."""
+        """Render the live region: spinner+status while working, or streamed text.
+
+        With ambient effects on, this strip is also where the periphery lives:
+        the thinking status drifts through aurora hues, tool completions leave a
+        fading ember, and a long-idle shell hosts a few fireflies. Motion never
+        enters the transcript itself.
+        """
+        from . import ambient
+
+        effects = self.agent.config.fun.effects
+        self._spin += 1
         if not self._busy:
-            if self._live_text:
+            if effects and (time.monotonic() - self._idle_since) > ambient.IDLE_FIREFLIES_AFTER:
+                try:
+                    width = self.query_one("#live", Static).size.width or 40
+                except NoMatches:
+                    width = 40
+                self._set_live(ambient.fireflies_markup(width, self._spin))
+            elif self._live_text:
                 self._set_live("")
             return
-        self._spin = (self._spin + 1) % len(self._SPINNER)
-        frame = self._SPINNER[self._spin]
+        frame = self._SPINNER[self._spin % len(self._SPINNER)]
+        hue = ambient.aurora_color(self._spin // 3) if effects else "cyan"
+        ember = ""
+        if effects and self._ember is not None:
+            color, born = self._ember
+            glyph = ambient.ember_glyph(time.monotonic() - born)
+            if glyph is None:
+                self._ember = None
+            else:
+                ember = f"[{color}]{glyph}[/] "
         if self._stream:
             # Streaming the reply — show it building with a blinking cursor.
-            self._set_live(f"[dim]{escape(self._stream)}[/dim][cyan]▌[/cyan]")
+            self._set_live(f"[dim]{escape(self._stream)}[/dim][{hue}]▌[/]")
         else:
-            self._set_live(f"[cyan]{frame}[/cyan] [dim]{escape(self._status)}…[/dim]")
+            self._set_live(f"{ember}[{hue}]{frame}[/] [dim]{escape(self._status)}…[/dim]")
 
     def _set_live(self, markup: str) -> None:
         self._live_text = markup
@@ -686,7 +714,13 @@ class OllamaShellTUI(App):
 
     # ── daydreams 💭 ───────────────────────────────────────────────────────────
     def _start_daydream(self) -> None:
-        """Let the model wander: a short, useless, delightful free-association."""
+        """Let the model wander: a short, useless, delightful free-association.
+
+        With ambient effects on, the dream takes the whole stage: a full-screen
+        starfield (oshell/tui/dream.py) that the text streams into, dismissed by
+        any key. With effects off, it streams in the live strip as before. Either
+        way the dream lands in the transcript and never touches model context.
+        """
         if not self.agent.config.fun.daydreams:
             self._conversation().write("[dim]Daydreams are disabled.[/dim]")
             return
@@ -695,19 +729,38 @@ class OllamaShellTUI(App):
         self._busy = True
         self._stream = ""
         self._status = "Daydreaming"
-        self.run_worker(self._daydream_worker, thread=True, exclusive=True)
+        screen = None
+        if self.agent.config.fun.effects:
+            from .dream import DreamScreen
 
-    def _daydream_worker(self) -> None:
+            screen = DreamScreen()
+            self.push_screen(screen, lambda _res: self.query_one(Input).focus())
+        self.run_worker(lambda: self._daydream_worker(screen), thread=True, exclusive=True)
+
+    def _daydream_worker(self, screen=None) -> None:
         from .. import fun
 
         convo = self._conversation()
+
+        def to_screen(*args) -> None:
+            """Feed the dream screen, tolerating the user waking up early."""
+            if screen is not None:
+                try:
+                    self.call_from_thread(*args)
+                except Exception:
+                    pass  # screen already dismissed — the transcript still gets the dream
+
         try:
             motif = fun.pick_motif()
             messages = fun.build_daydream_messages(self.agent.messages, motif)
             text = ""
             for piece in fun.daydream(self.agent.provider, self.agent.model, messages):
                 text += piece
-                self._stream = text  # render live in the dim indicator
+                self._stream = text  # live-strip fallback (effects off)
+                if screen is not None:
+                    to_screen(screen.feed, text)
+            if screen is not None:
+                to_screen(screen.finish)
             dream = escape(text.strip()) or "…(its mind wandered off the edge of the screen)"
             self.call_from_thread(
                 convo.write, f"[magenta]💭[/magenta] [italic dim]{dream}[/italic dim]"
@@ -719,10 +772,12 @@ class OllamaShellTUI(App):
         finally:
             self._busy = False
             self._stream = ""
+            self._idle_since = time.monotonic()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         typed = event.value.strip()
         event.input.value = ""
+        self._idle_since = time.monotonic()  # typing dispels the fireflies
         if self._busy:  # ignore submits while a turn is running
             return
         if typed.startswith("/") and not self._pending_paste:
@@ -783,6 +838,10 @@ class OllamaShellTUI(App):
                     self.call_from_thread(activity.write, act)
                 elif isinstance(event, ToolFinished):
                     self._status = "Thinking"
+                    if self.agent.config.fun.effects:  # a spark fades in the live bar
+                        from . import ambient
+
+                        self._ember = (ambient.ember_color_for(event.name), time.monotonic())
                     if event.name != "remember":  # already shown as "📝 remembered: …"
                         summary = _summarize_result(event.result)
                         self.call_from_thread(convo.write, f"[dim]   ↳ {escape(summary)}[/dim]")
@@ -808,6 +867,7 @@ class OllamaShellTUI(App):
             # Stop the indicator and refresh the context view (guard teardown race).
             self._busy = False
             self._stream = ""
+            self._idle_since = time.monotonic()  # fireflies count from the turn's end
             if used_memory:
                 # Re-inject updated memory so later turns reflect what was just saved.
                 self.agent.rebuild_system_prompt()

@@ -622,6 +622,85 @@ async def test_slash_daydream_runs_without_touching_history(tmp_path, monkeypatc
         assert len(app.query_one("#conversation", RichLog).lines) > n0
 
 
+async def test_daydream_opens_dream_screen_and_wakes_on_key(tmp_path, monkeypatch):
+    from oshell.tui.dream import DreamScreen
+
+    monkeypatch.chdir(tmp_path)
+    app = _app()  # fun.effects defaults on
+    async with app.run_test() as pilot:
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "/daydream"
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, DreamScreen)  # the sky takes the stage
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if not app._busy:
+                break
+        assert app.screen._done is True  # dream finished streaming
+        assert "hello from the model" in app.screen._text
+        await pilot.press("space")  # any key wakes the shell
+        await pilot.pause()
+        assert not isinstance(app.screen, DreamScreen)
+
+
+async def test_daydream_streams_inline_when_effects_off(tmp_path, monkeypatch):
+    from oshell.tui.dream import DreamScreen
+
+    monkeypatch.chdir(tmp_path)
+    app = _app()
+    app.agent.config.fun.effects = False
+    async with app.run_test() as pilot:
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "/daydream"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if not app._busy:
+                break
+        # No full-screen takeover; the dream still landed in the transcript.
+        assert not isinstance(app.screen, DreamScreen)
+        assert len(app.agent.messages) == 1  # ephemeral either way (system only)
+
+
+async def test_tick_renders_aurora_and_ember_when_busy():
+    import time as _time
+
+    from oshell.tui import ambient
+
+    app = _app()
+    async with app.run_test() as pilot:
+        app._busy = True
+        app._stream = ""
+        app._status = "Thinking"
+        app._ember = (ambient.EMBER_COLORS["net"], _time.monotonic())
+        app._tick()
+        await pilot.pause()
+        # The spark and an aurora hue (not plain cyan) are both in the strip.
+        assert ambient.EMBER_FRAMES[0] in app._live_text
+        assert any(hex_ in app._live_text for hex_ in ambient.AURORA)
+        app._busy = False
+
+
+async def test_fireflies_appear_when_idle_and_disperse_on_activity():
+    import time as _time
+
+    app = _app()
+    async with app.run_test() as pilot:
+        app._idle_since = _time.monotonic() - 999  # long-quiet shell
+        app._tick()
+        await pilot.pause()
+        assert any(g in app._live_text for g in ("✦", "✧", "·"))
+        app._idle_since = _time.monotonic()  # activity: flies disperse
+        app._tick()
+        await pilot.pause()
+        assert app._live_text == ""
+
+
 async def test_slash_clear_resets_conversation(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     app = _app()

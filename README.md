@@ -166,6 +166,25 @@ Works at the prompt (`/daydream` / `/dream`), in the menu, and in the plain CLI.
 Disable with `{"fun":{"daydreams":false}}`. Want to see one before you install?
 [**▶ Watch the demo**](https://sunkencity999.github.io/ollama_shell/).
 
+### Ambient effects — a shell you can live in
+
+The TUI has a quiet visual pulse. The rule: **motion never enters text you're
+reading** — it lives in the periphery, and every effect *means* something:
+
+- 🌌 **Dream Mode** — `/daydream` takes the whole stage: a full-screen night sky
+  of twinkling stars (and the occasional comet) that the dream streams into,
+  centered. Any key wakes the shell; the dream is kept in the transcript.
+- 🌈 **Aurora** — while the model thinks, the spinner and status drift slowly
+  through cool hues instead of sitting at a fixed cyan. Breathing, not blinking.
+- ✨ **Embers** — when a tool finishes, a tiny spark fades (`✦ ✧ ∗ ·`) in the
+  status strip — amber for network tools, magenta for memory, green for local.
+- 🐛 **Fireflies** — leave the shell quiet for a couple of minutes and two or
+  three faint fireflies drift across the empty status strip, keeping the place
+  warm. Any keystroke disperses them.
+
+All of it switches off with `{"fun":{"effects":false}}` — and none of it costs
+you anything while a turn is rendering (one 10 fps timer that was already there).
+
 ## Memory & resume — it knows you next time
 
 A lightweight, **always-on memory** of durable facts about you (your name, the
@@ -321,6 +340,8 @@ oshell/
     events.py            TextDelta / ToolStarted / ToolFinished / TurnComplete / LimitReached
   cli.py               Thin Typer/Rich front-end
   tui/app.py           Textual workspace (Tools / Context / Activity tabs)
+  tui/ambient.py       Ambient effects models: aurora, embers, fireflies, starfield
+  tui/dream.py         Dream Mode — the full-screen /daydream night sky
 ```
 
 The agent loop emits a stream of **events**; the CLI and TUI are just renderers of
