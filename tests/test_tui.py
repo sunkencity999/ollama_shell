@@ -161,6 +161,11 @@ def _convo_text(app) -> str:
     return "\n".join("".join(seg.text for seg in line) for line in log.lines)
 
 
+def _toasts(app) -> str:
+    """All toast-notification messages raised so far, joined for assertions."""
+    return " | ".join(n.message for n in app._notifications)
+
+
 async def test_tool_call_is_shown_inline():
     # A model that calls a tool (round 1) then answers (round 2).
     class _ToolThenText(LLMProvider):
@@ -249,7 +254,9 @@ async def test_already_installed_feature_reports_without_installing(monkeypatch)
     async with app.run_test() as pilot:
         app._on_feature_choice("rag")
         await pilot.pause()
-        assert "already installed" in _convo_text(app)
+        # Status chatter lives in toasts now, not the transcript.
+        assert "already installed" in _toasts(app)
+        assert "already installed" not in _convo_text(app)
 
 
 async def test_model_choice_persists_default(tmp_path, monkeypatch):
@@ -740,3 +747,276 @@ async def test_menu_shows_on_startup_when_enabled():
     async with app.run_test() as pilot:
         await pilot.pause()
         assert isinstance(app.screen, MenuScreen)  # greeted with the menu
+
+
+# ── the beautification pass: markdown, vitals, themes, palette, heat ──────────
+
+
+async def test_reply_renders_as_markdown():
+    # The committed reply is rendered Markdown: bold loses its ** markers and
+    # fenced code blocks come out as real code lines.
+    class _MdProvider(LLMProvider):
+        name = "md"
+
+        def list_models(self):
+            return ["m"]
+
+        def chat(self, messages, **kwargs):
+            yield ChatChunk(
+                content="**important** point\n\n```python\nprint('hi')\n```", done=True
+            )
+
+    app = OllamaShellTUI(
+        Agent(_MdProvider(), ToolRegistry([CurrentTimeTool()]), Config()),
+        show_menu_on_start=False,
+    )
+    async with app.run_test() as pilot:
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "go"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(60):
+            await pilot.pause(0.05)
+            if not app._busy and "important" in _convo_text(app):
+                break
+        text = _convo_text(app)
+        assert "important" in text and "**" not in text  # rendered, not raw markers
+        assert "print" in text  # the code block survived
+
+
+async def test_turn_stats_and_separator_rule():
+    app = _app()
+    async with app.run_test() as pilot:
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "hi"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(60):
+            await pilot.pause(0.05)
+            if not app._busy and "⏱" in _convo_text(app):
+                break
+        text = _convo_text(app)
+        assert "⏱" in text and "ctx" in text  # vitals line under the reply
+        assert "─" in text  # the timestamped rule that opens the exchange
+
+
+async def test_tool_heat_marks_used_tools():
+    class _ToolThenText(LLMProvider):
+        name = "tt"
+
+        def __init__(self):
+            self.calls = 0
+
+        def list_models(self):
+            return ["m"]
+
+        def chat(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                yield ChatChunk(tool_calls=[ToolCall(name="current_time", arguments={})], done=True)
+            else:
+                yield ChatChunk(content="Done.", done=True)
+
+    app = OllamaShellTUI(
+        Agent(_ToolThenText(), ToolRegistry([CurrentTimeTool()]), Config()),
+        show_menu_on_start=False,
+    )
+    async with app.run_test() as pilot:
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "time?"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(60):
+            await pilot.pause(0.05)
+            if not app._busy and "Done." in _convo_text(app):
+                break
+        assert app._tool_counts["current_time"] == 1
+        assert "current_time ×1" in app.query_one(ToolsPanel).text  # heat in the panel
+
+
+async def test_context_gauge_shows_fill():
+    app = _app()
+    async with app.run_test():
+        text = app.query_one(ContextInspector).text
+        assert ("▰" in text or "▱" in text) and "% of" in text
+
+
+async def test_welcome_card_on_fresh_start():
+    app = _app()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        text = _convo_text(app)
+        assert "fully local" in text  # the model badge
+        assert "Try:" in text  # suggested prompts
+
+
+async def test_theme_menu_choice_opens_picker_and_persists(tmp_path, monkeypatch):
+    import json
+
+    from oshell.tui.menu import ThemeScreen
+
+    monkeypatch.chdir(tmp_path)
+    app = _app()
+    async with app.run_test() as pilot:
+        app._on_menu_choice("theme")
+        await pilot.pause()
+        assert isinstance(app.screen, ThemeScreen)
+        app.screen.dismiss("nord")  # choose programmatically
+        await pilot.pause()
+        assert app.theme == "nord"
+        assert app.agent.config.theme == "nord"
+    saved = json.loads((tmp_path / "config.local.json").read_text())
+    assert saved["theme"] == "nord"
+
+
+async def test_theme_screen_escape_restores_original():
+    app = _app()
+    async with app.run_test() as pilot:
+        original = app.theme
+        app._open_theme_picker()
+        await pilot.pause()
+        app.theme = "gruvbox"  # what a live highlight-preview does
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.theme == original  # Esc puts the room back the way it was
+
+
+async def test_theme_from_config_applied_on_mount():
+    cfg = Config(theme="nord")
+    app = OllamaShellTUI(
+        Agent(_Scripted(), ToolRegistry([CurrentTimeTool()]), cfg), show_menu_on_start=False
+    )
+    async with app.run_test():
+        assert app.theme == "nord"
+
+
+async def test_menu_two_digit_number_selects_late_item():
+    from oshell.tui.menu import MENU_ITEMS, MenuScreen
+
+    num = next(i for i, (cid, *_r) in enumerate(MENU_ITEMS, start=1) if cid == "memory")
+    assert num >= 10  # the point: this item was unreachable by number before
+    app = _app()
+    async with app.run_test() as pilot:
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, MenuScreen)
+        for ch in str(num):
+            await pilot.press(ch)
+        await pilot.pause()
+        # Second digit made the number unambiguous -> selected immediately.
+        assert not isinstance(app.screen, MenuScreen)
+        assert "Memory" in _convo_text(app)  # memory summary rendered
+
+
+async def test_menu_renders_sections_and_constellation():
+    from textual.widgets import OptionList
+
+    app = _app()  # fun.effects defaults on -> stars behind the menu
+    async with app.run_test() as pilot:
+        await pilot.press("escape")
+        await pilot.pause()
+        opts = app.screen.query_one(OptionList)
+        prompts = [str(opts.get_option_at_index(i).prompt) for i in range(opts.option_count)]
+        assert any("Conversation" in p for p in prompts)  # section headers present
+        assert any("System" in p for p in prompts)
+        assert app.screen.query("#menu-stars")  # the constellation strip
+
+
+async def test_model_picker_shows_badges():
+    from textual.widgets import OptionList
+
+    from oshell.tui.menu import ModelScreen
+
+    app = _app()
+    async with app.run_test() as pilot:
+        app.push_screen(
+            ModelScreen(["m1", "m2"], "m1", infos={"m1": {"size": "26B", "quant": "Q8_0"}}),
+            lambda _c: None,
+        )
+        await pilot.pause()
+        opts = app.screen.query_one(OptionList)
+        first = str(opts.get_option_at_index(0).prompt)
+        assert "26B" in first and "Q8_0" in first
+
+
+async def test_copy_code_block(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "oshell.tui.app.clipboard_write", lambda text: captured.update(text=text) or True
+    )
+    app = _app()
+    async with app.run_test() as pilot:
+        app._last_reply = "Sure:\n\n```python\nprint('hi')\n```\nthat's it"
+        app.action_copy_code()  # Ctrl+B path
+        await pilot.pause()
+        assert captured["text"] == "print('hi')\n"
+
+
+async def test_copy_code_block_without_code_warns():
+    app = _app()
+    async with app.run_test() as pilot:
+        app._last_reply = "no code here"
+        app.action_copy_code()
+        await pilot.pause()
+        assert "No code block" in _toasts(app)
+
+
+async def test_command_palette_lists_app_commands():
+    app = _app()
+    async with app.run_test():
+        titles = {c.title for c in app.get_system_commands(app.screen)}
+        assert {"New conversation", "Pick theme", "Daydream", "Copy last code block"} <= titles
+
+
+async def test_limit_burst_takes_the_strip_then_burns_out():
+    import time as _time
+
+    from oshell.tui import ambient
+
+    app = _app()
+    async with app.run_test() as pilot:
+        app._burst = _time.monotonic()
+        app._tick()
+        await pilot.pause()
+        assert any(g in app._live_text for g in "✷✶✧∗·")  # the storm is on stage
+        app._burst = _time.monotonic() - ambient.BURST_SECONDS - 0.1
+        app._tick()
+        assert app._burst is None  # burned out
+
+
+async def test_daydream_sky_takes_storm_mood(tmp_path, monkeypatch):
+    from oshell.tui.dream import DreamScreen
+
+    monkeypatch.chdir(tmp_path)
+    app = _app()
+    async with app.run_test() as pilot:
+        app.agent.messages.append(
+            Message(role="user", content="another error and a full traceback, ugh")
+        )
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "/daydream"
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, DreamScreen)
+        assert app.screen.model.weather == "rain"  # stormy session -> rainy sky
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if not app._busy:
+                break
+        await pilot.press("space")
+
+
+async def test_copy_notice_is_a_toast_not_transcript(monkeypatch):
+    monkeypatch.setattr("oshell.tui.app.clipboard_write", lambda text: True)
+    app = _app()
+    async with app.run_test() as pilot:
+        app._last_reply = "the answer"
+        app.action_copy_reply()
+        await pilot.pause()
+        assert "Copied last reply" in _toasts(app)
+        assert "opied" not in _convo_text(app)  # transcript stays conversation-only

@@ -25,9 +25,11 @@ class DreamScreen(ModalScreen[None]):
     #sky { width: 100%; height: 100%; }
     """
 
-    def __init__(self) -> None:
+    def __init__(self, weather: str = "clear", density: float = 1.0) -> None:
         super().__init__()
-        self.model = StarfieldModel()
+        # The sky takes a mood from the session (see ambient.sky_mood) and its
+        # fullness from config (fun.sky_density).
+        self.model = StarfieldModel(weather=weather, density=density)
         self._text = ""  # the dream so far (fed from the worker thread)
         self._done = False
 

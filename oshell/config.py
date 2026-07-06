@@ -127,6 +127,7 @@ class FunConfig(BaseModel):
 
     daydreams: bool = True  # enable the /daydream command + menu entry
     effects: bool = True  # ambient visuals: dream starfield, aurora, embers, fireflies
+    sky_density: float = 1.0  # starfield fullness multiplier (0.0 empty … ~3.0 busy night)
 
 
 class Config(BaseModel):
@@ -135,6 +136,10 @@ class Config(BaseModel):
     # Model selection
     default_model: str = "llama3"
     default_vision_model: str = "llama3.2-vision"
+
+    # TUI color theme (any theme registered with Textual, e.g. "nord",
+    # "gruvbox", "tokyo-night"). Persisted when changed from the menu.
+    theme: str = "textual-dark"
 
     # Generation defaults
     temperature: float = 0.7

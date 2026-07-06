@@ -31,6 +31,21 @@ class OllamaProvider(LLMProvider):
         resp.raise_for_status()
         return [m["name"] for m in resp.json().get("models", [])]
 
+    def list_models_info(self) -> list[dict[str, str]]:
+        """Names + display metadata from /api/tags (no extra round-trips)."""
+        resp = requests.get(f"{self.host}/api/tags", timeout=self.timeout)
+        resp.raise_for_status()
+        out: list[dict[str, str]] = []
+        for m in resp.json().get("models", []):
+            details = m.get("details") or {}
+            info: dict[str, str] = {"name": m["name"]}
+            if details.get("parameter_size"):
+                info["size"] = details["parameter_size"]
+            if details.get("quantization_level"):
+                info["quant"] = details["quantization_level"]
+            out.append(info)
+        return out
+
     def capabilities(self, model: str) -> set[str]:
         """Capability tags from /api/show (e.g. completion, vision, tools), cached."""
         if model in self._caps_cache:

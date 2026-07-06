@@ -84,6 +84,16 @@ class LLMProvider(ABC):
     def list_models(self) -> list[str]:
         """Return the model names available on this backend."""
 
+    def list_models_info(self) -> list[dict[str, str]]:
+        """Model names plus cheap display metadata, when the backend has it.
+
+        Each dict has at least ``name``; backends that know more (Ollama's
+        /api/tags carries parameter size and quantization) add ``size`` and
+        ``quant``. Used for badges in the model picker — callers must tolerate
+        missing keys.
+        """
+        return [{"name": n} for n in self.list_models()]
+
     def capabilities(self, model: str) -> set[str]:
         """Return capability tags for a model (e.g. {"vision", "tools"}).
 

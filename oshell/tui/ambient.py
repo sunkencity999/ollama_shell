@@ -8,6 +8,10 @@ Every effect *means* something the app is doing:
 - embers  — a spark fades in the live bar when a tool finishes (soft feedback)
 - fireflies — after minutes of idleness, faint glyphs drift in the empty strip
 - starfield — /daydream takes the whole stage: twinkling sky + streaming dream
+- weather — the dream sky takes a mood: rain after a stormy debugging session,
+  snow in December, clear otherwise
+- burst — a brief scatter of warm sparks when the model hits the tool cap
+- constellation — a few faint stars behind the startup menu
 
 Everything here is pure model + string/Text builders so it's unit-testable;
 the widgets/screens that drive them are thin.
@@ -103,6 +107,91 @@ def fireflies_markup(width: int, tick: int) -> str:
     return "".join(out).rstrip()
 
 
+# ── burst: a particle storm when the tool-iteration cap is hit ───────────────
+BURST_SECONDS = 1.6  # how long the scatter lasts
+
+_BURST_GLYPHS = ["✷", "✶", "✧", "∗", "·"]
+_BURST_COLORS = ["#e7c667", "#e78a5a", "#d96f6f"]
+
+
+def burst_markup(width: int, age_seconds: float, seed: int = 7) -> str | None:
+    """One line of scattering sparks, thinning as they age; None once spent.
+
+    Deterministic in (width, seed, frame) — the frame is the age quantized to
+    10fps — so tests can pin any moment of the storm.
+    """
+    if age_seconds < 0 or age_seconds >= BURST_SECONDS:
+        return None
+    width = max(width, 16)
+    frame = int(age_seconds * 10)
+    rng = random.Random(seed * 1000 + frame)
+    fade = 1.0 - age_seconds / BURST_SECONDS
+    n = max(2, int(12 * fade))
+    marks: dict[int, tuple[str, str]] = {}
+    for _ in range(n):
+        x = rng.randrange(width)
+        glyph = _BURST_GLYPHS[min(int((1 - fade) * len(_BURST_GLYPHS)), len(_BURST_GLYPHS) - 1)]
+        marks[x] = (glyph, rng.choice(_BURST_COLORS))
+    out = []
+    for x in range(width):
+        if x in marks:
+            ch, color = marks[x]
+            out.append(f"[{color}]{ch}[/]")
+        else:
+            out.append(" ")
+    return "".join(out).rstrip()
+
+
+# ── constellation: a few faint stars behind the startup menu ─────────────────
+_CONST_GLYPHS = ["·", "✧", "·", "✦", "·"]
+
+
+def constellation_line(width: int, seed: int = 3) -> str:
+    """A static line of faint, well-spaced stars (markup). Deterministic."""
+    width = max(width, 16)
+    rng = random.Random(seed)
+    n = max(3, width // 12)
+    xs = sorted(rng.sample(range(width), min(n, width)))
+    marks = {x: _CONST_GLYPHS[rng.randrange(len(_CONST_GLYPHS))] for x in xs}
+    out = []
+    for x in range(width):
+        out.append(f"[dim #6b7f9e]{marks[x]}[/]" if x in marks else " ")
+    return "".join(out).rstrip()
+
+
+# ── weather: the dream sky takes a mood from the session ─────────────────────
+# Words that mark a stormy stretch of conversation (debugging in the rain).
+_STORM_WORDS = (
+    "error",
+    "exception",
+    "traceback",
+    "crash",
+    "fail",
+    "failure",
+    "broken",
+    "bug",
+    "debug",
+    "segfault",
+    "panic",
+    "stack trace",
+)
+
+
+def sky_mood(topics: list[str], month: int) -> str:
+    """Pick the dream sky's weather: "rain" | "snow" | "clear".
+
+    Rain after a stormy debugging session (two or more storm words in the
+    recent topics), snow in December, otherwise a clear night.
+    """
+    text = " ".join(topics).lower()
+    hits = sum(text.count(w) for w in _STORM_WORDS)
+    if hits >= 2:
+        return "rain"
+    if month == 12:
+        return "snow"
+    return "clear"
+
+
 # ── the starfield: /daydream's night sky ─────────────────────────────────────
 _STAR_CHARS = ["·", "✧", "✦", "*"]
 _STAR_STYLES = ["dim #6b7f9e", "#8fa8d8", "#cfe3ff", "bold #ffffff"]
@@ -126,21 +215,43 @@ class _Comet:
 
 
 @dataclass
+class _Flake:
+    """One falling particle of weather (a raindrop or a snowflake)."""
+
+    x: float
+    y: float
+    speed: float
+    sway: float  # phase for snow's sideways drift
+
+
+# Weather particle looks: rain streaks steel-blue, snow drifts white.
+_RAIN_GLYPH, _RAIN_STYLE = "╱", "dim #6fa8dc"
+_SNOW_GLYPHS = ["❄", "✻", "·"]
+_SNOW_STYLE = "#dbe7f3"
+
+
+@dataclass
 class StarfieldModel:
     """A twinkling sky with the occasional comet, plus a centered dream text.
 
     Pure state + a Text renderer — no Textual imports, fully testable.
+    ``weather`` ("clear" | "rain" | "snow") adds falling particles; ``density``
+    scales how full the sky is (stars and weather alike).
     """
 
     n_stars: int = 90
     seed: int | None = None
+    weather: str = "clear"
+    density: float = 1.0
     stars: list[_Star] = field(default_factory=list)
     comet: _Comet | None = None
+    flakes: list[_Flake] = field(default_factory=list)
     tick: int = 0
 
     def __post_init__(self) -> None:
         rng = random.Random(self.seed)
         self._rng = rng
+        density = max(0.0, self.density)
         self.stars = [
             _Star(
                 x=rng.random(),
@@ -148,14 +259,38 @@ class StarfieldModel:
                 phase=rng.random() * math.tau,
                 speed=0.08 + rng.random() * 0.22,
             )
-            for _ in range(self.n_stars)
+            for _ in range(int(round(self.n_stars * density)))
         ]
+        if self.weather in ("rain", "snow"):
+            base = 26 if self.weather == "rain" else 16
+            self.flakes = [
+                _Flake(
+                    x=rng.random(),
+                    y=rng.random(),
+                    speed=(0.06 + rng.random() * 0.03)
+                    if self.weather == "rain"
+                    else (0.012 + rng.random() * 0.01),
+                    sway=rng.random() * math.tau,
+                )
+                for _ in range(max(3, int(round(base * density))))
+            ]
 
     def step(self) -> None:
-        """Advance one animation frame (twinkle; maybe birth/move a comet)."""
+        """Advance one animation frame (twinkle; weather falls; maybe a comet)."""
         self.tick += 1
         for s in self.stars:
             s.phase += s.speed
+        for f in self.flakes:
+            f.y += f.speed
+            if self.weather == "rain":
+                f.x -= f.speed * 0.35  # streaks lean the way the glyph points
+            else:
+                f.sway += 0.08
+                f.x += math.sin(f.sway) * 0.004  # lazy sideways drift
+            if f.y > 1.0:  # recycle at the top, at a fresh column
+                f.y = 0.0
+                f.x = self._rng.random()
+            f.x %= 1.0
         if self.comet is None:
             if self._rng.random() < 0.015:  # a shooting star every ~7s at 10fps
                 going_right = self._rng.random() < 0.5
@@ -189,6 +324,12 @@ class StarfieldModel:
             b = (math.sin(s.phase) + 1) / 2  # 0..1 brightness
             i = min(int(b * len(_STAR_CHARS)), len(_STAR_CHARS) - 1)
             cells[(cx, cy)] = (_STAR_CHARS[i], _STAR_STYLES[i])
+        for i, f in enumerate(self.flakes):
+            fx, fy = int(f.x * (width - 1)), int(f.y * (height - 1))
+            if self.weather == "rain":
+                cells[(fx, fy)] = (_RAIN_GLYPH, _RAIN_STYLE)
+            else:
+                cells[(fx, fy)] = (_SNOW_GLYPHS[i % len(_SNOW_GLYPHS)], _SNOW_STYLE)
         if self.comet is not None:
             c = self.comet
             cx, cy = int(c.x * (width - 1)), int(c.y * (height - 1))

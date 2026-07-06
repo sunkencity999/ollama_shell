@@ -14,17 +14,24 @@ The agent loop is synchronous and streaming, so each turn runs in a worker
 
 from __future__ import annotations
 
+import re
 import time
+from collections import Counter
+from collections.abc import Iterator
 from pathlib import Path
 
+from rich.markdown import Markdown
 from rich.markup import escape
+from rich.panel import Panel
+from rich.rule import Rule
 from rich.text import Text
 from textual import events
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.message import Message
+from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, RichLog, Static, TabbedContent, TabPane
 
 from .. import desktop
@@ -39,8 +46,12 @@ from .menu import (
     FeaturesScreen,
     MenuScreen,
     ModelScreen,
+    ThemeScreen,
     feature_installed,
 )
+
+# Matches fenced code blocks in the model's reply (for "copy last code block").
+_CODE_FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.S)
 
 
 class ChatInput(Input):
@@ -66,6 +77,20 @@ class ChatInput(Input):
             event.stop()
 
 
+def _context_fill(agent: Agent) -> float:
+    """Rough fraction of the context window the in-context messages occupy.
+
+    A chars/4 token estimate — honest enough for a gauge, cheap enough to run
+    on every refresh. Excluded messages don't count; that's the whole point.
+    """
+    chars = sum(
+        len(m.content) + 16  # + a little per-message wire overhead
+        for i, m in enumerate(agent.messages)
+        if i not in agent.excluded
+    )
+    return min(chars / 4 / max(agent.config.context_length, 1), 1.0)
+
+
 def _safe_update(widget: Static, content: Text, plain: str) -> None:
     """Update a Static, never letting a render error crash the session.
 
@@ -85,15 +110,18 @@ def _safe_update(widget: Static, content: Text, plain: str) -> None:
 
 
 class ToolsPanel(Static):
-    """Static roster: active tools (local/network) + optional-feature status.
+    """Live roster: active tools (local/network) + optional-feature status.
 
+    Tools the model has actually reached for this session glow — bold name plus
+    a dim ×N count — so the panel reads as an instrument, not a static list.
     The rendered text is also kept on ``self.text`` so it can be inspected
     without reaching into Textual's lazily-realized render internals.
     """
 
     text: str = ""
 
-    def render_for(self, agent: Agent) -> None:
+    def render_for(self, agent: Agent, counts: dict[str, int] | None = None) -> None:
+        counts = counts or {}
         body = Text()
         plain: list[str] = ["Active tools"]
         body.append("Active tools", style="bold")
@@ -104,11 +132,17 @@ class ToolsPanel(Static):
                 tag, style = "local", "green"
             else:
                 tag, style = "net", "yellow"
+            n = counts.get(t.name, 0)
             body.append("\n  ")
             body.append(tag, style=style)
             body.append(" ")
-            body.append(t.name, style="bold")
-            plain.append(f"  {tag} {t.name}")
+            # Heat: used-this-session tools are bold; untouched ones stay quiet.
+            body.append(t.name, style="bold" if n else "")
+            line = f"  {tag} {t.name}"
+            if n:
+                body.append(f" ×{n}", style="dim")
+                line += f" ×{n}"
+            plain.append(line)
         body.append("\n\n")
         body.append("Optional features", style="bold")
         plain += ["", "Optional features"]
@@ -124,7 +158,9 @@ class ToolsPanel(Static):
 
 
 class ContextInspector(Static):
-    """Shows every message and whether it's pinned / excluded / in-context."""
+    """Shows every message and whether it's pinned / excluded / in-context,
+    topped by a fill gauge estimating how much of the model's context window
+    the in-context messages occupy (so pin/exclude has visible consequences)."""
 
     text: str = ""
 
@@ -132,7 +168,13 @@ class ContextInspector(Static):
         body = Text()
         body.append("Context", style="bold")
         body.append("  📌 pinned  🚫 excluded")
-        plain: list[str] = ["Context  📌 pinned  🚫 excluded"]
+        fill = _context_fill(agent)
+        blocks = round(fill * 10)
+        gauge = "▰" * blocks + "▱" * (10 - blocks)
+        gauge_line = f"{gauge} {fill:.0%} of ~{agent.config.context_length} tokens"
+        body.append("\n")
+        body.append(gauge_line, style="red" if fill > 0.85 else "dim")
+        plain: list[str] = ["Context  📌 pinned  🚫 excluded", gauge_line]
         for i, msg in enumerate(agent.messages):
             mark = "📌" if i in agent.pinned else ("🚫" if i in agent.excluded else "  ")
             raw = msg.content or f"<{len(msg.tool_calls)} tool call(s)>"
@@ -166,6 +208,7 @@ class OllamaShellTUI(App):
         Binding("escape", "open_menu", "Menu"),
         Binding("ctrl+t", "show_tools", "Tools"),
         Binding("ctrl+y", "copy_reply", "Copy reply"),
+        Binding("ctrl+b", "copy_code", "Copy code"),
         Binding("ctrl+c", "quit", "Quit"),
         Binding("f2", "open_menu", "Menu", show=False),
         Binding("ctrl+o", "open_menu", "Menu", show=False),
@@ -192,6 +235,9 @@ class OllamaShellTUI(App):
         # Ambient-effects state (see oshell/tui/ambient.py).
         self._ember: tuple[str, float] | None = None  # (color, monotonic birth time)
         self._idle_since = time.monotonic()  # for the idle fireflies
+        self._burst: float | None = None  # LimitReached spark storm (birth time)
+        # Per-session tool usage — drives the "heat" in the Tools panel.
+        self._tool_counts: Counter[str] = Counter()
 
     _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -199,7 +245,12 @@ class OllamaShellTUI(App):
         yield Header(show_clock=self._show_clock)
         with Horizontal(id="body"):
             with Vertical(id="convo-pane"):
-                yield RichLog(id="conversation", wrap=True, markup=True, highlight=True)
+                # min_width: render to the pane's real width (the default of 78
+                # makes full-width renderables like Rule/Markdown overflow into
+                # a horizontal scrollbar on narrower panes).
+                yield RichLog(
+                    id="conversation", wrap=True, markup=True, highlight=True, min_width=20
+                )
                 # Live region: spinner/status while working, streamed reply as it builds.
                 yield Static("", id="live")
             with TabbedContent(id="sidebar", initial="tab-tools"):
@@ -209,53 +260,71 @@ class OllamaShellTUI(App):
                     yield ContextInspector(id="context")
                 with TabPane("Activity", id="tab-activity"):
                     yield RichLog(id="activity", wrap=True, markup=True)
-        yield ChatInput(placeholder="Message the model…  (Esc menu · Ctrl+T tools · Ctrl+C quit)")
+        yield ChatInput(
+            placeholder="Message the model…  (Esc menu · Ctrl+P palette · Ctrl+C quit)"
+        )
         yield Footer()
 
     def _subtitle(self) -> str:
-        net = [t.name for t in self.agent.registry.active() if not t.local_only]
+        # A glance, not a paragraph — the Tools tab carries the full roster.
+        net = [t for t in self.agent.registry.active() if not t.local_only]
         n = len(self.agent.registry)
-        return (
-            f"{self.agent.model} · {self.agent.provider.name} · {n} tools · "
-            + ("network: " + ", ".join(net) if net else "fully local")
-        )
+        tail = f"{len(net)} net" if net else "fully local"
+        return f"{self.agent.model} · {self.agent.provider.name} · {n} tools · {tail}"
 
     def on_mount(self) -> None:
-        net = [t.name for t in self.agent.registry.active() if not t.local_only]
         self.title = "Ollama Shell"
         self.sub_title = self._subtitle()
+        try:
+            self.theme = self.agent.config.theme
+        except Exception:
+            pass  # unknown theme name in config — keep the default
         self.query_one(ToolsPanel).render_for(self.agent)
         self.query_one(ContextInspector).refresh_view(self.agent)
-        banner = (
-            "[green]Local-first.[/] Model runs on this machine. "
-            + (f"Network-capable tools: {', '.join(net)}." if net else "No networked tools active.")
-        )
-        self._conversation().write(banner)
+        if not self._maybe_resume_session():
+            self._show_welcome()
         if any(t.sensitive for t in self.agent.registry.active()):
             self._conversation().write(
                 "[yellow]⚠ Autonomous shell:[/] the model can run commands on this machine "
                 "(run_command) without asking. Each command is shown inline."
             )
-        self._conversation().write(
-            "[dim]Press Esc for the menu · Ctrl+Y copies the last reply "
-            "(Option/Shift+drag to select text).[/dim]"
-        )
-        self._maybe_resume_session()
         # Drives the live spinner / streaming preview.
         self.set_interval(0.1, self._tick)
         if self._show_menu_on_start:
             self.action_open_menu()
 
-    def _maybe_resume_session(self) -> None:
-        """Load and render the previous conversation, if any."""
+    def _show_welcome(self) -> None:
+        """A small card so a fresh conversation feels inhabited, not bare."""
+        a = self.agent
+        net = [t.name for t in a.registry.active() if not t.local_only]
+        badge = (
+            f"[yellow]◐ {len(net)} networked tool{'s' if len(net) != 1 else ''}[/yellow]"
+            if net
+            else "[green]● fully local[/green]"
+        )
+        body = (
+            f"[b]{escape(a.model)}[/b] [dim]· {escape(a.provider.name)} · "
+            f"{len(a.registry)} tools[/dim]  {badge}\n\n"
+            "[dim]Try:[/dim] [italic]what's eating my CPU?[/italic]\n"
+            "[dim]  · [/dim][italic]summarize ~/notes.md[/italic]\n"
+            "[dim]  · [/dim][italic]/daydream[/italic] 💭\n\n"
+            "[dim]Esc menu · Ctrl+P palette\n"
+            "Ctrl+Y copy reply · Ctrl+B copy code[/dim]"
+        )
+        self._conversation().write(
+            Panel(body, border_style="dim", padding=(0, 1), expand=False)
+        )
+
+    def _maybe_resume_session(self) -> bool:
+        """Load and render the previous conversation, if any. True if resumed."""
         scfg = self.agent.config.session
         if not scfg.persist:
-            return
+            return False
         from .. import session as session_mod
 
         prior = session_mod.load_session(scfg.path)
         if not prior:
-            return
+            return False
         self.agent.messages.extend(prior)  # keep [system] + restored turns
         convo = self._conversation()
         convo.write(f"[dim]— resumed {len(prior)} earlier messages —[/dim]")
@@ -263,9 +332,22 @@ class OllamaShellTUI(App):
             if m.role == "user":
                 convo.write(f"[bold green]›[/] {escape(m.content)}")
             elif m.role == "assistant" and m.content:
-                convo.write(escape(m.content))
+                self._write_reply(m.content)
                 self._last_reply = m.content
         self.query_one(ContextInspector).refresh_view(self.agent)
+        return True
+
+    def _write_reply(self, text: str) -> None:
+        """Commit a finished reply to the transcript as rendered Markdown.
+
+        Model output is arbitrary — if the Markdown render chokes, fall back to
+        inert escaped text rather than losing the reply (or the session).
+        """
+        convo = self._conversation()
+        try:
+            convo.write(Markdown(text))
+        except Exception:
+            convo.write(escape(text))
 
     def _tick(self) -> None:
         """Render the live region: spinner+status while working, or streamed text.
@@ -279,6 +361,18 @@ class OllamaShellTUI(App):
 
         effects = self.agent.config.fun.effects
         self._spin += 1
+        if effects and self._burst is not None:
+            # LimitReached: a brief particle storm takes the strip, busy or not.
+            try:
+                width = self.query_one("#live", Static).size.width or 40
+            except NoMatches:
+                width = 40
+            storm = ambient.burst_markup(width, time.monotonic() - self._burst)
+            if storm is None:
+                self._burst = None
+            else:
+                self._set_live(storm)
+                return
         if not self._busy:
             if effects and (time.monotonic() - self._idle_since) > ambient.IDLE_FIREFLIES_AFTER:
                 try:
@@ -312,6 +406,16 @@ class OllamaShellTUI(App):
         except NoMatches:
             pass  # widget gone (app is shutting down) — the spinner timer can race teardown
 
+    # ── turn vitals ───────────────────────────────────────────────────────────
+    def _turn_stats(self, t0: float, first_delta: float | None, n_deltas: int) -> str:
+        """A dim one-liner under each reply: elapsed · ~tok/s · context fill."""
+        now = time.monotonic()
+        parts = [f"⏱ {now - t0:.1f}s"]
+        if first_delta is not None and n_deltas >= 5 and now - first_delta > 0.2:
+            parts.append(f"~{n_deltas / (now - first_delta):.0f} tok/s")
+        parts.append(f"ctx {_context_fill(self.agent):.0%}")
+        return " · ".join(parts)
+
     # ── widget shortcuts ─────────────────────────────────────────────────────
     def _conversation(self) -> RichLog:
         return self.query_one("#conversation", RichLog)
@@ -326,6 +430,14 @@ class OllamaShellTUI(App):
     def action_copy_reply(self) -> None:
         self._copy(self._last_reply, "last reply")
 
+    def action_copy_code(self) -> None:
+        """Copy the last fenced code block from the model's last reply."""
+        blocks = _CODE_FENCE_RE.findall(self._last_reply or "")
+        if not blocks:
+            self.notify("No code block in the last reply.", severity="warning")
+            return
+        self._copy(blocks[-1].rstrip() + "\n", "last code block")
+
     def _transcript(self) -> str:
         lines = []
         for m in self.agent.messages:
@@ -336,22 +448,57 @@ class OllamaShellTUI(App):
         return "\n\n".join(lines)
 
     def _copy(self, text: str, label: str) -> None:
-        convo = self._conversation()
+        # Status chatter belongs in toasts, not the transcript.
         if not text.strip():
-            convo.write(f"[dim]nothing to copy ({label})[/dim]")
+            self.notify(f"Nothing to copy ({label}).", severity="warning")
             return
         if clipboard_write(text):
-            convo.write(f"[green]copied {label}[/green] [dim]({len(text)} chars)[/dim]")
+            self.notify(f"Copied {label} ({len(text)} chars).")
             return
         try:  # fall back to the terminal's clipboard via OSC 52 (works over SSH)
             self.copy_to_clipboard(text)
-            convo.write(f"[green]copied {label}[/green] [dim](via terminal · {len(text)}c)[/dim]")
+            self.notify(f"Copied {label} via the terminal ({len(text)} chars).")
         except Exception:
-            convo.write("[red]couldn't access the clipboard[/red]")
+            self.notify("Couldn't access the clipboard.", severity="error")
+
+    # ── command palette (Ctrl+P) — every menu action, fuzzy-searchable ────────
+    def get_system_commands(self, screen: Screen) -> Iterator[SystemCommand]:
+        yield from super().get_system_commands(screen)
+        yield SystemCommand("Menu", "Open the main menu", self.action_open_menu)
+        yield SystemCommand(
+            "New conversation", "Clear the transcript and start fresh", self._new_conversation
+        )
+        yield SystemCommand(
+            "Models",
+            "Choose the active model",
+            lambda: self.run_worker(self._open_model_picker, thread=True, exclusive=True),
+        )
+        yield SystemCommand("Pick theme", "Restyle the app (live preview)", self._open_theme_picker)
+        yield SystemCommand(
+            "Copy last reply", "Copy the model's last reply", self.action_copy_reply
+        )
+        yield SystemCommand(
+            "Copy last code block", "Copy the last fenced code block", self.action_copy_code
+        )
+        yield SystemCommand(
+            "Copy transcript",
+            "Copy the whole conversation",
+            lambda: self._copy(self._transcript(), "transcript"),
+        )
+        yield SystemCommand(
+            "Attach image",
+            "Attach an image for a vision model",
+            lambda: self.push_screen(AttachImageScreen(), self._on_attach_image),
+        )
+        yield SystemCommand(
+            "Daydream", "Let the model wander and free-associate 💭", self._start_daydream
+        )
 
     # ── menu ─────────────────────────────────────────────────────────────────
     def action_open_menu(self) -> None:
-        self.push_screen(MenuScreen(), self._on_menu_choice)
+        self.push_screen(
+            MenuScreen(effects=self.agent.config.fun.effects), self._on_menu_choice
+        )
 
     def _on_menu_choice(self, choice: str | None) -> None:
         """Run the action chosen in the modal menu."""
@@ -387,23 +534,34 @@ class OllamaShellTUI(App):
             self._menu_knowledge()
         elif choice == "daydream":
             self._start_daydream()
+        elif choice == "theme":
+            self._open_theme_picker()
         elif choice == "help":
             self._menu_help()
 
     def _open_model_picker(self) -> None:
         """Fetch models (worker thread), then show the picker on the UI thread."""
-        convo = self._conversation()
+        infos: dict[str, dict] = {}
         try:
-            models = self.agent.provider.list_models()
-        except Exception as exc:  # network/backend down
-            self.call_from_thread(convo.write, f"[red]Could not list models: {exc}[/red]")
-            return
+            infos = {i["name"]: i for i in self.agent.provider.list_models_info()}
+            models = list(infos)
+        except Exception:
+            try:  # metadata is a nicety — fall back to bare names
+                models = self.agent.provider.list_models()
+            except Exception as exc:  # network/backend down
+                self.call_from_thread(
+                    self.notify, f"Could not list models: {exc}", severity="error"
+                )
+                return
         if not models:
-            msg = "[yellow]No models available. Is Ollama running?[/yellow]"
-            self.call_from_thread(convo.write, msg)
+            self.call_from_thread(
+                self.notify, "No models available. Is Ollama running?", severity="warning"
+            )
             return
         self.call_from_thread(
-            self.push_screen, ModelScreen(models, self.agent.model), self._on_model_choice
+            self.push_screen,
+            ModelScreen(models, self.agent.model, infos=infos),
+            self._on_model_choice,
         )
 
     def _on_model_choice(self, name: str | None) -> None:
@@ -419,10 +577,34 @@ class OllamaShellTUI(App):
 
         try:
             update_local_config({"default_model": name})
-            note = "[dim](saved as default)[/dim]"
+            self.notify(f"Model set to {name} (saved as default).")
         except Exception as exc:  # pragma: no cover - defensive
-            note = f"[dim](not saved: {exc})[/dim]"
-        self._conversation().write(f"[green]Model set to[/green] [bold]{name}[/bold] {note}")
+            self.notify(f"Model set to {name} (not saved: {exc}).", severity="warning")
+        self.query_one(Input).focus()
+
+    # ── theme picking (live-preview modal; persisted like the model choice) ───
+    def _open_theme_picker(self) -> None:
+        names = sorted(self.available_themes)
+        current = self.theme or self.agent.config.theme
+        self.push_screen(ThemeScreen(names, current), self._on_theme_choice)
+
+    def _on_theme_choice(self, name: str | None) -> None:
+        if not name:
+            self.query_one(Input).focus()
+            return
+        try:
+            self.theme = name
+        except Exception:
+            self.notify(f"Unknown theme: {name}", severity="error")
+            return
+        self.agent.config.theme = name
+        from ..config import update_local_config
+
+        try:
+            update_local_config({"theme": name})
+            self.notify(f"Theme set to {name} (saved as default).")
+        except Exception as exc:  # pragma: no cover - defensive
+            self.notify(f"Theme set to {name} (not saved: {exc}).", severity="warning")
         self.query_one(Input).focus()
 
     def _on_attach_image(self, source: str | None) -> None:
@@ -434,12 +616,12 @@ class OllamaShellTUI(App):
             b64, label = (clipboard_image_b64(), "clipboard") if source == "" \
                 else (image_path_to_b64(source), Path(source).name)
         except ValueError as exc:
-            self._conversation().write(f"[red]{escape(str(exc))}[/red]")
+            self.notify(str(exc), severity="error")
             return
         self._pending_images.append(b64)
-        self._conversation().write(
-            f"[dim]🖼 attached {escape(label)} ({len(self._pending_images)} pending) — "
-            "send a message; use a vision-capable model.[/dim]"
+        self.notify(
+            f"🖼 Attached {label} ({len(self._pending_images)} pending) — "
+            "send a message; use a vision-capable model."
         )
         self.query_one(Input).focus()
 
@@ -449,7 +631,7 @@ class OllamaShellTUI(App):
             self.agent.provider, self.agent.config, model=self.agent.model, memory=self.agent.memory
         )
         self.agent.rebuild_system_prompt()
-        self.query_one(ToolsPanel).render_for(self.agent)
+        self.query_one(ToolsPanel).render_for(self.agent, self._tool_counts)
         self.sub_title = self._subtitle()
 
     def _toggle_gui(self) -> None:
@@ -464,24 +646,28 @@ class OllamaShellTUI(App):
         except Exception:
             pass
         self._rebuild_registry()
-        convo = self._conversation()
         if not new:
-            convo.write("[yellow]Computer-use (GUI) is now OFF.[/yellow]")
+            self.notify("Computer-use (GUI) is now OFF.")
             return
         if any(t.name == "screenshot" for t in self.agent.registry.active()):
-            convo.write(
-                "[green]Computer-use (GUI) is now ON[/green] — screenshot/gui_click/gui_type/"
-                "gui_key/gui_move are active. (macOS: grant Screen Recording + Accessibility.)"
+            self.notify(
+                "Computer-use (GUI) is now ON — screenshot/gui_click/gui_type/gui_key/gui_move "
+                "are active. (macOS: grant Screen Recording + Accessibility.)",
+                timeout=8,
             )
         elif importlib.util.find_spec("pyautogui") is None:
-            convo.write(
-                "[yellow]GUI turned on, but pyautogui isn't installed[/yellow] — "
-                "Install features → GUI computer-use first."
+            self.notify(
+                "GUI turned on, but pyautogui isn't installed — "
+                "Install features → GUI computer-use first.",
+                severity="warning",
+                timeout=8,
             )
         else:
-            convo.write(
-                "[yellow]GUI turned on, but the current model isn't vision+tools capable.[/yellow] "
-                "Pick a vision model (e.g. gemma3/4, llama3.2-vision) in Models."
+            self.notify(
+                "GUI turned on, but the current model isn't vision+tools capable. "
+                "Pick a vision model (e.g. gemma3/4, llama3.2-vision) in Models.",
+                severity="warning",
+                timeout=8,
             )
 
     def _toggle_browser(self) -> None:
@@ -496,23 +682,27 @@ class OllamaShellTUI(App):
         except Exception:
             pass
         self._rebuild_registry()
-        convo = self._conversation()
         if not new:
-            convo.write("[yellow]Hidden browser is now OFF.[/yellow]")
+            self.notify("Hidden browser is now OFF.")
         elif any(t.name == "browser_open" for t in self.agent.registry.active()):
-            convo.write(
-                "[green]Hidden browser is now ON[/green] — browser_open/screenshot/click/"
-                "type/key are active (runs off-screen)."
+            self.notify(
+                "Hidden browser is now ON — browser_open/screenshot/click/type/key "
+                "are active (runs off-screen).",
+                timeout=8,
             )
         elif importlib.util.find_spec("playwright") is None:
-            convo.write(
-                "[yellow]Browser turned on, but Playwright isn't installed[/yellow] — "
-                "Install features → Hidden browser first."
+            self.notify(
+                "Browser turned on, but Playwright isn't installed — "
+                "Install features → Hidden browser first.",
+                severity="warning",
+                timeout=8,
             )
         else:
-            convo.write(
-                "[yellow]Browser turned on, but the current model isn't vision+tools "
-                "capable.[/yellow] Pick a vision model in Models."
+            self.notify(
+                "Browser turned on, but the current model isn't vision+tools capable. "
+                "Pick a vision model in Models.",
+                severity="warning",
+                timeout=8,
             )
 
     def _on_feature_choice(self, fid: str | None) -> None:
@@ -524,7 +714,7 @@ class OllamaShellTUI(App):
             return
         _, label, packages, mods = feat
         if feature_installed(mods):
-            self._conversation().write(f"[dim]{label} is already installed.[/dim]")
+            self.notify(f"{label} is already installed.")
             return
         self.run_worker(lambda: self._install_feature(label, packages, mods), thread=True)
 
@@ -536,15 +726,14 @@ class OllamaShellTUI(App):
         """
         import importlib
 
-        convo, activity = self._conversation(), self._activity()
+        activity = self._activity()
         self._status = f"Installing {label}"
         self._busy = True
         # Bring progress to the foreground.
         self.call_from_thread(setattr, self.query_one(TabbedContent), "active", "tab-activity")
         self.call_from_thread(
-            convo.write,
-            f"[cyan]Installing {label}…[/cyan] [dim]{escape(' '.join(packages))} "
-            "(watch the Activity tab; this can take a few minutes)[/dim]",
+            self.notify,
+            f"Installing {label}… watch the Activity tab; this can take a few minutes.",
         )
 
         def on_line(line: str) -> None:
@@ -562,7 +751,7 @@ class OllamaShellTUI(App):
                 pw_cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
                 rc = run_streaming(pw_cmd, on_line)
         except Exception as exc:  # pragma: no cover - subprocess env issues
-            self.call_from_thread(convo.write, f"[red]Install failed: {exc}[/red]")
+            self.call_from_thread(self.notify, f"Install failed: {exc}", severity="error")
             return
         finally:
             self._busy = False
@@ -571,17 +760,23 @@ class OllamaShellTUI(App):
         if rc == 0:
             importlib.invalidate_caches()  # let find_spec see the new packages
             ok = feature_installed(mods)
-            msg = (
-                f"[green]✓ Installed {label} — ready to use now.[/green]"
-                if ok
-                else f"[yellow]Installed {label}; restart oshell to pick it up.[/yellow]"
+            if ok:
+                self.call_from_thread(self.notify, f"✓ Installed {label} — ready to use now.")
+            else:
+                self.call_from_thread(
+                    self.notify,
+                    f"Installed {label}; restart oshell to pick it up.",
+                    severity="warning",
+                )
+            self.call_from_thread(
+                self.query_one(ToolsPanel).render_for, self.agent, self._tool_counts
             )
-            self.call_from_thread(convo.write, msg)
-            self.call_from_thread(self.query_one(ToolsPanel).render_for, self.agent)
         else:
             self.call_from_thread(
-                convo.write,
-                f"[red]Install of {label} failed (exit {rc}) — see the Activity tab.[/red]",
+                self.notify,
+                f"Install of {label} failed (exit {rc}) — see the Activity tab.",
+                severity="error",
+                timeout=10,
             )
 
     def _menu_finetune(self) -> None:
@@ -635,6 +830,7 @@ class OllamaShellTUI(App):
             pass
         self._conversation().clear()
         self._conversation().write("[dim]— new conversation —[/dim]")
+        self._show_welcome()
         self.query_one(ContextInspector).refresh_view(self.agent)
 
     def _menu_memory(self) -> None:
@@ -666,12 +862,12 @@ class OllamaShellTUI(App):
         self._conversation().write(
             "[b]Help[/b]\n"
             "  The model drives: type a request and it calls tools as needed.\n"
-            "  Commands:  /clear (new conversation) · /menu · /help.\n"
-            "  Keys:  Esc menu · Ctrl+T tools · Ctrl+Y copy reply · Ctrl+C quit.\n"
-            "  Copy: Ctrl+Y copies the last reply; the menu also copies the transcript.\n"
+            "  Commands:  /clear (new conversation) · /daydream · /menu · /help.\n"
+            "  Keys:  Esc menu · Ctrl+P command palette · Ctrl+T tools · Ctrl+C quit.\n"
+            "  Copy:  Ctrl+Y last reply · Ctrl+B last code block · menu copies the transcript.\n"
             "  Select text with the mouse: hold [b]Option[/b] (macOS/iTerm2) or "
             "[b]Shift[/b] (many terminals) while dragging — the app captures normal drags.\n"
-            "  Tabs:  Tools (roster) · Context (pin/exclude) · Activity (tool log)."
+            "  Tabs:  Tools (roster + usage) · Context (pin/exclude + fill) · Activity (log)."
         )
 
     # ── paste / input handling ────────────────────────────────────────────────
@@ -679,9 +875,7 @@ class OllamaShellTUI(App):
         """Buffer a multi-line paste; it's sent with the next message."""
         self._pending_paste += (("\n" + event.text) if self._pending_paste else event.text)
         n = self._pending_paste.count("\n") + 1
-        self._conversation().write(
-            f"[dim]📋 pasted {n} lines — type a message (or just press Enter) to send it.[/dim]"
-        )
+        self.notify(f"📋 Pasted {n} lines — type a message (or just press Enter) to send it.")
 
     # ── slash commands ────────────────────────────────────────────────────────
     def _handle_slash_command(self, typed: str) -> bool:
@@ -706,9 +900,9 @@ class OllamaShellTUI(App):
         if cmd in ("daydream", "dream"):
             self._start_daydream()
             return True
-        self._conversation().write(
-            f"[dim]Unknown command [b]/{escape(cmd)}[/b]. "
-            "Try /clear, /daydream, /help, or /menu.[/dim]"
+        self.notify(
+            f"Unknown command /{cmd}. Try /clear, /daydream, /help, or /menu.",
+            severity="warning",
         )
         return True
 
@@ -722,7 +916,7 @@ class OllamaShellTUI(App):
         way the dream lands in the transcript and never touches model context.
         """
         if not self.agent.config.fun.daydreams:
-            self._conversation().write("[dim]Daydreams are disabled.[/dim]")
+            self.notify("Daydreams are disabled.", severity="warning")
             return
         if self._busy:
             return
@@ -731,9 +925,16 @@ class OllamaShellTUI(App):
         self._status = "Daydreaming"
         screen = None
         if self.agent.config.fun.effects:
+            from .. import fun
+            from . import ambient
             from .dream import DreamScreen
 
-            screen = DreamScreen()
+            # The sky takes a mood from the session: rain after a stormy
+            # debugging stretch, snow in December, otherwise clear.
+            mood = ambient.sky_mood(
+                fun.recent_topics(self.agent.messages), time.localtime().tm_mon
+            )
+            screen = DreamScreen(weather=mood, density=self.agent.config.fun.sky_density)
             self.push_screen(screen, lambda _res: self.query_one(Input).focus())
         self.run_worker(lambda: self._daydream_worker(screen), thread=True, exclusive=True)
 
@@ -802,6 +1003,11 @@ class OllamaShellTUI(App):
             return
         if not text:
             text = "Describe / analyze the attached image."
+        # A dim, timestamped rule gives the transcript a visual rhythm — the eye
+        # can find where each exchange starts.
+        self._conversation().write(
+            Rule(time.strftime("%H:%M"), style="dim", align="right"), expand=True
+        )
         self._conversation().write(f"[bold green]›[/] {echo}")
         # Engage the live indicator before the (possibly slow) first token.
         self._stream = ""
@@ -813,9 +1019,17 @@ class OllamaShellTUI(App):
         convo, activity = self._conversation(), self._activity()
         used_gui = False  # did this turn drive the desktop GUI?
         used_memory = False  # did this turn change long-term memory?
+        # Turn vitals: elapsed time and a streaming-rate estimate. Ollama sends
+        # roughly one token per streamed chunk, so the delta count ≈ tokens.
+        t0 = time.monotonic()
+        first_delta: float | None = None
+        n_deltas = 0
         try:
             for event in self.agent.send(text, images=images):
                 if isinstance(event, TextDelta):
+                    if first_delta is None:
+                        first_delta = time.monotonic()
+                    n_deltas += 1
                     self._stream += event.text  # the spinner timer renders this live
                 elif isinstance(event, ToolStarted):
                     if event.name == "screenshot" or event.name.startswith("gui_"):
@@ -838,6 +1052,7 @@ class OllamaShellTUI(App):
                     self.call_from_thread(activity.write, act)
                 elif isinstance(event, ToolFinished):
                     self._status = "Thinking"
+                    self._tool_counts[event.name] += 1  # heat for the Tools panel
                     if self.agent.config.fun.effects:  # a spark fades in the live bar
                         from . import ambient
 
@@ -851,11 +1066,16 @@ class OllamaShellTUI(App):
                 elif isinstance(event, TurnComplete):
                     if event.text:
                         self._last_reply = event.text  # for Ctrl+Y / menu copy
-                    # Escape: the model's reply may contain [..] that Rich would
-                    # parse as markup (markdown links, arrays) and crash on.
-                    final = escape(event.text) if event.text else "[dim](no text)[/dim]"
-                    self.call_from_thread(convo.write, final)
+                        # Commit the finished reply as rendered Markdown (headers,
+                        # lists, syntax-highlighted code blocks).
+                        self.call_from_thread(self._write_reply, event.text)
+                    else:
+                        self.call_from_thread(convo.write, "[dim](no text)[/dim]")
+                    stats = self._turn_stats(t0, first_delta, n_deltas)
+                    self.call_from_thread(convo.write, f"[dim]   {stats}[/dim]")
                 elif isinstance(event, LimitReached):
+                    if self.agent.config.fun.effects:  # sparks scatter in the strip
+                        self._burst = time.monotonic()
                     self.call_from_thread(
                         convo.write,
                         f"[yellow]Reached the {event.iterations}-round tool limit — "
@@ -875,6 +1095,8 @@ class OllamaShellTUI(App):
             try:
                 inspector = self.query_one(ContextInspector)
                 self.call_from_thread(inspector.refresh_view, self.agent)
+                panel = self.query_one(ToolsPanel)
+                self.call_from_thread(panel.render_for, self.agent, self._tool_counts)
             except NoMatches:
                 pass
             # After a turn that drove the desktop GUI, tell the user it's done and

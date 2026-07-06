@@ -101,3 +101,36 @@ def _ollama_up() -> bool:
 def test_ollama_live_list_models():
     models = OllamaProvider().list_models()
     assert isinstance(models, list)
+
+
+def test_ollama_list_models_info_carries_badges(monkeypatch):
+    data = {
+        "models": [
+            {
+                "name": "gemma4:26b",
+                "details": {"parameter_size": "26B", "quantization_level": "Q8_0"},
+            },
+            {"name": "bare-model"},
+        ]
+    }
+    monkeypatch.setattr(
+        "oshell.providers.ollama.requests.get", lambda *a, **k: _FakeResp(json_data=data)
+    )
+    infos = OllamaProvider().list_models_info()
+    assert infos[0] == {"name": "gemma4:26b", "size": "26B", "quant": "Q8_0"}
+    assert infos[1] == {"name": "bare-model"}  # missing details tolerated
+
+
+def test_base_list_models_info_falls_back_to_names():
+    from oshell.providers.base import ChatChunk, LLMProvider
+
+    class _P(LLMProvider):
+        name = "p"
+
+        def list_models(self):
+            return ["a", "b"]
+
+        def chat(self, messages, **kwargs):
+            yield ChatChunk(content="", done=True)
+
+    assert _P().list_models_info() == [{"name": "a"}, {"name": "b"}]

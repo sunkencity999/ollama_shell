@@ -67,3 +67,9 @@ def test_roundtrip_save_load(tmp_path):
     reloaded = Config.load(tmp_path)
     assert reloaded.default_model == "round-trip"
     assert reloaded.temperature == 0.9
+
+
+def test_theme_and_sky_density_defaults():
+    cfg = Config()
+    assert cfg.theme == "textual-dark"
+    assert cfg.fun.sky_density == 1.0

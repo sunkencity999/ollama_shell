@@ -44,6 +44,10 @@ Created by Christopher Bradford · [contact@christopherdanielbradford.com](mailt
 - 💭 **It has an inner life.** Ask it to `/daydream` and it stops being useful for
   a moment to free-associate a small, surreal vignette about whatever you'd been
   discussing. Useless on purpose. Local-first, so indulging is free.
+- 🎨 **It's a place you want to be.** Markdown-rendered replies with highlighted
+  code, live-preview color themes (nord, gruvbox, tokyo-night…), a command
+  palette, tokens-per-second vitals under every reply — and a night sky that
+  rains after a stormy debugging session.
 
 If the design philosophy interests you, here it is in one table:
 
@@ -85,42 +89,56 @@ common flows. On macOS you can also double-click **Start Ollama Shell.command**.
 
 `oshell tui` opens a workspace, not a scrolling REPL: the conversation on the
 left, a tabbed sidebar — **Tools · Context · Activity** — on the right. The header
-shows the model, backend, tool count, and privacy posture at a glance.
+shows the model, backend, tool count, and privacy posture at a glance
+(`gemma4:26b · ollama · 29 tools · 9 net`).
 
 ```
 ┌────────────────────────────────┬──────────────────────────────┐
-│ Ollama Shell · llama3.2 · ollama · 12 tools · network: web_…   │
+│ Ollama Shell · llama3.2 · ollama · 12 tools · 2 net           │
 ├────────────────────────────────┼──────────────────────────────┤
-│ Conversation                   │ [Tools] Context  Activity     │
+│ ───────────────────── 10:25 ── │ [Tools] Context  Activity     │
 │ › what files are here?         │  Active tools                 │
-│ The directory contains …       │   local list_dir              │
+│ The directory contains …       │   local list_dir ×3           │
 │ 🔧 list_dir(.) → 14 entries    │   net   web_search            │
-│                                │   …                           │
+│    ⏱ 2.1s · ~38 tok/s · ctx 9% │   …                           │
 │ › /daydream                    │  Optional features            │
 │ 💭 a clock made of warm rain…  │   ✓ rag (knowledge base)      │
 │                                │   ✗ docs  (pip install …[docs])│
 ├────────────────────────────────┴──────────────────────────────┤
-│ Message the model…   (Esc menu · Ctrl+T tools · Ctrl+Y copy)  │
+│ Message the model…  (Esc menu · Ctrl+P palette · Ctrl+C quit) │
 └─────────────────────────────────────────────────────────────--┘
 ```
 
-- **Tools** — the live roster (local vs network) and which optional features this
-  install actually has. This panel is the source of truth for what the app can do
-  *right now*.
-- **Context** — the pin/exclude state made visual: you see exactly which messages
-  the model is shown.
+- **Tools** — the live roster (local vs network), warmed by use: tools the model
+  has actually reached for this session glow with a `×N` count. This panel is the
+  source of truth for what the app can do *right now*.
+- **Context** — the pin/exclude state made visual, topped by a **fill gauge**
+  (`▰▰▰▱▱▱ 38% of ~8192 tokens`) so excluding messages has visible consequences.
 - **Activity** — a running log of every tool call and its result.
+
+**Replies are rendered, not dumped.** Finished replies commit to the transcript
+as real **Markdown** — headings, lists, and **syntax-highlighted code blocks** —
+so a local model's output reads like a document, not a log. A dim, timestamped
+rule opens each exchange, and a vitals line closes it: `⏱ 3.4s · ~41 tok/s ·
+ctx 12%` — elapsed time, streaming rate, and how full the context window is.
 
 While the model works, a live region streams the reply **token-by-token** behind
 an animated status (*Thinking… · Running web_search…*) — no blank-screen waiting.
 And it's honest about its own actions: every tool call is echoed inline
 (`🔧 run_command(...) → …`) so you can trust — or catch — exactly what it did.
+Status chatter ("copied", "model set", install progress) appears as **toast
+notifications** that fade from the corner — the transcript stays a conversation.
 
 **The old-school menu.** On startup, and any time you press **Esc**, a
-keyboard-driven menu pops up — arrow keys + Enter, or just press a number. From it:
+keyboard-driven menu pops up — grouped into titled sections, driven with arrow
+keys + Enter or by number (two-digit numbers work: type `1`+`4` for item 14).
+A faint constellation hangs behind it. From it:
 
-- **Models** — pick the active model; your choice is **saved as the default** and
-  persists across sessions.
+- **Models** — pick the active model, each badged with its size and quantization
+  (`26B · Q8_0`); your choice is **saved as the default** across sessions.
+- **Theme** — restyle the whole app, previewed **live** as you arrow through
+  nord, gruvbox, tokyo-night, catppuccin, dracula, and friends. Enter keeps it
+  (persisted), Esc puts the room back the way it was.
 - **Install features** — add RAG / docs / vision / fine-tuning / computer-use into
   the running environment *without leaving the app*. Output streams live into the
   Activity tab and the Tools panel ticks ✓ when it finishes.
@@ -130,11 +148,18 @@ keyboard-driven menu pops up — arrow keys + Enter, or just press a number. Fro
 - Plus New conversation, Copy reply/transcript, Memory, Knowledge base,
   **Daydream**, Fine-tuning, Settings, Help, and Quit.
 
+**The command palette.** Press **Ctrl+P** and every menu action is
+fuzzy-searchable — type "day" ↵ instead of Esc-then-14. The menu is for
+discovery; the palette is for the tenth session.
+
 **Little niceties.** Paste **multi-line text** (logs, code) straight in — it's
 buffered and sent with your next message, not truncated. Copy out with **Ctrl+Y**
-(last reply) or *Copy transcript* (whole chat) via your OS clipboard, with an
-**OSC 52** fallback that even works over SSH. To hand-select text, hold **Option**
-(macOS/iTerm2) or **Shift** (many terminals) while dragging.
+(last reply), **Ctrl+B** (the last fenced **code block** — usually what you
+actually want), or *Copy transcript* (whole chat) via your OS clipboard, with an
+**OSC 52** fallback that even works over SSH. A fresh conversation opens with a
+small welcome card — model badge, privacy posture, and a few things to try. To
+hand-select text, hold **Option** (macOS/iTerm2) or **Shift** (many terminals)
+while dragging.
 
 ## 💭 Daydreams — the shell's inner life
 
@@ -174,13 +199,22 @@ reading** — it lives in the periphery, and every effect *means* something:
 - 🌌 **Dream Mode** — `/daydream` takes the whole stage: a full-screen night sky
   of twinkling stars (and the occasional comet) that the dream streams into,
   centered. Any key wakes the shell; the dream is kept in the transcript.
+- 🌦 **Weather in the sky** — the dream sky takes a mood from your session:
+  after a stormy debugging stretch (errors, tracebacks, crashes in the recent
+  conversation) **rain** streaks fall through the stars; in December it
+  **snows**; otherwise, a clear night. Tune the sky's fullness with
+  `{"fun":{"sky_density":2.0}}` for a busier night (0 empties it).
 - 🌈 **Aurora** — while the model thinks, the spinner and status drift slowly
   through cool hues instead of sitting at a fixed cyan. Breathing, not blinking.
 - ✨ **Embers** — when a tool finishes, a tiny spark fades (`✦ ✧ ∗ ·`) in the
   status strip — amber for network tools, magenta for memory, green for local.
+- 🎆 **A particle storm** — if the model hits the tool-round cap, a brief scatter
+  of warm sparks crosses the status strip while it wraps up with what it has.
 - 🐛 **Fireflies** — leave the shell quiet for a couple of minutes and two or
   three faint fireflies drift across the empty status strip, keeping the place
   warm. Any keystroke disperses them.
+- ✨ **Menu constellation** — a few faint, well-spaced stars behind the startup
+  menu. Just because.
 
 All of it switches off with `{"fun":{"effects":false}}` — and none of it costs
 you anything while a turn is rendering (one 10 fps timer that was already there).
@@ -340,7 +374,9 @@ oshell/
     events.py            TextDelta / ToolStarted / ToolFinished / TurnComplete / LimitReached
   cli.py               Thin Typer/Rich front-end
   tui/app.py           Textual workspace (Tools / Context / Activity tabs)
-  tui/ambient.py       Ambient effects models: aurora, embers, fireflies, starfield
+  tui/menu.py          Sectioned main menu + model / theme / feature pickers
+  tui/ambient.py       Ambient effects: aurora, embers, fireflies, starfield,
+                       sky weather, bursts, constellations
   tui/dream.py         Dream Mode — the full-screen /daydream night sky
 ```
 
