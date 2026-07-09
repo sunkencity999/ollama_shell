@@ -222,9 +222,17 @@ reading** — it lives in the periphery, and every effect *means* something:
 **menu → Mood** (with a live animated preview), `/mood` at the prompt, or
 `/mood rain` to set one directly. The set: `fireflies` (default) · `rain` ·
 `snow` · `aurora` · `ocean` · `starfield` · `embers` · `matrix` · `none`.
-Your pick starts playing immediately, persists across sessions, and — if you
-choose rain or snow — carries into the `/daydream` sky too. The mood appears
-after ~45s of quiet (`{"fun":{"mood_idle_seconds":10}}` to change that).
+Your pick starts playing immediately, persists across sessions, survives a
+`/daydream` (waking from the dream, the weather keeps falling), and — if you
+choose rain or snow — carries into the dream sky too. The mood appears in the
+full-width strip after ~45s of quiet (`{"fun":{"mood_idle_seconds":10}}`).
+
+**…and then it takes the stage.** Leave the shell alone for ~3 minutes and the
+mood stops being a strip: the weather falls **on top of the whole workspace** —
+rain streaking between your messages, matrix glyphs over the sidebar — with
+everything still readable underneath, lightly dimmed. Any key or click wakes
+the shell (and is swallowed, screensaver-style); the strip weather carries on.
+Tune or disable with `{"fun":{"mood_takeover_seconds":0}}`.
 
 All of it switches off with `{"fun":{"effects":false}}` — and none of it costs
 you anything while a turn is rendering (one 10 fps timer that was already there).
@@ -386,7 +394,8 @@ oshell/
   tui/app.py           Textual workspace (Tools / Context / Activity tabs)
   tui/menu.py          Sectioned main menu + model / theme / feature pickers
   tui/ambient.py       Ambient effects: aurora, embers, fireflies, starfield,
-                       sky weather, bursts, constellations
+                       sky weather, bursts, constellations, moods (1D + 2D)
+  tui/overlay.py       The mood takeover — weather on top of the live workspace
   tui/dream.py         Dream Mode — the full-screen /daydream night sky
 ```
 
@@ -408,9 +417,22 @@ the backend for the model's trained maximum (Ollama `/api/show`) and runs with
 that, capped at 32k so a 128k-context model doesn't allocate a monster KV cache
 by surprise. The resolved size is passed to Ollama as `num_ctx` on every
 request — without it, Ollama runs at *its* default (often 4k) and silently
-truncates long conversations. Good hardware and big ambitions? Set it
-explicitly: `{"context_length": 65536}`. The Context tab's gauge always shows
-the size actually in effect.
+truncates long conversations.
+
+**Setting the maximum directly.** On capable hardware (a Mac Studio, a big-VRAM
+GPU box), go past the auto cap by putting an explicit value in your
+`config.local.json`:
+
+```json
+{
+  "context_length": 65536
+}
+```
+
+An explicit value always wins over auto — use it to go bigger (65536, 131072 —
+mind the KV-cache memory: roughly, doubling the context doubles it) or smaller
+(4096 to keep a modest machine snappy). The Context tab's gauge always shows
+the size actually in effect: `▰▰▱▱▱ 23% of ~64k tokens`.
 
 > v0.1 silently un-tracked `config.json` via a blanket `*.json` .gitignore rule.
 > That's fixed: config is tracked; real secrets go in `.env` / `config.local.json`.

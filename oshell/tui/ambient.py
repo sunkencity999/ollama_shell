@@ -186,6 +186,77 @@ def _matrix_line(width: int, tick: int) -> str:
     return _marks_line(width, marks)
 
 
+def mood_points(mood: str, width: int, height: int, tick: int) -> list[tuple[int, int, str, str]]:
+    """One frame of a mood as 2D particles: (x, y, glyph, style) tuples.
+
+    This is the full-canvas form of the moods — the takeover overlay places a
+    tiny widget per point so the weather falls ON TOP of the live workspace
+    (the cells between points stay untouched, so the app shows through).
+    Deterministic in (width, height, tick); unknown moods fall back to
+    fireflies; "none" is an empty sky.
+    """
+    width, height = max(width, 8), max(height, 3)
+    if mood == "none":
+        return []
+    n = max(6, (width * height) // 80)  # gentle density; scales with the canvas
+    pts: list[tuple[int, int, str, str]] = []
+    if mood == "rain":
+        for i in range(n):
+            speed = 1 + i % 3
+            x = (i * 53 - tick * speed) % width
+            y = (i * 17 + tick * speed) % height
+            pts.append((x, y, "╱", _RAIN_SHADES[i % len(_RAIN_SHADES)]))
+    elif mood == "snow":
+        for i in range(max(4, n * 2 // 3)):
+            y = (i * 13 + tick // (2 + i % 3)) % height
+            x = int(i * 37 + 2.5 * math.sin(tick * 0.07 + i * 1.9)) % width
+            pts.append((x, y, _SNOW_FLAKES[i % len(_SNOW_FLAKES)], "#dbe7f3"))
+    elif mood == "aurora":
+        # a ribbon rippling across the upper sky
+        for x in range(0, width, 2):
+            y = int(height * 0.3 + height * 0.18 * math.sin(x * 0.11 + tick * 0.1))
+            hue = AURORA[(x // 5 + tick // 4) % len(AURORA)]
+            pts.append((x, min(max(y, 0), height - 1), "─", hue))
+    elif mood == "ocean":
+        n_shades = len(_OCEAN_SHADES)
+        for x in range(width):
+            swell = math.sin(x * 0.22 - tick * 0.14)
+            y = int(height * 0.65 + height * 0.18 * swell)
+            shade = _OCEAN_SHADES[min(int((swell + 1) / 2 * n_shades), n_shades - 1)]
+            pts.append((x, min(max(y, 0), height - 1), "≈" if swell > 0.5 else "~", shade))
+    elif mood == "starfield":
+        for i in range(n):
+            x, y = (i * 61 + 5) % width, (i * 23 + 2) % height
+            b = (math.sin(tick * (0.05 + i % 6 * 0.015) + i * 2.3) + 1) / 2
+            j = min(int(b * len(_STAR_CHARS)), len(_STAR_CHARS) - 1)
+            pts.append((x, y, _STAR_CHARS[j], _STAR_STYLES[j]))
+    elif mood == "embers":
+        for i in range(max(4, n // 2)):
+            speed = 1 + i % 2
+            y = height - 1 - (i * 11 + tick * speed // 2) % height  # sparks rise
+            x = (i * 47 + (tick // 3 + i) % 3 - 1) % width
+            glyph = EMBER_FRAMES[(tick // (2 + i % 3) + i) % len(EMBER_FRAMES)]
+            pts.append((x, y, glyph, _EMBER_WARMTH[i % len(_EMBER_WARMTH)]))
+    elif mood == "matrix":
+        for i in range(max(5, width // 6)):
+            x = (i * 29 + 1) % width
+            head = (i * 7 + tick) % (height + 6)  # runs off the bottom, then wraps
+            for d in range(4):  # bright head, dimming tail
+                y = head - d
+                if 0 <= y < height:
+                    ch = _MATRIX_CHARS[((x * 7 + tick) // 2 + i + d) % len(_MATRIX_CHARS)]
+                    style = "#b7f5c3" if d == 0 else ("#7bd88f" if d == 1 else "dim #4e8f5f")
+                    pts.append((x, y, ch, style))
+    else:  # fireflies — also the fallback for unknown names
+        for i in range(max(3, n // 2)):
+            fx = width / 2 + (width / 2 - 2) * math.sin(tick * (0.03 + i % 7 * 0.011) + i * 2.1)
+            fy = height / 2 + (height / 2 - 1) * math.sin(tick * (0.017 + i % 5 * 0.013) + i * 1.3)
+            pulse = _FLY_GLYPHS[(tick // (3 + i % 3) + i) % len(_FLY_GLYPHS)]
+            style = _FLY_STYLES[i % len(_FLY_STYLES)]
+            pts.append((int(fx) % width, int(fy) % height, pulse, style))
+    return pts[:160]  # hard cap: the overlay keeps a fixed widget pool
+
+
 def mood_markup(mood: str, width: int, tick: int) -> str:
     """One animation frame of the chosen mood, as a markup line.
 

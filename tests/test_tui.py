@@ -698,7 +698,8 @@ async def test_fireflies_appear_when_idle_and_disperse_on_activity():
 
     app = _app()
     async with app.run_test() as pilot:
-        app._idle_since = _time.monotonic() - 999  # long-quiet shell
+        # Idle past the strip delay but short of the full-screen takeover.
+        app._idle_since = _time.monotonic() - 60
         app._tick()
         await pilot.pause()
         assert any(g in app._live_text for g in ("✦", "✧", "·"))
@@ -1109,3 +1110,107 @@ async def test_context_gauge_reports_auto_size():
     async with app.run_test():
         text = app.query_one(ContextInspector).text
         assert "8k" in text and "(auto)" in text
+
+
+# ── the mood takeover: weather on top of the live workspace ───────────────────
+
+
+async def test_deep_idle_takes_over_then_wakes_to_strip_mood():
+    import time as _time
+
+    from oshell.tui.overlay import MoodOverlay
+
+    app = _app()
+    async with app.run_test() as pilot:
+        app.agent.config.fun.mood = "rain"
+        app._idle_since = _time.monotonic() - 999  # far past mood_takeover_seconds
+        app._tick()
+        await pilot.pause()
+        assert isinstance(app.screen, MoodOverlay)  # the weather took the stage
+        app._tick()  # the guard: no second overlay on top of the first
+        await pilot.pause()
+        assert len(app.screen_stack) == 2
+        await pilot.press("space")  # any key wakes (and is swallowed)
+        await pilot.pause()
+        assert not isinstance(app.screen, MoodOverlay)
+        app._tick()  # back in the strip, still raining — not another takeover
+        await pilot.pause()
+        assert "╱" in app._live_text
+
+
+async def test_takeover_never_covers_a_menu():
+    import time as _time
+
+    from oshell.tui.menu import MenuScreen
+    from oshell.tui.overlay import MoodOverlay
+
+    app = _app()
+    async with app.run_test() as pilot:
+        await pilot.press("escape")  # open the menu
+        await pilot.pause()
+        assert isinstance(app.screen, MenuScreen)
+        app._idle_since = _time.monotonic() - 999
+        app._tick()
+        await pilot.pause()
+        assert isinstance(app.screen, MenuScreen)  # untouched
+        assert not any(isinstance(s, MoodOverlay) for s in app.screen_stack)
+
+
+async def test_takeover_disabled_by_config():
+    import time as _time
+
+    from oshell.tui.overlay import MoodOverlay
+
+    app = _app()
+    async with app.run_test() as pilot:
+        app.agent.config.fun.mood_takeover_seconds = 0  # opt out
+        app._idle_since = _time.monotonic() - 999
+        app._tick()
+        await pilot.pause()
+        assert not isinstance(app.screen, MoodOverlay)
+        assert app._live_text  # the strip mood still plays
+
+
+async def test_overlay_renders_particles_over_translucent_screen():
+    from oshell.tui.overlay import MoodOverlay, _Fleck
+
+    app = _app()
+    async with app.run_test() as pilot:
+        app.push_screen(MoodOverlay("rain"))
+        await pilot.pause()
+        overlay = app.screen
+        assert isinstance(overlay, MoodOverlay)
+        shown = [f for f in overlay.query(_Fleck) if f.display]
+        assert shown  # particles on stage
+        first = [(f.styles.offset.x.value, f.styles.offset.y.value) for f in shown[:5]]
+        overlay._frame()
+        overlay._frame()
+        await pilot.pause()
+        shown2 = [f for f in overlay.query(_Fleck) if f.display]
+        second = [(f.styles.offset.x.value, f.styles.offset.y.value) for f in shown2[:5]]
+        assert first != second  # the rain moves
+        await pilot.press("q")  # wake — the keystroke is swallowed
+        await pilot.pause()
+        assert not isinstance(app.screen, MoodOverlay)
+        assert not any(m.role == "user" for m in app.agent.messages)  # "q" never landed
+
+
+async def test_waking_from_daydream_keeps_the_mood(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    app = _app()
+    async with app.run_test() as pilot:
+        app.agent.config.fun.mood = "rain"
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "/daydream"
+        await pilot.pause()
+        await pilot.press("enter")
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if not app._busy:
+                break
+        await pilot.press("space")  # wake from the dream
+        await pilot.pause()
+        app._tick()  # the rain is still falling in the strip
+        await pilot.pause()
+        assert "╱" in app._live_text

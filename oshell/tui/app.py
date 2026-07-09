@@ -259,8 +259,6 @@ class OllamaShellTUI(App):
                 yield RichLog(
                     id="conversation", wrap=True, markup=True, highlight=True, min_width=20
                 )
-                # Live region: spinner/status while working, streamed reply as it builds.
-                yield Static("", id="live")
             with TabbedContent(id="sidebar", initial="tab-tools"):
                 with TabPane("Tools", id="tab-tools"):
                     yield ToolsPanel(id="tools")
@@ -268,6 +266,10 @@ class OllamaShellTUI(App):
                     yield ContextInspector(id="context")
                 with TabPane("Activity", id="tab-activity"):
                     yield RichLog(id="activity", wrap=True, markup=True)
+        # Live region: spinner/status while working, streamed reply as it
+        # builds, and the idle mood. Full-width — the weather isn't clipped to
+        # the conversation column, it runs under the sidebar too.
+        yield Static("", id="live")
         yield ChatInput(
             placeholder="Message the model…  (Esc menu · Ctrl+P palette · Ctrl+C quit)"
         )
@@ -384,7 +386,20 @@ class OllamaShellTUI(App):
         if not self._busy:
             fun = self.agent.config.fun
             idle = time.monotonic() - self._idle_since
-            if effects and fun.mood != "none" and idle > fun.mood_idle_seconds:
+            mood_on = effects and fun.mood != "none"
+            if (
+                mood_on
+                and fun.mood_takeover_seconds > 0
+                and idle > fun.mood_takeover_seconds
+                and len(self.screen_stack) == 1  # never take over a menu/dream/picker
+            ):
+                # The mood takes the whole stage (weather over the still-visible
+                # workspace). Waking resumes the strip mood, not another takeover.
+                from .overlay import MoodOverlay
+
+                self.push_screen(MoodOverlay(fun.mood), self._on_takeover_wake)
+                return
+            if mood_on and idle > fun.mood_idle_seconds:
                 try:
                     width = self.query_one("#live", Static).size.width or 40
                 except NoMatches:
@@ -408,6 +423,15 @@ class OllamaShellTUI(App):
             self._set_live(f"[dim]{escape(self._stream)}[/dim][{hue}]▌[/]")
         else:
             self._set_live(f"{ember}[{hue}]{frame}[/] [dim]{escape(self._status)}…[/dim]")
+
+    def _keep_mood_alive(self) -> None:
+        """Rewind the idle clock so the strip mood plays now (not in 45s)."""
+        self._idle_since = time.monotonic() - self.agent.config.fun.mood_idle_seconds - 1
+
+    def _on_takeover_wake(self, _result: None) -> None:
+        """Back from the full-screen mood: keep the strip weather going."""
+        self._keep_mood_alive()
+        self.query_one(Input).focus()
 
     def _set_live(self, markup: str) -> None:
         self._live_text = markup
@@ -619,7 +643,7 @@ class OllamaShellTUI(App):
             self.notify(f"Mood set to {name} (not saved: {exc}).", severity="warning")
         # Let the new mood take the strip right away instead of waiting out the
         # idle delay — picking rain should mean it starts raining.
-        self._idle_since = time.monotonic() - self.agent.config.fun.mood_idle_seconds - 1
+        self._keep_mood_alive()
 
     def _on_mood_choice(self, name: str | None) -> None:
         if name:
@@ -1032,7 +1056,13 @@ class OllamaShellTUI(App):
         finally:
             self._busy = False
             self._stream = ""
-            self._idle_since = time.monotonic()
+            # Waking from a dream shouldn't cancel the ambience — the shell is
+            # still idle, so the mood keeps playing in the strip.
+            fun_cfg = self.agent.config.fun
+            if fun_cfg.effects and fun_cfg.mood != "none":
+                self._keep_mood_alive()
+            else:
+                self._idle_since = time.monotonic()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         typed = event.value.strip()

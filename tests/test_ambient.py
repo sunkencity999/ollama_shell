@@ -179,3 +179,36 @@ def test_mood_list_is_stable():
         "fireflies", "rain", "snow", "aurora", "ocean",
         "starfield", "embers", "matrix", "none",
     }
+
+
+# ── mood_points: the 2D particle fields behind the takeover overlay ───────────
+
+
+def test_mood_points_every_mood_in_bounds_and_deterministic():
+    for mood in ambient.MOODS:
+        a = ambient.mood_points(mood, 80, 24, tick=13)
+        b = ambient.mood_points(mood, 80, 24, tick=13)
+        assert a == b, mood
+        for x, y, glyph, style in a:
+            assert 0 <= x < 80 and 0 <= y < 24, (mood, x, y)
+            assert glyph and style
+        if mood != "none":
+            assert a, f"{mood} should have particles"
+    assert ambient.mood_points("none", 80, 24, 13) == []
+
+
+def test_mood_points_animate():
+    for mood in ambient.MOODS:
+        if mood == "none":
+            continue
+        frames = {tuple(ambient.mood_points(mood, 80, 24, t)) for t in range(0, 40, 4)}
+        assert len(frames) > 1, f"{mood} should move"
+
+
+def test_mood_points_unknown_falls_back_to_fireflies():
+    assert ambient.mood_points("volcano", 80, 24, 9) == ambient.mood_points("fireflies", 80, 24, 9)
+
+
+def test_mood_points_capped_for_the_fleck_pool():
+    for mood in ambient.MOODS:
+        assert len(ambient.mood_points(mood, 300, 100, 7)) <= 160, mood

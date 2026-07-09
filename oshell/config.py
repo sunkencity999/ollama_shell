@@ -136,7 +136,11 @@ class FunConfig(BaseModel):
     # starfield | embers | matrix | none. Pick from the menu ("Mood") or /mood.
     # rain/snow also carry into the /daydream sky.
     mood: str = "fireflies"
-    mood_idle_seconds: float = 45.0  # quiet time before the mood appears
+    mood_idle_seconds: float = 45.0  # quiet time before the mood appears in the strip
+    # After this much idle the mood takes the WHOLE stage — weather falling on
+    # top of the (still visible, lightly dimmed) workspace; any key wakes.
+    # 0 disables the takeover.
+    mood_takeover_seconds: float = 180.0
 
 
 class Config(BaseModel):
