@@ -9,10 +9,12 @@ when the room goes quiet, sit there and **daydream**.
 
 ### ▶ [**Watch the live demo →**](https://sunkencity999.github.io/ollama_shell/)
 
-A 60-second animated playthrough — a late-night session with real tool calls,
-markdown-rendered replies (highlighted code included), a live theme switch,
-per-turn vitals, memory… and, when it goes quiet, a daydream under a rainy sky
-(the session had a traceback in it). No install required to watch.
+A 90-second animated playthrough — a late-night session where the shell uses
+its **machine memory** (Mechanic flags a CPU anomaly, Drift finds the launchd
+service that caused it, one command fixes it — verified), fixes a crashing
+script with a markdown-rendered reply, switches themes live, shows per-turn
+vitals… and, when it goes quiet, daydreams under a rainy sky (the session had
+a traceback in it). No install required to watch.
 
 Created by Christopher Bradford · [contact@christopherdanielbradford.com](mailto:contact@christopherdanielbradford.com)
 

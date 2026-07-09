@@ -4,9 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ollama Shell — a local-first AI that dreams</title>
-<meta name="description" content="An animated demo of Ollama Shell: a private, local-first agentic terminal that renders markdown, switches themes live, shows its vitals… and daydreams (in the rain, if you've been debugging)." />
+<meta name="description" content="An animated demo of Ollama Shell: a private, local-first agentic terminal that knows what's normal for your machine (Mechanic × Drift), renders markdown, switches themes live… and daydreams (in the rain, if you've been debugging)." />
 <meta property="og:title" content="Ollama Shell — a local-first AI that dreams" />
-<meta property="og:description" content="Watch a late-night session: real tool calls, a fixed script, a theme switch, memory… and a daydream under a rainy sky." />
+<meta property="og:description" content="Watch a late-night session: an anomaly diagnosed and fixed with machine memory, a fixed script, a theme switch… and a daydream under a rainy sky." />
 <style>
   :root{
     --bg:#0b0f14; --panel:#0f1620; --panel2:#0c121b; --ink:#d7e2ee; --dim:#7c8ba0;
@@ -166,10 +166,11 @@
   <div class="intro">
     <div class="badge">a scripted demo · the real thing runs on your machine</div>
     <h1><span class="sh">oshell</span> — a local-first AI that dreams</h1>
-    <p>A private, agentic terminal for Ollama. It renders its replies like a
-    document, switches themes while you watch, shows its vitals after every
-    turn — and when the night gets quiet… it daydreams. (Debug all evening and
-    the dream sky rains.) Press play.</p>
+    <p>A private, agentic terminal for Ollama. It knows what's <em>normal for
+    your machine</em> — and what changed — via Mechanic&nbsp;×&nbsp;Drift, renders
+    its replies like a document, switches themes while you watch — and when the
+    night gets quiet… it daydreams. (Debug all evening and the dream sky
+    rains.) Press play.</p>
   </div>
 
   <div class="term" id="term">
@@ -184,7 +185,7 @@
     </div>
     <div class="header">
       <span>Ollama Shell · <b>gemma4</b> · ollama</span>
-      <span>·&nbsp; <b>12</b> tools · <b>2</b> net</span>
+      <span>·&nbsp; <b>22</b> tools · <b>2</b> net</span>
       <span class="priv">·&nbsp; 🔒 local-first</span>
     </div>
     <div class="body">
@@ -263,6 +264,8 @@
     ['l','current_time'],['l','list_dir'],['l','read_file'],['l','write_file'],
     ['x','run_command'],['l','create_document'],['l','remember'],
     ['n','web_search'],['n','fetch_url'],
+    ['l','mechanic_is_this_normal'],['l','mechanic_baseline_for'],
+    ['l','drift_diff_latest'],['l','drift_latest'],
   ];
   let toolCounts = {};
   const toolsHTML = () => `
@@ -425,8 +428,8 @@
 
   function welcomeCard(){
     line('card',
-      `<span class="model">gemma4</span> · ollama · 12 tools&nbsp;&nbsp;<span class="lock">● fully local*</span>\n`
-      + `Try: <i>what's eating my CPU?</i> · <i>summarize ~/notes.md</i> · <i>/daydream</i> 💭\n`
+      `<span class="model">gemma4</span> · ollama · 22 tools&nbsp;&nbsp;<span class="lock">● fully local*</span>\n`
+      + `Try: <i>is my CPU usage normal right now?</i> · <i>what changed on this box today?</i> · <i>/daydream</i> 💭\n`
       + `<span style="font-size:11px">Esc menu · Ctrl+P palette · Ctrl+Y copy reply · Ctrl+B copy code</span>`);
     line('sys', '*2 network-capable tools (web_search, fetch_url) — flagged, and only run when called.');
   }
@@ -498,7 +501,38 @@
       '2.1', 38);
     await sleep(700); if(myRun!==run) return;
 
-    // 2) web (network tool, honest + visible)
+    // 2) machine memory — the loop no cloud assistant can close:
+    //    mechanic says WHETHER something is off, drift says WHAT moved,
+    //    run_command fixes it, mechanic verifies.
+    await submitUser("also — the fans have been roaring for an hour. is that normal?");
+    if(myRun!==run) return;
+    await think('Thinking', 700);
+    await toolCall('mechanic_is_this_normal', 'os.cpu_pct', 'local', 900,
+      '{"normal": false, "value": 91, "z_score": 7.4, "mean": 12}');
+    if(myRun!==run) return;
+    await toolCall('drift_diff_latest', '', 'local', 950,
+      'services: +1 (dev.sky-indexer.plist) · ports: +1 (8931)');
+    if(myRun!==run) return;
+    await assistant("**Not normal for this box.** You're at 91% CPU against your usual ~12% — "
+      + "seven sigma out. And Drift says a new launchd service appeared since the last "
+      + "snapshot: `dev.sky-indexer.plist` (port 8931 opened with it). That's your fan noise. "
+      + "Want me to stop it?", '6.2', 40);
+    await sleep(700); if(myRun!==run) return;
+
+    await submitUser("kill it.");
+    if(myRun!==run) return;
+    await think('Thinking', 600);
+    await toolCall('run_command', 'launchctl bootout gui/501/dev.sky-indexer', 'exec', 1000,
+      'ok (exit 0)');
+    if(myRun!==run) return;
+    await toolCall('mechanic_is_this_normal', 'os.cpu_pct', 'local', 850,
+      '{"normal": true, "value": 13}');
+    if(myRun!==run) return;
+    await assistant("Stopped — and **verified**: CPU is back to 13%, right on your baseline. "
+      + "Fans should spin down in a minute.", '4.1', 43);
+    await sleep(650); if(myRun!==run) return;
+
+    // 3) web (network tool, honest + visible)
     await submitUser("will the sky be clear over Boulder Creek tonight?");
     if(myRun!==run) return;
     await think('Thinking', 800);
@@ -510,7 +544,7 @@
       + "New moon, too. Shall I check that `sky.py` of yours before you head out?", '5.8', 41);
     await sleep(650); if(myRun!==run) return;
 
-    // 3) debugging — a stormy stretch (markdown code block + copy-code toast)
+    // 4) debugging — a stormy stretch (markdown code block + copy-code toast)
     await submitUser("yes — it keeps crashing on me.");
     if(myRun!==run) return;
     await think('Thinking', 700);
@@ -532,7 +566,7 @@
     toast('Copied last code block (Ctrl+B · 168 chars).');
     await sleep(1300); if(myRun!==run) return;
 
-    // 4) write a document
+    // 5) write a document
     await submitUser("perfect. write the stargazing plan to my Documents, nice and short.");
     if(myRun!==run) return;
     await think('Thinking', 700);
@@ -543,7 +577,7 @@
       + "**Saturn**, bring the thermos. (Your files never left this machine.)", '3.9', 42);
     await sleep(650); if(myRun!==run) return;
 
-    // 5) memory
+    // 6) memory
     await submitUser("remember I'm in Boulder Creek and I like short answers.");
     if(myRun!==run) return;
     await think('Thinking', 700);
@@ -555,11 +589,11 @@
     await assistant("Got it — noted for next time. I'll keep it brief. 🤏", '1.8', 44);
     await sleep(800); if(myRun!==run) return;
 
-    // 6) a new look, previewed live
+    // 7) a new look, previewed live
     await themeSequence(myRun);
     if(myRun!==run) return;
 
-    // 7) the dream — rainy, because the session had a traceback in it
+    // 8) the dream — rainy, because the session had a traceback in it
     await dreamSequence(myRun, true);
     if(myRun!==run) return;
 
@@ -597,11 +631,14 @@
   document.getElementById('skip').addEventListener('click', async () => {
     const myRun = ++run;
     convo.innerHTML=''; field.textContent=''; actItems=[]; ctxCount=8; ctxPct=26;
-    toolCounts={list_dir:1, web_search:1, fetch_url:1, read_file:1, run_command:1, create_document:1, remember:1};
+    toolCounts={list_dir:1, mechanic_is_this_normal:2, drift_diff_latest:1, web_search:1,
+                fetch_url:1, read_file:1, run_command:2, create_document:1, remember:1};
     toasts.innerHTML=''; themebox.classList.remove('show');
     term.classList.remove('dreaming','raining');
     applyTheme('tokyo-night');
     focusTab('act'); addActivity('list_dir(.)','9 entries');
+    addActivity('mechanic_is_this_normal(os.cpu_pct)','{"normal": false, "value": 91…}');
+    addActivity('drift_diff_latest()','services: +1 (dev.sky-indexer…)');
     addActivity('run_command(python sky.py)',"KeyError: 'saturn'");
     addActivity('create_document','wrote 1.2 KB');
     addActivity('remember','User is in Boulder Creek…');
