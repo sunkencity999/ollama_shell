@@ -134,3 +134,42 @@ def test_base_list_models_info_falls_back_to_names():
             yield ChatChunk(content="", done=True)
 
     assert _P().list_models_info() == [{"name": "a"}, {"name": "b"}]
+
+
+def test_ollama_max_context_from_model_info(monkeypatch):
+    show = {
+        "capabilities": ["completion", "tools"],
+        "model_info": {"general.architecture": "gemma3", "gemma3.context_length": 131072},
+    }
+    monkeypatch.setattr(
+        "oshell.providers.ollama.requests.post", lambda *a, **k: _FakeResp(json_data=show)
+    )
+    prov = OllamaProvider()
+    assert prov.max_context("gemma3:27b") == 131072
+    # One /api/show serves both capabilities and max_context (cached).
+    assert prov.capabilities("gemma3:27b") == {"completion", "tools"}
+
+
+def test_ollama_max_context_unknown(monkeypatch):
+    monkeypatch.setattr(
+        "oshell.providers.ollama.requests.post", lambda *a, **k: _FakeResp(json_data={})
+    )
+    assert OllamaProvider().max_context("mystery") is None
+
+
+def test_ollama_chat_passes_num_ctx(monkeypatch):
+    captured = {}
+
+    def fake_post(url, json=None, stream=False, timeout=None):
+        captured.update(json)
+        lines = [b'{"message": {"content": "ok"}, "done": true}']
+        return _FakeResp(lines=lines)
+
+    monkeypatch.setattr("oshell.providers.ollama.requests.post", fake_post)
+    prov = OllamaProvider()
+    list(prov.chat([Message(role="user", content="hi")], model="m", num_ctx=32768))
+    assert captured["options"]["num_ctx"] == 32768
+    # And without it, Ollama's own default is left alone.
+    captured.clear()
+    list(prov.chat([Message(role="user", content="hi")], model="m"))
+    assert "num_ctx" not in captured["options"]

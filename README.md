@@ -114,7 +114,8 @@ shows the model, backend, tool count, and privacy posture at a glance
   has actually reached for this session glow with a `×N` count. This panel is the
   source of truth for what the app can do *right now*.
 - **Context** — the pin/exclude state made visual, topped by a **fill gauge**
-  (`▰▰▰▱▱▱ 38% of ~8192 tokens`) so excluding messages has visible consequences.
+  (`▰▰▰▱▱▱ 38% of ~32k tokens (auto)`) so excluding messages has visible
+  consequences.
 - **Activity** — a running log of every tool call and its result.
 
 **Replies are rendered, not dumped.** Finished replies commit to the transcript
@@ -211,11 +212,19 @@ reading** — it lives in the periphery, and every effect *means* something:
   status strip — amber for network tools, magenta for memory, green for local.
 - 🎆 **A particle storm** — if the model hits the tool-round cap, a brief scatter
   of warm sparks crosses the status strip while it wraps up with what it has.
-- 🐛 **Fireflies** — leave the shell quiet for a couple of minutes and two or
-  three faint fireflies drift across the empty status strip, keeping the place
-  warm. Any keystroke disperses them.
+- 🐛 **Fireflies** — leave the shell quiet for a bit and two or three faint
+  fireflies drift across the empty status strip, keeping the place warm. Any
+  keystroke disperses them.
 - ✨ **Menu constellation** — a few faint, well-spaced stars behind the startup
   menu. Just because.
+
+**Moods — pick your own weather.** The idle strip's ambience is yours to choose:
+**menu → Mood** (with a live animated preview), `/mood` at the prompt, or
+`/mood rain` to set one directly. The set: `fireflies` (default) · `rain` ·
+`snow` · `aurora` · `ocean` · `starfield` · `embers` · `matrix` · `none`.
+Your pick starts playing immediately, persists across sessions, and — if you
+choose rain or snow — carries into the `/daydream` sky too. The mood appears
+after ~45s of quiet (`{"fun":{"mood_idle_seconds":10}}` to change that).
 
 All of it switches off with `{"fun":{"effects":false}}` — and none of it costs
 you anything while a turn is rendering (one 10 fps timer that was already there).
@@ -393,6 +402,15 @@ leaves you hanging on a half-finished promise.
 Resolved in increasing precedence: built-in defaults → `config.json` (committed,
 shared) → `config.local.json` (per-machine, git-ignored) → `OSHELL_*` env vars
 (use `__` for nesting, e.g. `OSHELL_PROVIDER__HOST`). See `.env.example`.
+
+**Context window.** `context_length` defaults to `0` = **auto**: oshell asks
+the backend for the model's trained maximum (Ollama `/api/show`) and runs with
+that, capped at 32k so a 128k-context model doesn't allocate a monster KV cache
+by surprise. The resolved size is passed to Ollama as `num_ctx` on every
+request — without it, Ollama runs at *its* default (often 4k) and silently
+truncates long conversations. Good hardware and big ambitions? Set it
+explicitly: `{"context_length": 65536}`. The Context tab's gauge always shows
+the size actually in effect.
 
 > v0.1 silently un-tracked `config.json` via a blanket `*.json` .gitignore rule.
 > That's fixed: config is tracked; real secrets go in `.env` / `config.local.json`.

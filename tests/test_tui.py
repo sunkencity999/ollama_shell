@@ -1020,3 +1020,92 @@ async def test_copy_notice_is_a_toast_not_transcript(monkeypatch):
         await pilot.pause()
         assert "Copied last reply" in _toasts(app)
         assert "opied" not in _convo_text(app)  # transcript stays conversation-only
+
+
+# ── moods: rain (and friends) in the TUI's own idle strip ─────────────────────
+
+
+async def test_slash_mood_sets_and_persists(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.chdir(tmp_path)
+    app = _app()
+    async with app.run_test() as pilot:
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "/mood rain"
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.agent.config.fun.mood == "rain"
+        assert "Mood set to rain" in _toasts(app)
+        # Picking a mood shows it immediately — no waiting out the idle delay.
+        app._tick()
+        assert "╱" in app._live_text
+    saved = json.loads((tmp_path / "config.local.json").read_text())
+    assert saved["fun"]["mood"] == "rain"
+
+
+async def test_slash_mood_unknown_warns(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    app = _app()
+    async with app.run_test() as pilot:
+        app._set_mood("volcano")
+        await pilot.pause()
+        assert "Unknown mood" in _toasts(app)
+        assert app.agent.config.fun.mood == "fireflies"  # unchanged
+
+
+async def test_mood_menu_opens_picker_and_selects(tmp_path, monkeypatch):
+    from oshell.tui.menu import MoodScreen
+
+    monkeypatch.chdir(tmp_path)
+    app = _app()
+    async with app.run_test() as pilot:
+        app._on_menu_choice("mood")
+        await pilot.pause()
+        assert isinstance(app.screen, MoodScreen)
+        app.screen.dismiss("snow")
+        await pilot.pause()
+        assert app.agent.config.fun.mood == "snow"
+
+
+async def test_mood_none_keeps_the_strip_quiet():
+    import time as _time
+
+    app = _app()
+    async with app.run_test() as pilot:
+        app.agent.config.fun.mood = "none"
+        app._idle_since = _time.monotonic() - 999
+        app._tick()
+        await pilot.pause()
+        assert app._live_text == ""
+
+
+async def test_dream_honors_picked_mood(tmp_path, monkeypatch):
+    from oshell.tui.dream import DreamScreen
+
+    monkeypatch.chdir(tmp_path)
+    app = _app()
+    async with app.run_test() as pilot:
+        app.agent.config.fun.mood = "snow"  # even in June, the user asked for snow
+        inp = app.query_one("Input")
+        inp.focus()
+        inp.value = "/daydream"
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, DreamScreen)
+        assert app.screen.model.weather == "snow"
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if not app._busy:
+                break
+        await pilot.press("space")
+
+
+async def test_context_gauge_reports_auto_size():
+    app = _app()  # context_length defaults to 0 = auto; scripted provider -> 8k fallback
+    async with app.run_test():
+        text = app.query_one(ContextInspector).text
+        assert "8k" in text and "(auto)" in text

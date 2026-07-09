@@ -6,7 +6,7 @@
     "history_file": "~/.ollama_shell_history",
     "show_model_details": true,
     "temperature": 0.8,
-    "context_length": 8192,
+    "context_length": 0,
     "knowledge_base": {
         "enabled": true,
         "path": "~/.ollama_shell_kb",

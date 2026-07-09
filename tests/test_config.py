@@ -73,3 +73,10 @@ def test_theme_and_sky_density_defaults():
     cfg = Config()
     assert cfg.theme == "textual-dark"
     assert cfg.fun.sky_density == 1.0
+
+
+def test_mood_and_context_defaults():
+    cfg = Config()
+    assert cfg.fun.mood == "fireflies"
+    assert cfg.fun.mood_idle_seconds == 45.0
+    assert cfg.context_length == 0  # 0 = auto-size from the model

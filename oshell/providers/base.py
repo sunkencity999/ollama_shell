@@ -77,8 +77,14 @@ class LLMProvider(ABC):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
         stream: bool = True,
+        num_ctx: int | None = None,
     ) -> Iterator[ChatChunk]:
-        """Stream a model response, optionally with tool definitions in scope."""
+        """Stream a model response, optionally with tool definitions in scope.
+
+        ``num_ctx`` requests a context-window size (tokens) from backends that
+        honor it per-request (Ollama). Backends that manage context server-side
+        ignore it.
+        """
 
     @abstractmethod
     def list_models(self) -> list[str]:
@@ -102,6 +108,14 @@ class LLMProvider(ABC):
         (Ollama) override this.
         """
         return set()
+
+    def max_context(self, model: str) -> int | None:
+        """The model's trained maximum context length (tokens), if known.
+
+        ``None`` means "unknown" — callers fall back to a conservative default.
+        Backends that can introspect (Ollama's /api/show) override this.
+        """
+        return None
 
     def health(self) -> bool:
         """Cheap reachability check; defaults to 'can we list models'."""

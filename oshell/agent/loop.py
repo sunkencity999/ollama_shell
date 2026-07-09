@@ -192,6 +192,30 @@ class Agent:
         # Context management: indices into ``self.messages``.
         self.pinned: set[int] = {0}  # system prompt is pinned by default
         self.excluded: set[int] = set()
+        self._ctx_cache: dict[str, int] = {}  # model -> resolved context window
+
+    def effective_context(self) -> int:
+        """The context window (tokens) this agent actually runs the model with.
+
+        An explicit ``context_length`` in config wins. Otherwise (0 = auto) ask
+        the backend for the model's trained maximum and cap it at
+        AUTO_CONTEXT_CAP so big-context models don't allocate a surprise
+        multi-GB KV cache; unknown maximum falls back to a conservative 8192.
+        The result is passed to the backend as ``num_ctx`` on every request —
+        without that, Ollama runs at its own default (often 4k) and silently
+        truncates long conversations.
+        """
+        if self.config.context_length and self.config.context_length > 0:
+            return self.config.context_length
+        if self.model not in self._ctx_cache:
+            from ..config import AUTO_CONTEXT_CAP
+
+            try:
+                trained = self.provider.max_context(self.model)
+            except Exception:
+                trained = None
+            self._ctx_cache[self.model] = min(trained or 8192, AUTO_CONTEXT_CAP)
+        return self._ctx_cache[self.model]
 
     def rebuild_system_prompt(self) -> None:
         """Refresh the system message after the registry changes (tools toggled,
@@ -246,6 +270,7 @@ class Agent:
                 model=self.model,
                 tools=tools,
                 temperature=self.config.temperature,
+                num_ctx=self.effective_context(),
             ):
                 if chunk.content:
                     assistant_text += chunk.content
@@ -319,6 +344,7 @@ class Agent:
             model=self.model,
             tools=None,
             temperature=self.config.temperature,
+            num_ctx=self.effective_context(),
         ):
             if chunk.content:
                 final_text += chunk.content

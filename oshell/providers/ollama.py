@@ -24,7 +24,7 @@ class OllamaProvider(LLMProvider):
     def __init__(self, host: str = "http://localhost:11434", timeout: float = 120.0):
         self.host = host.rstrip("/")
         self.timeout = timeout
-        self._caps_cache: dict[str, set[str]] = {}
+        self._show_cache: dict[str, dict[str, Any]] = {}  # /api/show responses
 
     def list_models(self) -> list[str]:
         resp = requests.get(f"{self.host}/api/tags", timeout=self.timeout)
@@ -46,21 +46,34 @@ class OllamaProvider(LLMProvider):
             out.append(info)
         return out
 
+    def _show(self, model: str) -> dict[str, Any]:
+        """The /api/show response for a model, cached (capabilities + model_info)."""
+        if model not in self._show_cache:
+            try:
+                resp = requests.post(
+                    f"{self.host}/api/show", json={"model": model}, timeout=self.timeout
+                )
+                resp.raise_for_status()
+                self._show_cache[model] = resp.json() or {}
+            except Exception:  # unknown -> empty (callers assume capable)
+                self._show_cache[model] = {}
+        return self._show_cache[model]
+
     def capabilities(self, model: str) -> set[str]:
         """Capability tags from /api/show (e.g. completion, vision, tools), cached."""
-        if model in self._caps_cache:
-            return self._caps_cache[model]
-        caps: set[str] = set()
-        try:
-            resp = requests.post(
-                f"{self.host}/api/show", json={"model": model}, timeout=self.timeout
-            )
-            resp.raise_for_status()
-            caps = set(resp.json().get("capabilities", []))
-        except Exception:  # unknown -> empty (callers assume capable)
-            caps = set()
-        self._caps_cache[model] = caps
-        return caps
+        return set(self._show(model).get("capabilities", []))
+
+    def max_context(self, model: str) -> int | None:
+        """The model's trained context window from /api/show model_info.
+
+        The key is architecture-prefixed (e.g. ``gemma3.context_length``), so
+        match on the suffix.
+        """
+        info = self._show(model).get("model_info") or {}
+        for key, value in info.items():
+            if key.endswith(".context_length") and isinstance(value, int):
+                return value
+        return None
 
     def chat(
         self,
@@ -70,12 +83,18 @@ class OllamaProvider(LLMProvider):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
         stream: bool = True,
+        num_ctx: int | None = None,
     ) -> Iterator[ChatChunk]:
+        options: dict[str, Any] = {"temperature": temperature}
+        if num_ctx:
+            # Without this Ollama runs the model at ITS default context (often
+            # 4k) and silently truncates long conversations.
+            options["num_ctx"] = num_ctx
         payload: dict[str, Any] = {
             "model": model,
             "messages": [m.to_wire() for m in messages],
             "stream": stream,
-            "options": {"temperature": temperature},
+            "options": options,
         }
         if tools:
             payload["tools"] = tools

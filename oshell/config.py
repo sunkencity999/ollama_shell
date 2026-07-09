@@ -29,6 +29,10 @@ from pydantic import BaseModel, Field
 _CONFIG_FILES = ("config.json", "config.local.json")
 _ENV_PREFIX = "OSHELL_"
 
+# Ceiling for context_length=0 (auto). Generous for capable hardware without
+# letting a 128k/1M-context model silently allocate tens of GB of KV cache.
+AUTO_CONTEXT_CAP = 32768
+
 
 class ProviderConfig(BaseModel):
     """Which LLM backend to talk to and how to reach it."""
@@ -128,6 +132,11 @@ class FunConfig(BaseModel):
     daydreams: bool = True  # enable the /daydream command + menu entry
     effects: bool = True  # ambient visuals: dream starfield, aurora, embers, fireflies
     sky_density: float = 1.0  # starfield fullness multiplier (0.0 empty … ~3.0 busy night)
+    # The idle strip's ambience: fireflies | rain | snow | aurora | ocean |
+    # starfield | embers | matrix | none. Pick from the menu ("Mood") or /mood.
+    # rain/snow also carry into the /daydream sky.
+    mood: str = "fireflies"
+    mood_idle_seconds: float = 45.0  # quiet time before the mood appears
 
 
 class Config(BaseModel):
@@ -143,7 +152,11 @@ class Config(BaseModel):
 
     # Generation defaults
     temperature: float = 0.7
-    context_length: int = 8192
+    # Context window (tokens) the model is RUN with — passed to the backend as
+    # num_ctx. 0 = auto: use the model's own trained maximum, capped at
+    # AUTO_CONTEXT_CAP so a 128k-context model doesn't allocate a monster KV
+    # cache by surprise. Set explicitly to go bigger (or smaller) than auto.
+    context_length: int = 0
 
     # Behaviour
     verbose: bool = False

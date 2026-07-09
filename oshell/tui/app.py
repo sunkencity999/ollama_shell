@@ -46,6 +46,7 @@ from .menu import (
     FeaturesScreen,
     MenuScreen,
     ModelScreen,
+    MoodScreen,
     ThemeScreen,
     feature_installed,
 )
@@ -88,7 +89,12 @@ def _context_fill(agent: Agent) -> float:
         for i, m in enumerate(agent.messages)
         if i not in agent.excluded
     )
-    return min(chars / 4 / max(agent.config.context_length, 1), 1.0)
+    return min(chars / 4 / max(agent.effective_context(), 1), 1.0)
+
+
+def _fmt_tokens(n: int) -> str:
+    """32768 -> '32k'; keeps small numbers literal."""
+    return f"{n // 1024}k" if n >= 4096 and n % 1024 == 0 else str(n)
 
 
 def _safe_update(widget: Static, content: Text, plain: str) -> None:
@@ -171,7 +177,9 @@ class ContextInspector(Static):
         fill = _context_fill(agent)
         blocks = round(fill * 10)
         gauge = "▰" * blocks + "▱" * (10 - blocks)
-        gauge_line = f"{gauge} {fill:.0%} of ~{agent.config.context_length} tokens"
+        size = _fmt_tokens(agent.effective_context())
+        auto = "" if agent.config.context_length else " (auto)"
+        gauge_line = f"{gauge} {fill:.0%} of ~{size} tokens{auto}"
         body.append("\n")
         body.append(gauge_line, style="red" if fill > 0.85 else "dim")
         plain: list[str] = ["Context  📌 pinned  🚫 excluded", gauge_line]
@@ -374,12 +382,14 @@ class OllamaShellTUI(App):
                 self._set_live(storm)
                 return
         if not self._busy:
-            if effects and (time.monotonic() - self._idle_since) > ambient.IDLE_FIREFLIES_AFTER:
+            fun = self.agent.config.fun
+            idle = time.monotonic() - self._idle_since
+            if effects and fun.mood != "none" and idle > fun.mood_idle_seconds:
                 try:
                     width = self.query_one("#live", Static).size.width or 40
                 except NoMatches:
                     width = 40
-                self._set_live(ambient.fireflies_markup(width, self._spin))
+                self._set_live(ambient.mood_markup(fun.mood, width, self._spin))
             elif self._live_text:
                 self._set_live("")
             return
@@ -475,6 +485,9 @@ class OllamaShellTUI(App):
         )
         yield SystemCommand("Pick theme", "Restyle the app (live preview)", self._open_theme_picker)
         yield SystemCommand(
+            "Pick mood", "Idle ambience: rain, snow, aurora, ocean, …", self._open_mood_picker
+        )
+        yield SystemCommand(
             "Copy last reply", "Copy the model's last reply", self.action_copy_reply
         )
         yield SystemCommand(
@@ -536,6 +549,8 @@ class OllamaShellTUI(App):
             self._start_daydream()
         elif choice == "theme":
             self._open_theme_picker()
+        elif choice == "mood":
+            self._open_mood_picker()
         elif choice == "help":
             self._menu_help()
 
@@ -580,6 +595,35 @@ class OllamaShellTUI(App):
             self.notify(f"Model set to {name} (saved as default).")
         except Exception as exc:  # pragma: no cover - defensive
             self.notify(f"Model set to {name} (not saved: {exc}).", severity="warning")
+        self.query_one(Input).focus()
+
+    # ── mood picking (idle-strip ambience; persisted like the theme) ──────────
+    def _open_mood_picker(self) -> None:
+        self.push_screen(MoodScreen(self.agent.config.fun.mood), self._on_mood_choice)
+
+    def _set_mood(self, name: str) -> None:
+        from . import ambient
+
+        if name not in ambient.MOODS:
+            self.notify(
+                f"Unknown mood: {name}. Try {', '.join(ambient.MOODS)}.", severity="warning"
+            )
+            return
+        self.agent.config.fun.mood = name
+        from ..config import update_local_config
+
+        try:
+            update_local_config({"fun": {"mood": name}})
+            self.notify(f"Mood set to {name} (saved as default).")
+        except Exception as exc:  # pragma: no cover - defensive
+            self.notify(f"Mood set to {name} (not saved: {exc}).", severity="warning")
+        # Let the new mood take the strip right away instead of waiting out the
+        # idle delay — picking rain should mean it starts raining.
+        self._idle_since = time.monotonic() - self.agent.config.fun.mood_idle_seconds - 1
+
+    def _on_mood_choice(self, name: str | None) -> None:
+        if name:
+            self._set_mood(name)
         self.query_one(Input).focus()
 
     # ── theme picking (live-preview modal; persisted like the model choice) ───
@@ -796,10 +840,13 @@ class OllamaShellTUI(App):
         c = self.agent.config
         caps = ", ".join(f"{x.name.split(' ')[0]}{'✓' if x.available else '✗'}"
                          for x in optional_features(c))
+        ctx = _fmt_tokens(self.agent.effective_context())
+        ctx += " (auto — set context_length to override)" if not c.context_length else ""
         self._conversation().write(
             "[b]Settings[/b]\n"
             f"  model: {self.agent.model}   provider: {c.provider.name} ({c.provider.host})\n"
             f"  temperature: {c.temperature}   max tool rounds: {c.max_tool_iterations}\n"
+            f"  context window: {ctx}\n"
             f"  capabilities: {caps}\n"
             "[dim]Full config (secrets redacted): run `oshell config`.[/dim]"
         )
@@ -862,7 +909,7 @@ class OllamaShellTUI(App):
         self._conversation().write(
             "[b]Help[/b]\n"
             "  The model drives: type a request and it calls tools as needed.\n"
-            "  Commands:  /clear (new conversation) · /daydream · /menu · /help.\n"
+            "  Commands:  /clear (new conversation) · /daydream · /mood [name] · /menu · /help.\n"
             "  Keys:  Esc menu · Ctrl+P command palette · Ctrl+T tools · Ctrl+C quit.\n"
             "  Copy:  Ctrl+Y last reply · Ctrl+B last code block · menu copies the transcript.\n"
             "  Select text with the mouse: hold [b]Option[/b] (macOS/iTerm2) or "
@@ -884,15 +931,23 @@ class OllamaShellTUI(App):
         Returns ``True`` if the input was a (recognized or unknown) slash
         command and should not be sent to the model.
         """
-        cmd = typed[1:].split(maxsplit=1)[0].lower()
+        parts = typed[1:].split(maxsplit=1)
+        cmd, arg = parts[0].lower(), (parts[1].strip() if len(parts) > 1 else "")
         if cmd in ("clear", "new"):
             self._new_conversation()
             return True
         if cmd == "help":
             self._menu_help()
             self._conversation().write(
-                "[dim]Commands: /clear (new conversation) · /daydream 💭 · /help · /menu[/dim]"
+                "[dim]Commands: /clear (new conversation) · /daydream 💭 · /mood [name] · "
+                "/help · /menu[/dim]"
             )
+            return True
+        if cmd == "mood":
+            if arg:
+                self._set_mood(arg.lower())
+            else:
+                self._open_mood_picker()
             return True
         if cmd == "menu":
             self.action_open_menu()
@@ -901,7 +956,7 @@ class OllamaShellTUI(App):
             self._start_daydream()
             return True
         self.notify(
-            f"Unknown command /{cmd}. Try /clear, /daydream, /help, or /menu.",
+            f"Unknown command /{cmd}. Try /clear, /daydream, /mood, /help, or /menu.",
             severity="warning",
         )
         return True
@@ -929,12 +984,16 @@ class OllamaShellTUI(App):
             from . import ambient
             from .dream import DreamScreen
 
-            # The sky takes a mood from the session: rain after a stormy
-            # debugging stretch, snow in December, otherwise clear.
-            mood = ambient.sky_mood(
-                fun.recent_topics(self.agent.messages), time.localtime().tm_mon
-            )
-            screen = DreamScreen(weather=mood, density=self.agent.config.fun.sky_density)
+            # The sky takes a mood from the session — rain after a stormy
+            # debugging stretch, snow in December, otherwise clear — unless the
+            # user picked a rainy/snowy mood themselves, which the dream honors.
+            picked = self.agent.config.fun.mood
+            if picked in ("rain", "snow"):
+                weather = picked
+            else:
+                topics = fun.recent_topics(self.agent.messages)
+                weather = ambient.sky_mood(topics, time.localtime().tm_mon)
+            screen = DreamScreen(weather=weather, density=self.agent.config.fun.sky_density)
             self.push_screen(screen, lambda _res: self.query_one(Input).focus())
         self.run_worker(lambda: self._daydream_worker(screen), thread=True, exclusive=True)
 

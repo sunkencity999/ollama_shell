@@ -48,6 +48,7 @@ MENU_SECTIONS: list[tuple[str, list[tuple[str, str, str]]]] = [
             ("knowledge", "Knowledge base", "How to store & recall local notes"),
             ("daydream", "Daydream", "Let the model wander and free-associate 💭"),
             ("theme", "Theme", "Restyle the app (live preview)"),
+            ("mood", "Mood", "Idle ambience: rain, snow, aurora, ocean, …"),
         ],
     ),
     (
@@ -224,6 +225,101 @@ class ModelScreen(ModalScreen[str]):
             if 1 <= n <= min(9, len(self._models)):
                 event.stop()
                 self.dismiss(self._models[n - 1])
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class MoodScreen(ModalScreen[str]):
+    """Pick the idle strip's ambience, with a live animated preview.
+
+    The preview strip below the list plays the highlighted mood so you can
+    watch the rain fall before you commit to it. Dismisses with the chosen
+    mood name, or ``None`` on Esc.
+    """
+
+    CSS = """
+    MoodScreen { align: center middle; }
+    #menu-box {
+        width: 56; height: auto; max-height: 80%; padding: 1 2;
+        border: round $accent; background: $surface;
+    }
+    #menu-title { padding-bottom: 1; }
+    #menu-list { height: auto; max-height: 20; }
+    #mood-preview { height: 1; margin-top: 1; }
+    """
+    BINDINGS = [Binding("escape", "cancel", "Back")]
+
+    _BLURBS = {
+        "fireflies": "drifting sparks",
+        "rain": "steel-blue streaks",
+        "snow": "slow white flakes",
+        "aurora": "a shimmering ribbon",
+        "ocean": "a breathing swell",
+        "starfield": "still, twinkling stars",
+        "embers": "a banked campfire",
+        "matrix": "green glyph drizzle",
+        "none": "a perfectly quiet strip",
+    }
+
+    def __init__(self, current: str):
+        super().__init__()
+        from .ambient import MOODS
+
+        self._moods = list(MOODS)
+        self._current = current
+        self._tick = 0
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="menu-box"):
+            yield Static(
+                "[b]Mood[/b] — the idle strip's ambience\n"
+                "[dim]↑/↓ previews below · Enter keeps it · Esc cancels[/dim]",
+                id="menu-title",
+            )
+            options = []
+            for i, m in enumerate(self._moods):
+                tag = "  [green](current)[/green]" if m == self._current else ""
+                label = f" {i + 1}." if i < 9 else "   "
+                blurb = self._BLURBS.get(m, "")
+                options.append(Option(f"{label}  {m:<11}[dim]{blurb}[/dim]{tag}", id=m))
+            yield OptionList(*options, id="menu-list")
+            yield Static("", id="mood-preview")
+
+    def on_mount(self) -> None:
+        lst = self.query_one(OptionList)
+        if self._current in self._moods:
+            lst.highlighted = self._moods.index(self._current)
+        lst.focus()
+        self.set_interval(0.1, self._animate_preview)  # dies with the screen
+
+    def _highlighted_mood(self) -> str:
+        lst = self.query_one(OptionList)
+        if lst.highlighted is None:
+            return self._current
+        opt = lst.get_option_at_index(lst.highlighted)
+        return opt.id or self._current
+
+    def _animate_preview(self) -> None:
+        from .ambient import mood_markup
+
+        self._tick += 1
+        preview = self.query_one("#mood-preview", Static)
+        width = preview.size.width or 50
+        try:
+            preview.update(mood_markup(self._highlighted_mood(), width, self._tick))
+        except Exception:
+            pass  # never let the preview take down the picker
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option.id)
+
+    def on_key(self, event) -> None:
+        if event.character and event.character.isdigit():
+            n = int(event.character)
+            if 1 <= n <= min(9, len(self._moods)):
+                event.stop()
+                self.dismiss(self._moods[n - 1])
 
     def action_cancel(self) -> None:
         self.dismiss(None)

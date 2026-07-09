@@ -51,6 +51,7 @@ class OpenAICompatProvider(LLMProvider):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
         stream: bool = True,
+        num_ctx: int | None = None,  # context is server-managed on this API; ignored
     ) -> Iterator[ChatChunk]:
         payload: dict[str, Any] = {
             "model": model,

@@ -12,6 +12,8 @@ Every effect *means* something the app is doing:
   snow in December, clear otherwise
 - burst — a brief scatter of warm sparks when the model hits the tool cap
 - constellation — a few faint stars behind the startup menu
+- moods — the idle strip's ambience is user-pickable (MOODS/mood_markup):
+  rain, snow, aurora, ocean, starfield, embers, matrix, fireflies, or none
 
 Everything here is pure model + string/Text builders so it's unit-testable;
 the widgets/screens that drive them are thin.
@@ -81,6 +83,128 @@ IDLE_FIREFLIES_AFTER = 120.0  # seconds of quiet before they appear
 
 _FLY_GLYPHS = ["✦", "·", "✧"]
 _FLY_STYLES = ["#e7c667", "#b8cc7a", "#7bd88f"]
+
+
+# ── moods: pick your idle-strip weather ───────────────────────────────────────
+# The strip an idle shell keeps alive can carry any of these one-line
+# ambiences. All are pure functions of (width, tick) — deterministic, testable,
+# and cheap enough for the 10fps timer that already exists.
+MOODS = [
+    "fireflies",  # the classic: two or three drifting sparks (default)
+    "rain",       # steel-blue streaks sliding across the strip
+    "snow",       # slow white flakes with a lazy sway
+    "aurora",     # a soft ribbon shimmering through the cool hues
+    "ocean",      # a swell line breathing in blues
+    "starfield",  # still stars, twinkling in place
+    "embers",     # warm sparks pulsing like a banked campfire
+    "matrix",     # green glyphs flickering column by column
+    "none",       # a perfectly quiet strip
+]
+
+_RAIN_SHADES = ["#39536b", "#4d7396", "#6fa8dc"]
+_SNOW_FLAKES = ["❄", "✻", "·"]
+_OCEAN_SHADES = ["#2d4f6b", "#3e6f94", "#59a3c9", "#7cc3e8"]
+_EMBER_WARMTH = ["#e7c667", "#e78a5a", "#d96f6f"]
+_MATRIX_CHARS = "ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘ01"
+_STARLINE_STYLES = ["dim #6b7f9e", "#8fa8d8", "#cfe3ff"]
+
+
+def _marks_line(width: int, marks: dict[int, tuple[str, str]]) -> str:
+    """Assemble a strip line from column -> (glyph, style) marks."""
+    out = []
+    for x in range(width):
+        if x in marks:
+            ch, style = marks[x]
+            out.append(f"[{style}]{ch}[/]")
+        else:
+            out.append(" ")
+    return "".join(out).rstrip()
+
+
+def _rain_line(width: int, tick: int) -> str:
+    marks: dict[int, tuple[str, str]] = {}
+    for i in range(max(4, width // 7)):
+        speed = 1 + i % 3
+        x = (i * 53 - tick * speed) % width
+        marks[x] = ("╱", _RAIN_SHADES[i % len(_RAIN_SHADES)])
+    return _marks_line(width, marks)
+
+
+def _snow_line(width: int, tick: int) -> str:
+    marks: dict[int, tuple[str, str]] = {}
+    for i in range(max(3, width // 10)):
+        x = int((i * 41 + tick // (3 + i % 3)) + 2 * math.sin(tick * 0.08 + i * 1.7)) % width
+        marks[x] = (_SNOW_FLAKES[i % len(_SNOW_FLAKES)], "#dbe7f3")
+    return _marks_line(width, marks)
+
+
+def _aurora_line(width: int, tick: int) -> str:
+    out = []
+    for x in range(width):
+        hue = AURORA[(x // 6 + tick // 4) % len(AURORA)]
+        bright = math.sin(x * 0.3 - tick * 0.12) > 0.2
+        out.append(f"[{hue}]─[/]" if bright else f"[dim {hue}]─[/]")
+    return "".join(out)
+
+
+def _ocean_line(width: int, tick: int) -> str:
+    out = []
+    n_shades = len(_OCEAN_SHADES)
+    for x in range(width):
+        swell = math.sin(x * 0.28 - tick * 0.15)  # -1..1 across the strip
+        shade = _OCEAN_SHADES[min(int((swell + 1) / 2 * n_shades), n_shades - 1)]
+        out.append(f"[{shade}]{'≈' if swell > 0.5 else '~'}[/]")
+    return "".join(out)
+
+
+def _starfield_line(width: int, tick: int) -> str:
+    marks: dict[int, tuple[str, str]] = {}
+    for i in range(max(4, width // 6)):
+        x = (i * 61 + 3) % width
+        b = (math.sin(tick * (0.06 + i % 5 * 0.02) + i * 2.3) + 1) / 2  # 0..1 twinkle
+        j = min(int(b * len(_STAR_CHARS)), len(_STAR_CHARS) - 2)
+        marks[x] = (_STAR_CHARS[j], _STARLINE_STYLES[min(j, len(_STARLINE_STYLES) - 1)])
+    return _marks_line(width, marks)
+
+
+def _embers_line(width: int, tick: int) -> str:
+    marks: dict[int, tuple[str, str]] = {}
+    for i in range(max(3, width // 8)):
+        x = (i * 47 + (tick // 4 + i) % 3 - 1) % width  # a slight, slow jitter
+        glyph = EMBER_FRAMES[(tick // (2 + i % 3) + i) % len(EMBER_FRAMES)]
+        marks[x] = (glyph, _EMBER_WARMTH[i % len(_EMBER_WARMTH)])
+    return _marks_line(width, marks)
+
+
+def _matrix_line(width: int, tick: int) -> str:
+    marks: dict[int, tuple[str, str]] = {}
+    for i in range(max(4, width // 5)):
+        x = (i * 29 + 1) % width
+        ch = _MATRIX_CHARS[((x * 7 + tick) // 2 + i) % len(_MATRIX_CHARS)]
+        style = "#7bd88f" if (tick + i) % 7 == 0 else "dim #4e8f5f"
+        marks[x] = (ch, style)
+    return _marks_line(width, marks)
+
+
+def mood_markup(mood: str, width: int, tick: int) -> str:
+    """One animation frame of the chosen mood, as a markup line.
+
+    Unknown mood names fall back to fireflies rather than erroring — a stale
+    config value should never break the idle strip.
+    """
+    width = max(width, 16)
+    if mood == "none":
+        return ""
+    fn = {
+        "rain": _rain_line,
+        "snow": _snow_line,
+        "aurora": _aurora_line,
+        "ocean": _ocean_line,
+        "starfield": _starfield_line,
+        "embers": _embers_line,
+        "matrix": _matrix_line,
+    }.get(mood)
+    return fn(width, tick) if fn else fireflies_markup(width, tick)
 
 
 def fireflies_markup(width: int, tick: int) -> str:

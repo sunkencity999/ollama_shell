@@ -207,3 +207,55 @@ def test_plain_answer_is_not_nudged():
     events = list(agent.send("what is the answer?"))
     assert provider.calls == 1
     assert isinstance(events[-1], TurnComplete)
+
+
+# ── effective context: explicit config wins; auto sizes from the model ────────
+
+
+class _CtxProvider(LLMProvider):
+    name = "ctx"
+
+    def __init__(self, trained=None):
+        self.trained = trained
+        self.seen_num_ctx = []
+
+    def list_models(self):
+        return ["m"]
+
+    def max_context(self, model):
+        return self.trained
+
+    def chat(self, messages, **kwargs) -> Iterator[ChatChunk]:
+        self.seen_num_ctx.append(kwargs.get("num_ctx"))
+        yield ChatChunk(content="ok", done=True)
+
+
+def test_effective_context_explicit_config_wins():
+    cfg = Config(context_length=4096)
+    agent = Agent(_CtxProvider(trained=131072), ToolRegistry([]), cfg)
+    assert agent.effective_context() == 4096
+
+
+def test_effective_context_auto_caps_big_models():
+    from oshell.config import AUTO_CONTEXT_CAP
+
+    cfg = Config()  # context_length = 0 -> auto
+    agent = Agent(_CtxProvider(trained=131072), ToolRegistry([]), cfg)
+    assert agent.effective_context() == AUTO_CONTEXT_CAP
+
+
+def test_effective_context_auto_uses_model_max_when_modest():
+    agent = Agent(_CtxProvider(trained=16384), ToolRegistry([]), Config())
+    assert agent.effective_context() == 16384
+
+
+def test_effective_context_unknown_falls_back():
+    agent = Agent(_CtxProvider(trained=None), ToolRegistry([]), Config())
+    assert agent.effective_context() == 8192
+
+
+def test_send_passes_num_ctx_to_provider():
+    provider = _CtxProvider(trained=16384)
+    agent = Agent(provider, ToolRegistry([]), Config())
+    list(agent.send("hello"))
+    assert provider.seen_num_ctx == [16384]

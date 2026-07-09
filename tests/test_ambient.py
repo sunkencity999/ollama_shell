@@ -142,3 +142,40 @@ def test_starfield_density_scales_the_sky():
 
 def test_clear_sky_has_no_flakes():
     assert ambient.StarfieldModel(seed=6).flakes == []
+
+
+# ── moods: the idle strip's user-pickable ambience ────────────────────────────
+
+
+def test_every_mood_renders_deterministically():
+    for mood in ambient.MOODS:
+        a = ambient.mood_markup(mood, 60, tick=17)
+        b = ambient.mood_markup(mood, 60, tick=17)
+        assert a == b, mood  # pure in (width, tick)
+        assert isinstance(a, str)
+
+
+def test_moods_animate_over_time():
+    for mood in ambient.MOODS:
+        if mood in ("none",):
+            continue
+        frames = {ambient.mood_markup(mood, 60, t) for t in range(0, 40, 3)}
+        assert len(frames) > 1, f"{mood} should move"
+
+
+def test_mood_signatures():
+    assert "╱" in ambient.mood_markup("rain", 60, 5)
+    assert any(g in ambient.mood_markup("snow", 60, 5) for g in ("❄", "✻"))
+    assert "─" in ambient.mood_markup("aurora", 60, 5)
+    assert "~" in ambient.mood_markup("ocean", 60, 5) or "≈" in ambient.mood_markup("ocean", 60, 5)
+    assert ambient.mood_markup("none", 60, 5) == ""
+    # unknown mood falls back to fireflies, never errors
+    assert ambient.mood_markup("volcano", 60, 5) == ambient.fireflies_markup(60, 5)
+
+
+def test_mood_list_is_stable():
+    # The picker + config docs promise these names.
+    assert set(ambient.MOODS) == {
+        "fireflies", "rain", "snow", "aurora", "ocean",
+        "starfield", "embers", "matrix", "none",
+    }
