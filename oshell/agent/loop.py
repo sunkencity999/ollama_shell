@@ -132,6 +132,34 @@ def build_system_prompt(
             "(e.g. the super/meta key is Command on macOS, the Windows key on Windows)."
         )
 
+    has_mechanic = any(t.name.startswith("mechanic_") for t in tools)
+    has_drift = any(t.name.startswith("drift_") for t in tools)
+    if has_mechanic or has_drift:
+        prompt += (
+            "\n\nMachine memory: this box has local telemetry you can consult — prefer it "
+            "over one-shot shell commands for questions about what is NORMAL or what CHANGED, "
+            "because a fresh command has no baseline and no history."
+        )
+        if has_mechanic:
+            prompt += (
+                "\n- mechanic_* tools know this machine's runtime baselines (CPU, memory, "
+                "Docker, Ollama models). For 'is this normal?', 'why is it slow?', or any "
+                "resource question, call mechanic_is_this_normal / mechanic_baseline_for "
+                "FIRST, then investigate with run_command."
+            )
+        if has_drift:
+            prompt += (
+                "\n- drift_* tools know this box's operational state over time (ports, "
+                "services, packages, users, cron). For 'what changed?', 'did something get "
+                "installed?', or 'why did this start happening?', call drift_diff_latest "
+                "(or drift_diff for specific snapshots) FIRST."
+            )
+        if has_mechanic and has_drift:
+            prompt += (
+                "\n- The diagnosis pattern: mechanic says WHETHER something is off, drift "
+                "says WHAT configuration moved, run_command lets you fix it. Chain them."
+            )
+
     networked = [t.name for t in tools if not t.local_only]
     if networked:
         prompt += (

@@ -62,4 +62,21 @@ def optional_features(config: Config | None = None) -> list[Capability]:
             "configured" if conf else "set CONFLUENCE_URL + CONFLUENCE_TOKEN",
         )
     )
+
+    # MCP servers (mechanic + drift ship configured; any stdio server works).
+    if config is not None:
+        from .mcp import mcp_server_status
+
+        hints = {
+            "mechanic": "./install.sh installs it (machine baselines)",
+            "drift": "./install.sh installs it (state diffs)",
+        }
+        for name, ok in mcp_server_status(config):
+            out.append(
+                Capability(
+                    f"{name} (MCP)",
+                    ok,
+                    "connected" if ok else hints.get(name, "install the server"),
+                )
+            )
     return out

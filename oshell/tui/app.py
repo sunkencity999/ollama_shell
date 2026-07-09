@@ -312,11 +312,22 @@ class OllamaShellTUI(App):
             if net
             else "[green]● fully local[/green]"
         )
+        names = {t.name for t in a.registry.active()}
+        first = (
+            "is my CPU usage normal right now?"
+            if any(n.startswith("mechanic_") for n in names)
+            else "what's eating my CPU?"
+        )
+        second = (
+            "what changed on this box today?"
+            if any(n.startswith("drift_") for n in names)
+            else "summarize ~/notes.md"
+        )
         body = (
             f"[b]{escape(a.model)}[/b] [dim]· {escape(a.provider.name)} · "
             f"{len(a.registry)} tools[/dim]  {badge}\n\n"
-            "[dim]Try:[/dim] [italic]what's eating my CPU?[/italic]\n"
-            "[dim]  · [/dim][italic]summarize ~/notes.md[/italic]\n"
+            f"[dim]Try:[/dim] [italic]{first}[/italic]\n"
+            f"[dim]  · [/dim][italic]{second}[/italic]\n"
             "[dim]  · [/dim][italic]/daydream[/italic] 💭\n\n"
             "[dim]Esc menu · Ctrl+P palette\n"
             "Ctrl+Y copy reply · Ctrl+B copy code[/dim]"

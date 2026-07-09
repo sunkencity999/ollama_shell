@@ -42,6 +42,12 @@ Created by Christopher Bradford · [contact@christopherdanielbradford.com](mailt
 - 🧠 **It remembers you.** A dependency-free memory of durable facts ("I'm on
   Apple Silicon", "I like terse answers") carries across sessions, and your last
   conversation resumes right where you left it.
+- 🩺 **It remembers your *machine*.** The installer ships two local daemons —
+  [Mechanic](https://github.com/sunkencity999/mechanic) (runtime baselines) and
+  [Drift](https://github.com/sunkencity999/drift) (state snapshots) — mounted
+  over MCP, so the shell can answer *"is 92% CPU normal **for this box**?"* and
+  *"what changed since Tuesday?"* — then fix what it finds. No cloud model can
+  give you that loop.
 - 💭 **It has an inner life.** Ask it to `/daydream` and it stops being useful for
   a moment to free-associate a small, surreal vignette about whatever you'd been
   discussing. Useless on purpose. Local-first, so indulging is free.
@@ -63,10 +69,12 @@ If the design philosophy interests you, here it is in one table:
 ```bash
 # 1. Install. Puts `oshell` on your PATH (uv tool install, editable;
 #    falls back to a venv + symlink). Warns if Ollama isn't running.
-./install.sh            # macOS / Linux — core + tui (the interactive default)
-./install.sh all        # the works: tui, rag, docs, vision, finetune
-./install.sh rag        # …or any custom subset of extras (web search is built in)
-#   Windows (PowerShell):  .\install.ps1   (same arguments)
+#    Also installs the machine-memory pair (Mechanic + Drift) by default.
+./install.sh                    # macOS / Linux — core + tui + machine memory
+./install.sh all                # the works: tui, rag, docs, vision, finetune
+./install.sh rag                # …or any custom subset (web search is built in)
+./install.sh tui --no-monitors  # skip Mechanic + Drift
+#   Windows (PowerShell):  .\install.ps1   (no monitors — they need launchd/systemd)
 
 # 2. Make sure Ollama is running (https://ollama.com), then — from anywhere:
 oshell                  # interactive agent chat (default command)
@@ -259,6 +267,59 @@ Start fresh with **menu → New conversation** or **`/clear`**. Disable with
 **Slash commands.** `/clear` (new conversation), `/daydream` (wander 💭), `/menu`
 (open the menu), `/help` (keys + commands).
 
+## Machine memory — Mechanic × Drift, over MCP
+
+Every AI assistant starts blind about your box: ask "why is this slow?" and it
+gets generic advice, because a fresh `top` has no baseline and `lsof` has no
+yesterday. oshell ships with the two tools that fix that — installed by
+default, mounted as native tools, and taught to the model as a **diagnosis
+pattern**:
+
+- **[Mechanic](https://github.com/sunkencity999/mechanic)** samples runtime
+  metrics (CPU, memory, Docker, *loaded Ollama models*) into a local SQLite
+  baseline. Its tools answer *"is this normal **for this machine**?"* —
+  `mechanic_is_this_normal`, `mechanic_baseline_for`, `mechanic_what_changed_since`.
+- **[Drift](https://github.com/sunkencity999/drift)** snapshots operational
+  state (ports, services, packages, users, cron) every few hours. Its tools
+  answer *"what changed on this box?"* — `drift_diff_latest`, `drift_diff`,
+  `drift_latest`.
+
+**The loop no cloud assistant can close:** Mechanic says *whether* something is
+off ("CPU is 8σ above your normal") → Drift says *what moved* ("a new launchd
+service appeared 2 hours ago") → `run_command` fixes it. Anomaly → cause → fix,
+entirely on your own hardware.
+
+Both are fully standalone projects (local-first, user-level, no sudo, no
+egress) with their own daemons; oshell spawns their MCP servers on demand and
+degrades gracefully when they're absent — the Tools panel shows
+`✗ mechanic (MCP)` with the install hint. Skip them at install time with
+`./install.sh tui --no-monitors`.
+
+### Any MCP server, actually
+
+Mechanic and Drift ride a general mechanism: oshell is now a real **MCP
+client**. Any stdio MCP server can be mounted as native tools from
+`config.local.json` — no plugins, no code:
+
+```json
+{
+  "mcp_servers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {"GITHUB_TOKEN": "…"},
+      "network": true
+    }
+  }
+}
+```
+
+Tools register as `<server>_<tool>` (so the roster shows where each came from),
+and `network: true` flags a server's tools `net` in the privacy UI. Servers
+are spawned once and shared across model switches; a hung server can never
+hang a turn (every call has a timeout and degrades to a tool error the model
+can route around).
+
 ## Computer-use — it can act, not just chat
 
 Ollama Shell is *agentic*: the model can do things on your machine.
@@ -363,6 +424,8 @@ the `finetune` extra (`mlx-lm`).
 oshell/
   config.py            Typed, layered config (defaults<config.json<config.local.json<env)
   capabilities.py      Reports which optional features/integrations are available
+  mcp.py               MCP stdio client — mounts any MCP server's tools as native
+                       (mechanic + drift ship configured by default)
   fun.py               Daydreams 💭 — motifs, grounding, prompt building, streaming
   providers/           LLMProvider abstraction
     base.py              Message / ToolCall / ChatChunk / LLMProvider

@@ -126,6 +126,44 @@ class FinetuneConfig(BaseModel):
     num_layers: int = 16  # LoRA layers to train
 
 
+class MCPServerConfig(BaseModel):
+    """One MCP (Model Context Protocol) stdio server to mount as native tools.
+
+    oshell spawns ``command args…`` on demand, speaks JSON-RPC over its
+    stdin/stdout, and registers every tool it advertises as
+    ``<name>_<tool>``. Missing binaries degrade gracefully (no tools, a hint
+    in the capabilities panel).
+    """
+
+    command: str  # executable path (~ and $VARS expanded)
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+    network: bool = False  # True flags this server's tools "net" in the privacy UI
+
+
+def _default_mcp_servers() -> dict[str, MCPServerConfig]:
+    """The first-party pair: the shell's memory of the machine it lives on.
+
+    Mechanic answers "is this normal for this box?" (runtime baselines);
+    Drift answers "what changed on this box?" (operational-state diffs).
+    Both are local-first, user-level daemons installed by ./install.sh
+    (standalone repos: github.com/sunkencity999/{mechanic,drift}).
+    """
+    return {
+        "mechanic": MCPServerConfig(
+            command="~/.local/share/mechanic/.venv/bin/mechanic",
+            args=["server"],
+            env={"MECHANIC_DATA_DIR": "~/.local/share/mechanic-data"},
+        ),
+        "drift": MCPServerConfig(
+            command="~/.local/share/drift/.venv/bin/drift",
+            args=["server"],
+            env={"DRIFT_DATA_DIR": "~/.local/share/drift-data"},
+        ),
+    }
+
+
 class FunConfig(BaseModel):
     """Quirky, non-essential delights (daydreams + ambient effects)."""
 
@@ -196,6 +234,10 @@ class Config(BaseModel):
 
     # Quirky delights
     fun: FunConfig = Field(default_factory=FunConfig)
+
+    # MCP servers mounted as native tools (drift + mechanic ship by default;
+    # add your own — any stdio MCP server works).
+    mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=_default_mcp_servers)
 
     # Agent loop
     max_tool_iterations: int = 16  # safety cap on tool-call rounds per turn (research + write)

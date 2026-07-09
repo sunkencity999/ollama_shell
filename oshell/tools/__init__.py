@@ -79,6 +79,12 @@ def default_registry(
             tools += browser_tools(_SharedBrowser(config.browser))
         if config.gui.enabled:  # desktop GUI control
             tools += gui_tools()
+
+    # MCP servers mounted as native tools (mechanic + drift by default — the
+    # shell's memory of the machine). Missing servers contribute nothing.
+    from ..mcp import mcp_tools
+
+    tools += mcp_tools(config)
     return ToolRegistry(tools, enabled=config.enabled_tools)
 
 
