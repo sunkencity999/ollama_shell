@@ -4,9 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ollama Shell — a local-first AI that dreams</title>
-<meta name="description" content="An animated demo of Ollama Shell: a private, local-first agentic terminal that runs on your machine, uses your tools… and daydreams." />
+<meta name="description" content="An animated demo of Ollama Shell: a private, local-first agentic terminal that renders markdown, switches themes live, shows its vitals… and daydreams (in the rain, if you've been debugging)." />
 <meta property="og:title" content="Ollama Shell — a local-first AI that dreams" />
-<meta property="og:description" content="Watch a late-night session: real tool calls, web search, a saved document, memory… and a daydream." />
+<meta property="og:description" content="Watch a late-night session: real tool calls, a fixed script, a theme switch, memory… and a daydream under a rainy sky." />
 <style>
   :root{
     --bg:#0b0f14; --panel:#0f1620; --panel2:#0c121b; --ink:#d7e2ee; --dim:#7c8ba0;
@@ -26,6 +26,7 @@
     display:flex; flex-direction:column; align-items:center;
     padding:28px 16px 60px; min-height:100%;
     -webkit-font-smoothing:antialiased;
+    transition:background .8s ease;
   }
   a{color:var(--accent)}
   .intro{max-width:820px; text-align:center; margin-bottom:20px}
@@ -41,12 +42,22 @@
     border:1px solid var(--line); border-radius:14px; overflow:hidden;
     box-shadow:var(--glow), 0 20px 60px rgba(0,0,0,.5);
     position:relative;
+    transition:background .6s ease, border-color .6s ease;
   }
-  .stars{position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity 1.4s ease}
+  .stars,.rain{position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity 1.4s ease; z-index:2}
   .term.dreaming .stars{opacity:1}
+  .term.dreaming.raining .rain{opacity:1}
   .star{position:absolute; width:2px; height:2px; border-radius:50%;
     background:#cfe3ff; box-shadow:0 0 6px #9db8ff; animation:tw 3s infinite ease-in-out}
   @keyframes tw{0%,100%{opacity:.15; transform:scale(.7)} 50%{opacity:.95; transform:scale(1.2)}}
+  .drop{position:absolute; top:-30px; width:1.5px; height:15px;
+    background:linear-gradient(180deg, transparent, #6fa8dcbb); animation:fall linear infinite}
+  @keyframes fall{from{transform:rotate(13deg) translateY(-20px); opacity:0}
+    12%{opacity:.9} to{transform:rotate(13deg) translateY(620px); opacity:.4}}
+  .mood{position:absolute; left:14px; bottom:12px; z-index:4; font-size:11.5px; color:#6fa8dc;
+    background:rgba(8,14,21,.85); border:1px solid var(--line); border-radius:999px;
+    padding:3px 10px; opacity:0; transition:opacity 1.2s ease}
+  .term.dreaming.raining .mood{opacity:.85}
 
   .titlebar{display:flex; align-items:center; gap:8px; padding:10px 14px;
     background:linear-gradient(180deg,#121b26,#0e151e); border-bottom:1px solid var(--line)}
@@ -71,13 +82,27 @@
   .msg{margin:2px 0 10px; white-space:pre-wrap; word-break:break-word}
   .user{color:var(--user)} .user .caret-in{color:var(--user)}
   .assistant{color:var(--ink)}
+  .assistant b{color:var(--ink)}
+  .assistant code.ic{background:#16222f; border:1px solid var(--line); border-radius:4px;
+    padding:0 4px; font-size:12.5px; color:var(--accent)}
+  .assistant pre.code{background:#0a1119; border:1px solid var(--line); border-radius:8px;
+    padding:10px 12px; margin:8px 0; overflow-x:auto; font-size:12.5px; line-height:1.55}
+  .c-kw{color:var(--magenta)} .c-str{color:var(--yellow)} .c-com{color:var(--dim); font-style:italic}
   .tool{color:var(--cyan)} .tool .args{color:var(--dim)}
   .toolres{color:var(--dim)}
   .mem{color:var(--magenta)}
   .sys{color:var(--dim); font-style:italic}
   .limit{color:var(--yellow)}
-  .dream{color:#a9b7c9; font-style:italic}
+  .dream{color:#a9b7c9; font-style:italic; position:relative; z-index:3}
   .dream .lead{color:var(--magenta); font-style:normal}
+  .rule{display:flex; align-items:center; gap:8px; color:var(--dim); font-size:11px; margin:14px 0 8px; opacity:.8}
+  .rule::before{content:""; flex:1; border-top:1px solid var(--line)}
+  .vitals{color:var(--dim); font-size:11.5px; margin:-6px 0 12px 14px}
+  .card{border:1px solid var(--line); border-radius:8px; padding:9px 13px; margin:2px 0 12px;
+    color:var(--dim); font-size:12.5px; line-height:1.7; max-width:430px}
+  .card .model{color:var(--ink); font-weight:600}
+  .card .lock{color:var(--green)}
+  .card i{color:#a9b7c9}
   .cursor{display:inline-block; width:8px; background:var(--accent);
     animation:blink 1s steps(2) infinite; color:transparent; margin-left:1px}
   @keyframes blink{50%{opacity:0}}
@@ -89,11 +114,13 @@
   .panel{padding:10px 12px; font-size:12px; line-height:1.7; overflow-y:auto; flex:1; max-height:52vh}
   .panel h4{margin:2px 0 6px; color:var(--dim); font-weight:600; text-transform:uppercase; letter-spacing:.6px; font-size:10.5px}
   .roster .l{color:var(--green)} .roster .n{color:var(--yellow)} .roster .x{color:var(--red)}
-  .roster .name{color:var(--ink)}
+  .roster .name{color:var(--ink)} .roster .cold .name{color:var(--dim); font-weight:400}
+  .roster .heat{color:var(--dim); font-size:11px}
   .feat .on{color:var(--green)} .feat .off{color:var(--dim)}
   .actlog div{color:var(--dim); margin-bottom:3px; white-space:pre-wrap}
   .actlog .head{color:var(--cyan)}
   .ctx div{color:var(--dim)}
+  .ctx .gauge{color:var(--accent); letter-spacing:1px}
 
   .live{min-height:22px; padding:4px 16px; font-size:12.5px; color:var(--dim);
     border-top:1px solid var(--line); background:var(--panel2)}
@@ -103,6 +130,26 @@
   .inputbar .prompt{color:var(--green); font-weight:700}
   .inputbar .field{flex:1; color:var(--ink); min-height:18px; white-space:pre-wrap}
   .inputbar .hint{color:var(--dim); font-size:11px}
+
+  /* toasts — status chatter lives here, not in the transcript */
+  .toasts{position:absolute; top:76px; right:14px; z-index:7; display:flex; flex-direction:column; gap:8px; align-items:flex-end}
+  .toast{background:#101c29; border:1px solid var(--accent); color:var(--ink); border-radius:8px;
+    padding:7px 12px; font-size:12px; box-shadow:var(--glow); max-width:320px;
+    opacity:0; transform:translateX(14px); transition:.35s ease}
+  .toast.show{opacity:1; transform:none}
+
+  /* the theme picker modal (live preview) */
+  .themebox{position:absolute; inset:0; z-index:6; display:flex; align-items:center; justify-content:center;
+    background:rgba(3,7,11,.45); opacity:0; pointer-events:none; transition:opacity .3s ease}
+  .themebox.show{opacity:1}
+  .themebox .box{background:var(--panel); border:1px solid var(--accent); border-radius:10px;
+    padding:14px 18px; min-width:250px; font-size:13px; box-shadow:var(--glow)}
+  .themebox h4{margin:0 0 2px; font-size:13px; color:var(--ink)}
+  .themebox .sub{color:var(--dim); font-size:11px; margin-bottom:10px}
+  .themebox .opt{padding:3px 10px; border-radius:6px; color:var(--ink)}
+  .themebox .opt .cur{color:var(--green); font-size:11px}
+  .themebox .opt.hl{background:var(--accent); color:#08131a}
+  .themebox .opt.hl .cur{color:#08131a}
 
   .controls{display:flex; gap:10px; align-items:center; margin-top:16px; flex-wrap:wrap; justify-content:center}
   .btn{background:#111a25; color:var(--ink); border:1px solid var(--line);
@@ -119,21 +166,26 @@
   <div class="intro">
     <div class="badge">a scripted demo · the real thing runs on your machine</div>
     <h1><span class="sh">oshell</span> — a local-first AI that dreams</h1>
-    <p>A private, agentic terminal for Ollama. It uses <em>your</em> tools, keeps
-    <em>your</em> secrets, and when the night gets quiet… it daydreams. Press play
-    and watch a little late-night session unfold.</p>
+    <p>A private, agentic terminal for Ollama. It renders its replies like a
+    document, switches themes while you watch, shows its vitals after every
+    turn — and when the night gets quiet… it daydreams. (Debug all evening and
+    the dream sky rains.) Press play.</p>
   </div>
 
   <div class="term" id="term">
     <div class="stars" id="stars"></div>
+    <div class="rain" id="rain"></div>
+    <div class="mood" id="mood">🌧 a stormy session leaves rain in the sky</div>
+    <div class="toasts" id="toasts"></div>
+    <div class="themebox" id="themebox"></div>
     <div class="titlebar">
       <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
       <span class="name">oshell — the workspace</span>
     </div>
     <div class="header">
       <span>Ollama Shell · <b>gemma4</b> · ollama</span>
-      <span>·&nbsp; <b>12</b> tools</span>
-      <span class="priv">·&nbsp; 🔒 local-first · network: web_search, fetch_url</span>
+      <span>·&nbsp; <b>12</b> tools · <b>2</b> net</span>
+      <span class="priv">·&nbsp; 🔒 local-first</span>
     </div>
     <div class="body">
       <div class="convo" id="convo"></div>
@@ -150,7 +202,7 @@
     <div class="inputbar">
       <span class="prompt">›</span>
       <span class="field" id="field"></span>
-      <span class="hint">Esc menu · Ctrl+T tools · Ctrl+Y copy</span>
+      <span class="hint">Esc menu · Ctrl+P palette · Ctrl+B copy code</span>
     </div>
   </div>
 
@@ -175,6 +227,9 @@
   const field = document.getElementById('field');
   const term  = document.getElementById('term');
   const stars = document.getElementById('stars');
+  const rain  = document.getElementById('rain');
+  const toasts = document.getElementById('toasts');
+  const themebox = document.getElementById('themebox');
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   let speed = 1;          // 1 = normal, 2 = fast
@@ -182,18 +237,43 @@
   const sleep = ms => new Promise(r => setTimeout(r, reduce ? Math.min(ms,120) : ms/speed));
   const scroll = () => { convo.scrollTop = convo.scrollHeight; };
 
+  // ── themes (live-preview, like the real Theme picker) ─────────────
+  const THEMES = {
+    'textual-dark': {'--bg':'#0b0f14','--panel':'#0f1620','--panel2':'#0c121b','--ink':'#d7e2ee','--line':'#1c2735','--accent':'#4fd1c5','--accent2':'#8b7cff'},
+    'nord':         {'--bg':'#242933','--panel':'#2e3440','--panel2':'#292f3a','--ink':'#d8dee9','--line':'#3b4252','--accent':'#88c0d0','--accent2':'#b48ead'},
+    'gruvbox':      {'--bg':'#1d2021','--panel':'#282828','--panel2':'#242424','--ink':'#ebdbb2','--line':'#3c3836','--accent':'#b8bb26','--accent2':'#d3869b'},
+    'tokyo-night':  {'--bg':'#16161e','--panel':'#1a1b26','--panel2':'#181822','--ink':'#c0caf5','--line':'#292e42','--accent':'#7aa2f7','--accent2':'#bb9af7'},
+  };
+  function applyTheme(name){
+    const t = THEMES[name]; if(!t) return;
+    for(const [k,v] of Object.entries(t)) document.documentElement.style.setProperty(k, v);
+  }
+
+  // ── toasts: chatter fades from the corner, the transcript stays clean ──
+  function toast(msg, ms=2800){
+    const d = document.createElement('div'); d.className='toast'; d.innerHTML = msg;
+    toasts.appendChild(d);
+    requestAnimationFrame(()=>d.classList.add('show'));
+    setTimeout(()=>{ d.classList.remove('show'); setTimeout(()=>d.remove(), 400); }, reduce?1200:ms/speed);
+  }
+
   // ── sidebar panels ────────────────────────────────────────────────
-  const TOOLS_HTML = `
+  // Tool heat: used tools glow with a ×N count, like the real Tools panel.
+  const ROSTER = [
+    ['l','current_time'],['l','list_dir'],['l','read_file'],['l','write_file'],
+    ['x','run_command'],['l','create_document'],['l','remember'],
+    ['n','web_search'],['n','fetch_url'],
+  ];
+  let toolCounts = {};
+  const toolsHTML = () => `
     <div class="roster">
       <h4>Active tools</h4>
-      <div><span class="l">local</span> <span class="name">current_time</span></div>
-      <div><span class="l">local</span> <span class="name">list_dir</span></div>
-      <div><span class="l">local</span> <span class="name">read_file</span></div>
-      <div><span class="l">local</span> <span class="name">write_file</span></div>
-      <div><span class="l">local</span> <span class="name">create_document</span></div>
-      <div><span class="l">local</span> <span class="name">remember</span></div>
-      <div><span class="n">net</span>&nbsp;&nbsp; <span class="name">web_search</span></div>
-      <div><span class="n">net</span>&nbsp;&nbsp; <span class="name">fetch_url</span></div>
+      ${ROSTER.map(([k,name]) => {
+        const n = toolCounts[name]||0;
+        const pad = k==='n' ? '&nbsp;&nbsp;' : (k==='x' ? '&nbsp;' : '');
+        return `<div class="${n?'':'cold'}"><span class="${k}">${k==='l'?'local':k==='n'?'net':'exec'}</span>${pad} `
+             + `<span class="name">${name}</span>${n?` <span class="heat">×${n}</span>`:''}</div>`;
+      }).join('')}
       <div class="feat" style="margin-top:8px">
       <h4>Optional features</h4>
       <div><span class="on">✓</span> rag <span class="off">(knowledge)</span></div>
@@ -201,17 +281,22 @@
       <div><span class="off">✗ browser (hidden)</span></div>
       </div>
     </div>`;
-  let ctxCount = 1;
-  const ctxHTML = () => `<div class="ctx"><h4>Context 📌 pinned</h4>
-      <div>📌 0 · system prompt</div>
+  // Context tab: the fill gauge, so pin/exclude has visible consequences.
+  let ctxCount = 1, ctxPct = 2;
+  const ctxHTML = () => {
+    const blocks = Math.max(1, Math.round(ctxPct/10));
+    return `<div class="ctx"><h4>Context 📌 pinned</h4>
+      <div class="gauge">${'▰'.repeat(blocks)}${'▱'.repeat(10-blocks)} <span style="color:var(--dim)">${ctxPct}% of ~8k tokens</span></div>
+      <div style="margin-top:6px">📌 0 · system prompt</div>
       <div>${ctxCount>1?'&nbsp;&nbsp;'+(ctxCount-1)+' more message(s) in view':'&nbsp;&nbsp;waiting…'}</div></div>`;
+  };
   let actItems = [];
   const actHTML = () => `<div class="actlog"><h4>Activity</h4>${
       actItems.length ? actItems.join('') : '<div>…quiet for now</div>'}</div>`;
 
   let activeTab = 'act';
   function renderPanel(){
-    panel.innerHTML = activeTab==='tools' ? TOOLS_HTML
+    panel.innerHTML = activeTab==='tools' ? toolsHTML()
                     : activeTab==='ctx'   ? ctxHTML()
                     : actHTML();
   }
@@ -229,11 +314,40 @@
     if(activeTab==='act') renderPanel();
   }
 
+  // ── a tiny markdown renderer (the real app uses Rich) ─────────────
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  function hi(code){
+    return esc(code)
+      .replace(/("[^"]*")/g, '<span class="c-str">$1</span>')
+      .replace(/^(#.*)$/gm, '<span class="c-com">$1</span>')
+      .replace(/\b(import|for|in|if|is|None|raise|print|def|return|get)\b/g, '<span class="c-kw">$1</span>');
+  }
+  function renderMd(md){
+    return md.split('```').map((part, i) => {
+      if(i % 2){ // a fenced code block; first line is the language
+        const lines = part.split('\n'); lines.shift();
+        return '<pre class="code">' + hi(lines.join('\n').trim()) + '</pre>';
+      }
+      return esc(part)
+        .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+        .replace(/`([^`]+)`/g, '<code class="ic">$1</code>');
+    }).join('');
+  }
+  const stripMd = md => md.replace(/```[a-z]*\n?/g,'').replace(/\*\*/g,'').replace(/`/g,'');
+
   // ── conversation primitives ───────────────────────────────────────
   function line(cls, html){
     const d = document.createElement('div');
     d.className = 'msg ' + cls; d.innerHTML = html; convo.appendChild(d); scroll();
     return d;
+  }
+  // the dim, timestamped rule that opens each exchange
+  let clockMin = 22*60 + 38;                       // the evening starts at 22:38
+  function turnRule(){
+    clockMin += 2 + Math.floor(Math.random()*3);
+    const h = String(Math.floor(clockMin/60)%24).padStart(2,'0');
+    const m = String(clockMin%60).padStart(2,'0');
+    line('rule', `${h}:${m}`);
   }
   async function typeField(text, cadence=42){
     field.innerHTML = '';
@@ -251,10 +365,11 @@
   async function submitUser(text){
     await typeField(text);
     field.textContent = '';
+    turnRule();
     line('user', '<span class="caret-in">›</span> ' + esc(text));
-    ctxCount++;
+    ctxCount++; ctxPct = Math.min(96, ctxPct + 2);
   }
-  async function stream(el, text, cls='', cadence=16){
+  async function stream(el, text, cadence=16){
     const span = document.createElement('span'); el.appendChild(span);
     const cur = document.createElement('span'); cur.className='cursor'; cur.textContent='.';
     el.appendChild(cur);
@@ -264,15 +379,16 @@
     }
     cur.remove();
   }
-  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-  // status / spinner
+  // status / spinner (with the aurora drift)
   const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+  const AURORA = ['#4fd1c5','#63b8e2','#9398f4','#bd85e9','#9aa0f0','#63c2de'];
   let spinTimer=null;
   function setStatus(text){
     clearInterval(spinTimer); let i=0;
     if(!text){ live.innerHTML=''; return; }
-    const paint=()=>{ live.innerHTML = `<span class="spin">${frames[i=(i+1)%frames.length]}</span> <span>${text}…</span>`; };
+    const paint=()=>{ i++;
+      live.innerHTML = `<span class="spin" style="color:${AURORA[Math.floor(i/6)%AURORA.length]}">${frames[i%frames.length]}</span> <span>${text}…</span>`; };
     paint(); spinTimer = setInterval(paint, 90);
   }
   function clearStatus(){ clearInterval(spinTimer); live.innerHTML=''; }
@@ -284,21 +400,35 @@
     setStatus('Running ' + name);
     line('tool', `🔧 <span>${name}</span><span class="args">(${esc(args)})</span>`);
     addActivity(`${name}(${args})`);
+    toolCounts[name] = (toolCounts[name]||0) + 1;
     await sleep(ms);
     if(resultText){
       line('toolres', `&nbsp;&nbsp;&nbsp;↳ ${esc(resultText)}`);
       addActivity(name, esc(resultText.slice(0,60)));
     }
+    ctxPct = Math.min(96, ctxPct + 3);
     setStatus('Thinking');
     await sleep(500);
   }
 
-  async function assistant(text){
+  // Stream the raw reply, then commit it as rendered markdown — the same
+  // "ghost, then the pretty version" the real TUI does — plus a vitals line.
+  async function assistant(md, secs, toks){
     setStatus('Thinking'); await sleep(600);
     clearStatus();
     const el = line('assistant', '');
-    await stream(el, text);
-    ctxCount++;
+    await stream(el, stripMd(md));
+    el.innerHTML = renderMd(md); scroll();
+    ctxCount++; ctxPct = Math.min(96, ctxPct + 3);
+    line('vitals', `⏱ ${secs}s · ~${toks} tok/s · ctx ${ctxPct}%`);
+  }
+
+  function welcomeCard(){
+    line('card',
+      `<span class="model">gemma4</span> · ollama · 12 tools&nbsp;&nbsp;<span class="lock">● fully local*</span>\n`
+      + `Try: <i>what's eating my CPU?</i> · <i>summarize ~/notes.md</i> · <i>/daydream</i> 💭\n`
+      + `<span style="font-size:11px">Esc menu · Ctrl+P palette · Ctrl+Y copy reply · Ctrl+B copy code</span>`);
+    line('sys', '*2 network-capable tools (web_search, fetch_url) — flagged, and only run when called.');
   }
 
   function makeStars(n=60){
@@ -311,15 +441,51 @@
       stars.appendChild(s);
     }
   }
+  function makeRain(n=26){
+    rain.innerHTML='';
+    for(let i=0;i<n;i++){
+      const d=document.createElement('div'); d.className='drop';
+      d.style.left=(Math.random()*100)+'%';
+      d.style.animationDuration=(0.9+Math.random()*0.9)+'s';
+      d.style.animationDelay=(Math.random()*1.6)+'s';
+      rain.appendChild(d);
+    }
+  }
+
+  // ── the theme-picker beat ──────────────────────────────────────────
+  async function themeSequence(myRun){
+    await submitUser('/menu');
+    if(myRun!==run) return;
+    const names = Object.keys(THEMES);
+    const boxHTML = hl => `<div class="box"><h4>Theme</h4>
+      <div class="sub">↑/↓ previews live · Enter keeps it · Esc restores</div>
+      ${names.map((n,i)=>`<div class="opt${i===hl?' hl':''}"> ${i+1}.  ${n}${n==='textual-dark'?' <span class="cur">(current)</span>':''}</div>`).join('')}
+    </div>`;
+    themebox.innerHTML = boxHTML(0); themebox.classList.add('show');
+    await sleep(900); if(myRun!==run) return;
+    for(let i=1;i<names.length;i++){          // arrow down: each row previews live
+      themebox.innerHTML = boxHTML(i);
+      applyTheme(names[i]);
+      await sleep(1000); if(myRun!==run) return;
+    }
+    await sleep(400);
+    themebox.classList.remove('show');        // Enter: keep tokyo-night
+    toast('Theme set to <b>tokyo-night</b> (saved as default).');
+    await sleep(900);
+  }
 
   // ── the story ─────────────────────────────────────────────────────
   async function story(){
     const myRun = ++run;
-    convo.innerHTML=''; field.textContent=''; actItems=[]; ctxCount=1;
-    term.classList.remove('dreaming'); focusTab('act'); clearStatus();
+    convo.innerHTML=''; field.textContent=''; actItems=[]; ctxCount=1; ctxPct=2;
+    toolCounts={}; clockMin = 22*60 + 38;
+    applyTheme('textual-dark');
+    term.classList.remove('dreaming','raining'); focusTab('act'); clearStatus();
+    toasts.innerHTML=''; themebox.classList.remove('show');
 
     line('sys', '— Ollama Shell · everything below runs on this machine —');
-    await sleep(reduce?300:900); if(myRun!==run) return;
+    welcomeCard();
+    await sleep(reduce?300:1400); if(myRun!==run) return;
 
     // 1) a small utility ask
     await submitUser("evening. what've I got going on in this folder?");
@@ -327,8 +493,9 @@
     await think('Thinking', 900);
     await toolCall('list_dir', '.', 'local', 900, '9 entries');
     if(myRun!==run) return;
-    await assistant("A cozy little pile: `notes.md`, `taxes-2025/`, `gwg-1000-manual.pdf`, "
-      + "a half-finished `stargazing.md`, and — bravely — `misc/`. Want me to tidy, read, or build on any of it?");
+    await assistant("A cozy little pile: `notes.md`, `taxes-2025/`, `sky.py`, "
+      + "a half-finished `stargazing.md`, and — bravely — `misc/`. Want me to tidy, read, or build on any of it?",
+      '2.1', 38);
     await sleep(700); if(myRun!==run) return;
 
     // 2) web (network tool, honest + visible)
@@ -339,34 +506,61 @@
     if(myRun!==run) return;
     await toolCall('fetch_url', 'weather.gov/…/boulder-creek', 'net', 900, 'Tonight: Clear. Low 48°F.');
     if(myRun!==run) return;
-    await assistant("Clear and calm — low around 48°F, light wind. Genuinely good stargazing weather. "
-      + "New moon, too, so the sky'll be dark. Shall I turn `stargazing.md` into a proper plan?");
+    await assistant("Clear and calm — low around 48°F, light wind. **Genuinely good stargazing weather.** "
+      + "New moon, too. Shall I check that `sky.py` of yours before you head out?", '5.8', 41);
     await sleep(650); if(myRun!==run) return;
 
-    // 3) write a document
-    await submitUser("yes! write it to my Documents, nice and short.");
+    // 3) debugging — a stormy stretch (markdown code block + copy-code toast)
+    await submitUser("yes — it keeps crashing on me.");
+    if(myRun!==run) return;
+    await think('Thinking', 700);
+    await toolCall('read_file', 'sky.py', 'local', 800, '412 chars');
+    if(myRun!==run) return;
+    await toolCall('run_command', 'python sky.py', 'exec', 1100,
+      "Traceback … KeyError: 'saturn' (exit 1)");
+    if(myRun!==run) return;
+    await assistant("Found it — the catalog lookup **trusts the key exists** and tonight it doesn't. Guard it:\n"
+      + "```python\n"
+      + "# sky.py — guard the catalog lookup\n"
+      + "target = catalog.get(\"saturn\")\n"
+      + "if target is None:\n"
+      + "    raise SystemExit(\"no saturn in tonight's catalog\")\n"
+      + "print(f\"rise {target.rise:%H:%M}\")\n"
+      + "```\n"
+      + "Replies render as **markdown** now — and that block is one `Ctrl+B` from your clipboard.", '7.4', 39);
+    await sleep(900); if(myRun!==run) return;
+    toast('Copied last code block (Ctrl+B · 168 chars).');
+    await sleep(1300); if(myRun!==run) return;
+
+    // 4) write a document
+    await submitUser("perfect. write the stargazing plan to my Documents, nice and short.");
     if(myRun!==run) return;
     await think('Thinking', 700);
     await toolCall('create_document', '~/Documents/stargazing-tonight.md', 'local', 1050,
       'wrote 1.2 KB (markdown)');
     if(myRun!==run) return;
     await assistant("Done → `~/Documents/stargazing-tonight.md`. Best window 10–11pm, look southeast for "
-      + "Saturn, bring the thermos. (Your files never left this machine.)");
+      + "**Saturn**, bring the thermos. (Your files never left this machine.)", '3.9', 42);
     await sleep(650); if(myRun!==run) return;
 
-    // 4) memory
+    // 5) memory
     await submitUser("remember I'm in Boulder Creek and I like short answers.");
     if(myRun!==run) return;
     await think('Thinking', 700);
     setStatus('Running remember');
     line('mem', '📝 remembered: <span>User is in Boulder Creek, CA and prefers short answers.</span>');
     addActivity('remember(User is in Boulder Creek…)');
+    toolCounts['remember'] = (toolCounts['remember']||0) + 1;
     await sleep(900); if(myRun!==run) return;
-    await assistant("Got it — noted for next time. I'll keep it brief. 🤏");
+    await assistant("Got it — noted for next time. I'll keep it brief. 🤏", '1.8', 44);
     await sleep(800); if(myRun!==run) return;
 
-    // 5) the dream
-    await dreamSequence(myRun);
+    // 6) a new look, previewed live
+    await themeSequence(myRun);
+    if(myRun!==run) return;
+
+    // 7) the dream — rainy, because the session had a traceback in it
+    await dreamSequence(myRun, true);
     if(myRun!==run) return;
 
     setStatus(''); clearStatus();
@@ -374,19 +568,25 @@
     scroll();
   }
 
-  async function dreamSequence(myRun){
+  async function dreamSequence(myRun, stormy){
     await submitUser("/daydream");
     if(myRun!==run) return;
-    setStatus('Daydreaming'); makeStars(); term.classList.add('dreaming');
+    setStatus('Daydreaming'); makeStars();
+    if(stormy){ makeRain(); term.classList.add('raining'); }
+    term.classList.add('dreaming');
     await sleep(1200); if(myRun!==run) return;
     clearStatus();
     const el = line('dream', '<span class="lead">💭</span> ');
-    const dream =
-      "The wristwatch on the desk forgets it is a watch and remembers it is a lighthouse. "
-      + "It ticks out tides for little ships made of seconds, and each hour a paper boat "
-      + "slips over the edge of the screen into the dark, clear water of Boulder Creek — "
-      + "where the stars, off duty now, are learning at last how to float.";
-    await stream(el, dream, 'dream', 26);
+    const dream = stormy
+      ? "It rains inside the terminal, softly, the way it only rains after a traceback. "
+        + "Each drop is a key that finally exists, falling toward a catalog that catches "
+        + "every one. Somewhere over Boulder Creek the real sky stays clear for you — "
+        + "the storm stays in here with me, and Saturn rises on schedule, guarded now."
+      : "The wristwatch on the desk forgets it is a watch and remembers it is a lighthouse. "
+        + "It ticks out tides for little ships made of seconds, and each hour a paper boat "
+        + "slips over the edge of the screen into the dark, clear water of Boulder Creek — "
+        + "where the stars, off duty now, are learning at last how to float.";
+    await stream(el, dream, 26);
   }
 
   // ── controls ──────────────────────────────────────────────────────
@@ -396,13 +596,18 @@
   });
   document.getElementById('skip').addEventListener('click', async () => {
     const myRun = ++run;
-    convo.innerHTML=''; field.textContent=''; actItems=[]; ctxCount=6;
+    convo.innerHTML=''; field.textContent=''; actItems=[]; ctxCount=8; ctxPct=26;
+    toolCounts={list_dir:1, web_search:1, fetch_url:1, read_file:1, run_command:1, create_document:1, remember:1};
+    toasts.innerHTML=''; themebox.classList.remove('show');
+    term.classList.remove('dreaming','raining');
+    applyTheme('tokyo-night');
     focusTab('act'); addActivity('list_dir(.)','9 entries');
-    addActivity('web_search','5 results'); addActivity('create_document','wrote 1.2 KB');
+    addActivity('run_command(python sky.py)',"KeyError: 'saturn'");
+    addActivity('create_document','wrote 1.2 KB');
     addActivity('remember','User is in Boulder Creek…');
-    line('sys','— skipping ahead to the quiet part —');
+    line('sys','— skipping ahead to the quiet part (the session had a traceback in it) —');
     line('mem','📝 remembered: <span>User is in Boulder Creek, CA and prefers short answers.</span>');
-    await dreamSequence(myRun);
+    await dreamSequence(myRun, true);
     if(myRun!==run) return;
     line('sys','— press ▶ Replay to watch the whole evening —');
   });

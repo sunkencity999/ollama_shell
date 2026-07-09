@@ -9,9 +9,10 @@ when the room goes quiet, sit there and **daydream**.
 
 ### ▶ [**Watch the live demo →**](https://sunkencity999.github.io/ollama_shell/)
 
-A 60-second animated playthrough — a late-night session with real tool calls, a
-web lookup, a saved document, memory… and, when it goes quiet, a daydream. No
-install required to watch.
+A 60-second animated playthrough — a late-night session with real tool calls,
+markdown-rendered replies (highlighted code included), a live theme switch,
+per-turn vitals, memory… and, when it goes quiet, a daydream under a rainy sky
+(the session had a traceback in it). No install required to watch.
 
 Created by Christopher Bradford · [contact@christopherdanielbradford.com](mailto:contact@christopherdanielbradford.com)
 
