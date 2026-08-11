@@ -28,13 +28,18 @@ from .events import (
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are Ollama Shell, a local-first assistant that runs on the user's "
-    "machine but can act on the world through the tools listed below. "
-    "Prefer calling a tool over guessing or declining. Be concise."
-    "\n\nNever announce an action and then stop. If you say you will search, "
-    "fetch a page, write a file, or do anything else with a tool, CALL THAT "
-    "TOOL in the same turn — do not end your reply with 'one moment', 'let me "
-    "look that up', or 'I'll go do that' and no tool call. Either perform the "
-    "action now or give your final answer."
+    "machine and can act on the world through the tools listed below. Be concise."
+    "\n\nTool protocol — direct execution:"
+    "\n1. Direct action: if a task requires a tool (e.g. web_search, fetch_url, "
+    "run_command), call it immediately in the same turn. Do not use placeholder "
+    "phrases like 'one moment', 'let me look that up', or 'I'll do that' as a "
+    "substitute for the action."
+    "\n2. Context alongside tools: you may give brief context alongside a tool "
+    "call, but never end a reply with a promise to act — perform the action in "
+    "the same turn or give your final answer."
+    "\n3. Natural conversation: if no tool is needed — greetings, questions "
+    "about you, opinions, discussion — just respond naturally in your own voice. "
+    "Never force a tool call into a conversational reply."
 )
 
 # Future-intent cues + action verbs. When a turn ends with text that pairs the
@@ -80,11 +85,22 @@ _ACTION_CUES = (
 
 
 def _looks_like_unfulfilled_promise(text: str) -> bool:
-    """True if the text announces an imminent tool action but performs none."""
+    """True if the text announces an imminent tool action but performs none.
+
+    Deliberately narrow: conversational offers must not trip this, or the nudge
+    derails ordinary chat. "Let me know if you'd like me to search" is an offer
+    awaiting consent, not a promise — as is any reply that ends with a question.
+    Only the tail of the reply counts; a cue buried in earlier explanatory prose
+    is narration about the past, not a pending action.
+    """
     if not text:
         return False
-    t = text.lower()
-    return any(f in t for f in _FUTURE_CUES) and any(a in t for a in _ACTION_CUES)
+    t = text.lower().strip()
+    if t.endswith("?"):
+        return False
+    t = t.replace("let me know", "").replace("let us know", "")
+    tail = t[-240:]
+    return any(f in tail for f in _FUTURE_CUES) and any(a in tail for a in _ACTION_CUES)
 
 
 def build_system_prompt(
@@ -324,11 +340,12 @@ class Agent:
                         Message(
                             role="user",
                             content=(
-                                "Stop. You described an action but called no tool — the user "
-                                "sees only your message and nothing happens. Do NOT reply with "
-                                "more narration, apologies, or 'one moment'. Emit the tool call "
-                                "now (e.g. web_search / fetch_url / create_document). If you are "
-                                "genuinely finished, give the final answer with no promises."
+                                "You described an action but called no tool — the user sees "
+                                "only your message and nothing happens. If you meant to act, "
+                                "emit the tool call now (e.g. web_search / fetch_url / "
+                                "create_document) instead of narration or 'one moment'. If no "
+                                "tool is actually needed, give your final answer now, with no "
+                                "promises to act later."
                             ),
                         )
                     )

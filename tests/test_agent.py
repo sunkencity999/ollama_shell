@@ -209,6 +209,38 @@ def test_plain_answer_is_not_nudged():
     assert isinstance(events[-1], TurnComplete)
 
 
+def test_conversational_offer_is_not_nudged():
+    # "Let me know if you'd like me to search" is an offer awaiting consent,
+    # not a promise — nudging here derails ordinary conversation.
+    agent, provider = _agent(
+        [
+            [
+                ChatChunk(
+                    content=(
+                        "Hi! I'm doing great, thanks for asking. Let me know if "
+                        "you'd like me to search for anything."
+                    ),
+                    done=True,
+                )
+            ]
+        ]
+    )
+    events = list(agent.send("hey, how are you?"))
+    assert provider.calls == 1
+    assert isinstance(events[-1], TurnComplete)
+
+
+def test_question_to_user_is_not_nudged():
+    # A reply that ends by asking the user something is handing them the turn,
+    # not promising an action.
+    agent, provider = _agent(
+        [[ChatChunk(content="I can look that up — should I search the web?", done=True)]]
+    )
+    events = list(agent.send("what's the weather like?"))
+    assert provider.calls == 1
+    assert isinstance(events[-1], TurnComplete)
+
+
 # ── effective context: explicit config wins; auto sizes from the model ────────
 
 
