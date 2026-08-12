@@ -683,7 +683,9 @@ class OllamaShellTUI(App):
     def _confirm_delete_model(self, name: str) -> None:
         active = " — it is the ACTIVE model" if name == self.agent.model else ""
         self.push_screen(
-            ConfirmScreen(f"Delete [b]{name}[/b] from the backend{active}? This frees its disk space."),
+            ConfirmScreen(
+                f"Delete [b]{name}[/b] from the backend{active}? This frees its disk space."
+            ),
             lambda ok: self._on_delete_confirmed(name, bool(ok)),
         )
 
@@ -1065,8 +1067,34 @@ class OllamaShellTUI(App):
         if cmd in ("daydream", "dream"):
             self._start_daydream()
             return True
+        if cmd == "route":
+            rcfg = self.agent.config.routing
+            if arg in ("on", "off"):
+                rcfg.enabled = arg == "on"
+                from ..config import update_local_config
+
+                try:
+                    update_local_config({"routing": {"enabled": rcfg.enabled}})
+                except Exception:  # pragma: no cover - defensive
+                    pass
+            self.notify(
+                f"Routing {'on' if rcfg.enabled else 'off'} · "
+                f"fast={rcfg.fast_model or '—'} deep={rcfg.deep_model or '—'} "
+                f"vision={rcfg.vision_model or '—'}"
+            )
+            return True
+        # Not built in — maybe it's one of the user's ~/.oshell/commands/*.md.
+        from .. import commands as custom
+
+        rendered = custom.render(cmd, arg)
+        if rendered is not None:
+            if self._busy:
+                return True
+            self._maybe_route(rendered, False)
+            self._send_prompt(rendered, escape(typed))
+            return True
         self.notify(
-            f"Unknown command /{cmd}. Try /clear, /daydream, /mood, /help, or /menu.",
+            f"Unknown command /{cmd}. Try /clear, /daydream, /mood, /route, /help, or /menu.",
             severity="warning",
         )
         return True
@@ -1178,6 +1206,21 @@ class OllamaShellTUI(App):
             return
         if not text:
             text = "Describe / analyze the attached image."
+        self._maybe_route(text, bool(images))
+        self._send_prompt(text, echo, images)
+
+    def _maybe_route(self, text: str, has_images: bool) -> None:
+        """Switch models for this message when routing says so (visible note)."""
+        from ..routing import pick_model
+
+        routed = pick_model(text, has_images, self.agent.config.routing, self.agent.model)
+        if routed:
+            self.agent.model = routed[0]
+            self._rebuild_registry()  # vision/GUI tools are capability-gated per model
+            self.notify(f"→ {routed[0]} ({routed[1]})", timeout=3)
+
+    def _send_prompt(self, text: str, echo: str, images: list[str] | None = None) -> None:
+        """Echo the prompt into the transcript and start the agent worker."""
         # A dim, timestamped rule gives the transcript a visual rhythm — the eye
         # can find where each exchange starts.
         self._conversation().write(
@@ -1188,7 +1231,7 @@ class OllamaShellTUI(App):
         self._stream = ""
         self._status = "Thinking"
         self._busy = True
-        self.run_worker(lambda: self._worker(text, images), thread=True, exclusive=True)
+        self.run_worker(lambda: self._worker(text, images or []), thread=True, exclusive=True)
 
     def _worker(self, text: str, images: list[str] | None = None) -> None:
         convo, activity = self._conversation(), self._activity()

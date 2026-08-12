@@ -104,7 +104,10 @@ def _looks_like_unfulfilled_promise(text: str) -> bool:
 
 
 def build_system_prompt(
-    registry: ToolRegistry, base: str = DEFAULT_SYSTEM_PROMPT, memory: Any = None
+    registry: ToolRegistry,
+    base: str = DEFAULT_SYSTEM_PROMPT,
+    memory: Any = None,
+    project: str | None = None,
 ) -> str:
     """Compose a tool-aware system prompt.
 
@@ -204,6 +207,11 @@ def build_system_prompt(
         if items:
             facts = "\n".join(f"- {m['text']}" for m in items)
             prompt += f"\n\nThings you remember about the user (long-term memory):\n{facts}"
+    if project:
+        prompt += (
+            "\n\nThe user launched you inside this project — answer questions about "
+            f"'this project' / 'this repo' from it without being re-told:\n{project}"
+        )
     return prompt
 
 
@@ -225,12 +233,19 @@ class Agent:
         self.config = config
         self.memory = memory  # MemoryStore (or None) — injected facts + remember tool
         self.model = model or config.default_model
+        # Project brief (git repo at launch dir) — computed once; refreshed on
+        # rebuild_system_prompt so long sessions see new commits.
+        self._project: str | None = None
+        if config.project_context:
+            from ..project import project_context
+
+            self._project = project_context()
         # Build a tool-aware prompt unless the caller supplies an explicit one.
         self._custom_prompt = system_prompt
         content = (
             system_prompt
             if system_prompt is not None
-            else build_system_prompt(registry, memory=memory)
+            else build_system_prompt(registry, memory=memory, project=self._project)
         )
         self.messages: list[Message] = [Message(role="system", content=content)]
         # Context management: indices into ``self.messages``.
@@ -265,7 +280,13 @@ class Agent:
         """Refresh the system message after the registry changes (tools toggled,
         model switched) or memory updates, so the model has the current tools+facts."""
         if self._custom_prompt is None and self.messages and self.messages[0].role == "system":
-            self.messages[0].content = build_system_prompt(self.registry, memory=self.memory)
+            if self.config.project_context:
+                from ..project import project_context
+
+                self._project = project_context()
+            self.messages[0].content = build_system_prompt(
+                self.registry, memory=self.memory, project=self._project
+            )
 
     # ── context management ───────────────────────────────────────────────────
     def pin(self, index: int) -> None:

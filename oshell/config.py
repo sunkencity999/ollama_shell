@@ -24,6 +24,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from .routing import RoutingConfig
+
 # Files searched, lowest precedence first. Resolved relative to the current
 # working directory so the shell can be configured per-project.
 _CONFIG_FILES = ("config.json", "config.local.json")
@@ -60,7 +62,8 @@ class SessionConfig(BaseModel):
     """Persist & resume the conversation transcript across runs."""
 
     persist: bool = True
-    path: str = "~/.oshell/last_session.json"
+    path: str = "~/.oshell/last_session.json"  # TUI auto-resume (single slot)
+    dir: str = "~/.oshell/sessions"  # CLI named-session store (oshell sessions)
     max_messages: int = 200
 
 
@@ -213,6 +216,12 @@ class Config(BaseModel):
 
     # Conversation persistence / resume
     session: SessionConfig = Field(default_factory=SessionConfig)
+
+    # Automatic model routing (fast/deep/vision per message)
+    routing: RoutingConfig = Field(default_factory=RoutingConfig)
+
+    # Inject a brief about the git repo oshell was launched in
+    project_context: bool = True
 
     # Local vector knowledge base
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)

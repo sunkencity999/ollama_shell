@@ -266,8 +266,43 @@ after each turn, so reopening `oshell tui` picks up right where you left off.
 Start fresh with **menu → New conversation** or **`/clear`**. Disable with
 `{"session":{"persist":false}}`.
 
+**Named sessions (CLI).** Every `oshell chat` autosaves to `~/.oshell/sessions/`.
+`oshell sessions` lists them (id, title, model, when); `oshell resume` reopens the
+most recent one — with the model you left it on — and `oshell resume <id>` (any
+unique prefix) reopens a specific one.
+
 **Slash commands.** `/clear` (new conversation), `/daydream` (wander 💭), `/menu`
 (open the menu), `/help` (keys + commands).
+
+## A daily driver, not a destination
+
+> 🎓 **[Interactive tutorial →](https://sunkencity999.github.io/ollama_shell/tutorial.html)** — learn all of this in 10 minutes, in your browser.
+
+oshell meets you where you already work — the shell — instead of asking you to
+visit it:
+
+- **Pipe anything in.** stdin becomes context:
+  `cat error.log | oshell ask "why is this failing?"` ·
+  `git diff | oshell ask "write the commit message"`
+- **`oshell do "convert every png here to webp"`** — proposes the exact shell
+  command, you confirm (`y` / `e` to edit / `n`), it runs. Successful commands are
+  remembered and improve future suggestions (`~/.oshell/do_history.jsonl`).
+- **Live in your prompt.** `eval "$(oshell init zsh)"` in `.zshrc` gives you
+  **Ctrl+G** (summons oshell with whatever is on your command line as the
+  question) and a command-not-found hint that points at `oshell do`.
+- **Auto model routing.** Turn on `/route on` and oshell picks per message:
+  quick chat → your fast model, code/reasoning → the big one, images → the vision
+  model, with a dim `→ model (reason)` note when it switches. Configure slots in
+  `config.json`: `{"routing":{"fast_model":"…","deep_model":"…","vision_model":"…"}}`.
+- **Project awareness.** Launched inside a git repo, oshell already knows the
+  branch, recent commits, dirty files, stack, and README — "what is this repo?"
+  just works. Disable with `{"project_context": false}`.
+- **`oshell doctor`** — one command health-checks the whole rig: backend, models,
+  routing, sessions, memory, and every optional capability (including the
+  Mechanic × Drift machine-memory pair).
+- **Your own slash commands.** Drop `~/.oshell/commands/standup.md` containing a
+  prompt template (`$ARGS`, `$1`…`$9` substituted) and `/standup` exists in the
+  REPL and the TUI. The filesystem is the registry.
 
 ## Machine memory — Mechanic × Drift, over MCP
 
