@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Learn Ollama Shell — interactive tutorial</title>
+<meta name="description" content="Learn oshell in 10 minutes: nine tiny interactive lessons in a fake terminal. Install it, chat with it, pipe your shell into it, let it run commands (with your permission), and teach it your own slash commands. All local. No cloud." />
+<meta property="og:title" content="Learn Ollama Shell — interactive tutorial" />
+<meta property="og:description" content="Nine tiny lessons in a fake terminal: chat, models, pipes, the agent, sessions, Ctrl+G, machine memory, and custom slash commands. Type along — it types back." />
+<meta property="og:type" content="website" />
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#0f1620; --panel2:#0c121b; --ink:#d7e2ee; --dim:#7c8ba0;
+    --accent:#4fd1c5; --accent2:#8b7cff; --cyan:#59c2d6; --green:#7bd88f;
+    --yellow:#e7c667; --red:#e06c75; --magenta:#c78be6;
+    --user:#7bd88f; --line:#1c2735; --glow:0 0 18px rgba(79,209,197,.18);
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono","Fira Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth; scroll-padding-top:74px}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(139,124,255,.10), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(79,209,197,.10), transparent 55%),
+      var(--bg);
+    color:var(--ink); font-family:var(--mono);
+    min-height:100%; -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent)}
+  :is(a,button,input,summary):focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px}
+
+  /* ── sticky chapter nav ── */
+  .topnav{position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:12px;
+    padding:10px 16px; background:rgba(11,15,20,.86); backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line)}
+  .topnav .brand{color:var(--ink); text-decoration:none; font-weight:700; font-size:14px; white-space:nowrap}
+  .topnav .brand .sh{color:var(--accent)}
+  .dots{display:flex; gap:6px; list-style:none; margin:0; padding:0; flex:1; justify-content:center; flex-wrap:wrap}
+  .dotlink{display:flex; align-items:center; justify-content:center; width:26px; height:26px;
+    border:1px solid var(--line); border-radius:50%; color:var(--dim); font-size:11.5px;
+    text-decoration:none; transition:.15s; background:var(--panel)}
+  .dotlink:hover{border-color:var(--accent); color:var(--ink)}
+  .dotlink.cur{border-color:var(--accent2); color:var(--ink); box-shadow:0 0 10px rgba(139,124,255,.35)}
+  .dotlink.done{border-color:var(--accent); color:#08131a; background:var(--accent)}
+  .dotlink.done::after{content:"✓"; font-weight:700}
+  .dotlink.done .n{display:none}
+  .navcount{color:var(--dim); font-size:12px; white-space:nowrap}
+  @media (max-width:560px){
+    .topnav{gap:8px; padding:8px 10px}
+    .topnav .brand{font-size:12.5px}
+    .dotlink{width:20px; height:20px; font-size:10px}
+    .navcount{font-size:10.5px}
+  }
+
+  main{max-width:880px; margin:0 auto; padding:26px 16px 40px}
+
+  /* ── hero ── */
+  .hero{text-align:center; margin:14px 0 34px}
+  .hero .badge{display:inline-block; font-size:12px; color:var(--accent2);
+    border:1px solid rgba(139,124,255,.35); border-radius:999px; padding:2px 10px; margin-bottom:8px}
+  .hero h1{font-size:clamp(22px,4vw,34px); margin:.2em 0; letter-spacing:.3px}
+  .hero h1 .sh{color:var(--accent)}
+  .hero p{color:var(--dim); max-width:640px; margin:.5em auto; line-height:1.6; font-size:14px}
+  .hero .how{font-size:12.5px}
+  .hero .how kbd{margin:0 2px}
+
+  /* ── chapters ── */
+  .chapter{margin:0 0 46px; scroll-margin-top:74px}
+  .chapter h2{font-size:19px; margin:0 0 8px; letter-spacing:.2px}
+  .chn{display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px;
+    border-radius:50%; border:1px solid var(--accent); color:var(--accent);
+    font-size:13px; margin-right:10px; vertical-align:-4px}
+  .chapter p{color:var(--dim); line-height:1.7; font-size:13.5px; max-width:720px}
+  .chapter p b, .chapter p strong{color:var(--ink)}
+  code.ic{background:#16222f; border:1px solid var(--line); border-radius:4px;
+    padding:0 4px; font-size:12.5px; color:var(--accent); white-space:nowrap}
+  kbd{border:1px solid var(--line); border-bottom-width:2px; border-radius:5px;
+    padding:1px 6px; background:#141e2b; font-size:11.5px; color:var(--ink); white-space:nowrap}
+
+  /* command chip + copy button */
+  .chip{display:inline-flex; align-items:center; gap:6px; background:#0a1119; border:1px solid var(--line);
+    border-radius:7px; padding:3px 4px 3px 9px; margin:2px 2px; max-width:100%}
+  .chip code{color:var(--accent); font-size:12.5px; overflow-x:auto; white-space:nowrap; scrollbar-width:none}
+  .copy{background:#111a25; border:1px solid var(--line); color:var(--dim); font-family:var(--mono);
+    font-size:10.5px; border-radius:5px; padding:2px 7px; cursor:pointer; transition:.15s; white-space:nowrap}
+  .copy:hover{border-color:var(--accent); color:var(--ink)}
+  .copy.did{border-color:var(--green); color:var(--green)}
+
+  /* ── the interactive demo terminal ── */
+  .demo{background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden;
+    box-shadow:var(--glow), 0 16px 44px rgba(0,0,0,.45); margin:16px 0 6px}
+  .dbar{display:flex; align-items:center; gap:8px; padding:9px 12px;
+    background:linear-gradient(180deg,#121b26,#0e151e); border-bottom:1px solid var(--line)}
+  .dot{width:11px; height:11px; border-radius:50%; flex:none}
+  .dot.r{background:#ff5f57}.dot.y{background:#febc2e}.dot.g{background:#28c840}
+  .dname{margin-left:6px; color:var(--dim); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .dctl{margin-left:auto; display:flex; gap:6px}
+  .dbtn{background:#111a25; border:1px solid var(--line); color:var(--dim); font-family:var(--mono);
+    font-size:11px; border-radius:6px; padding:3px 9px; cursor:pointer; transition:.15s; white-space:nowrap}
+  .dbtn:hover{border-color:var(--accent); color:var(--ink)}
+  .dwrap{position:relative}
+  .fx{position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity 1.2s ease; z-index:2; overflow:hidden}
+  .demo.dreaming .stars{opacity:1}
+  .demo.raining .rain{opacity:1}
+  .star{position:absolute; width:2px; height:2px; border-radius:50%;
+    background:#cfe3ff; box-shadow:0 0 6px #9db8ff; animation:tw 3s infinite ease-in-out}
+  @keyframes tw{0%,100%{opacity:.15; transform:scale(.7)} 50%{opacity:.95; transform:scale(1.2)}}
+  .drop{position:absolute; top:-24px; width:1.5px; height:14px;
+    background:linear-gradient(180deg, transparent, #6fa8dcbb); animation:fall linear infinite}
+  @keyframes fall{from{transform:rotate(13deg) translateY(-16px); opacity:0}
+    12%{opacity:.9} to{transform:rotate(13deg) translateY(400px); opacity:.4}}
+  .out{padding:12px 14px; font-size:13px; line-height:1.62; min-height:54px; max-height:340px;
+    overflow-y:auto; scroll-behavior:smooth}
+  .out::-webkit-scrollbar{width:8px}
+  .out::-webkit-scrollbar-thumb{background:#1e2b3b; border-radius:8px}
+  .oline{white-space:pre-wrap; word-break:break-word; margin:1px 0; position:relative; z-index:3}
+  .o-dim{color:var(--dim)} .o-ok{color:var(--green)} .o-warn{color:var(--yellow)}
+  .o-err{color:var(--red)} .o-cyan{color:var(--cyan)} .o-mag{color:var(--magenta)}
+  .o-acc{color:var(--accent)} .o-user{color:var(--user)}
+  .o-dream{color:#a9b7c9; font-style:italic}
+  .o-sys{color:var(--dim); font-style:italic; font-size:12px; margin-top:8px}
+  .oline b{color:var(--ink)}
+  .obox{border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:7px;
+    background:#0a1119; padding:8px 12px; margin:7px 0; overflow-x:auto}
+  .obox code{color:var(--accent); white-space:pre; font-size:12.5px}
+  .caret{display:inline-block; width:8px; height:14px; background:var(--accent);
+    animation:blink 1s steps(2) infinite; vertical-align:-2px}
+  @keyframes blink{50%{opacity:0}}
+  .ibar{display:flex; align-items:center; gap:8px; padding:10px 12px;
+    border-top:1px solid var(--line); background:var(--panel2); font-size:13px}
+  .ibar:focus-within{background:#0e1722}
+  .ps1{color:var(--green); font-weight:700; flex:none}
+  .iwrap{position:relative; flex:1; min-width:0; overflow:hidden}
+  .iin{width:100%; background:transparent; border:0; padding:0; margin:0;
+    color:var(--ink); font:inherit; outline:none; position:relative; z-index:2; caret-color:var(--accent)}
+  .iin:disabled{opacity:.45}
+  .ghost{position:absolute; inset:0; z-index:1; pointer-events:none; white-space:pre; overflow:hidden}
+  .ghost .mirror{visibility:hidden}
+  .ghost .rest{color:var(--dim); opacity:.6}
+  .runbtn{background:#111a25; border:1px solid var(--accent); color:var(--accent); font-family:var(--mono);
+    font-size:12px; border-radius:7px; padding:4px 12px; cursor:pointer; transition:.15s; flex:none}
+  .runbtn:hover:not(:disabled){box-shadow:var(--glow)}
+  .runbtn:disabled{opacity:.4; cursor:default}
+  .ihint{color:var(--dim); font-size:10.5px; flex:none}
+  @media (max-width:520px){ .ihint{display:none} .out{font-size:12.5px} .ibar{font-size:12.5px} }
+
+  /* ── cheat sheet ── */
+  .cheat table{width:100%; border-collapse:collapse; font-size:12.5px; margin-top:12px}
+  .cheat th{color:var(--dim); text-transform:uppercase; letter-spacing:.6px; font-size:10.5px;
+    text-align:left; padding:6px 10px; border-bottom:1px solid var(--line)}
+  .cheat td{padding:6px 10px; border-bottom:1px solid var(--line); vertical-align:top; line-height:1.55}
+  .cheat td:first-child{white-space:nowrap; color:var(--accent)}
+  .cheat td:last-child{color:var(--dim)}
+  .cheat tr.sect td{color:var(--accent2); font-weight:700; padding-top:16px;
+    text-transform:uppercase; letter-spacing:.8px; font-size:10.5px; border-bottom-color:rgba(139,124,255,.35)}
+  .cheat .tblwrap{overflow-x:auto}
+
+  footer{color:var(--dim); font-size:12px; margin:44px auto 0; text-align:center; max-width:640px; line-height:1.8;
+    border-top:1px solid var(--line); padding:22px 8px 8px}
+  footer a{color:var(--accent2)}
+  .resetp{background:none; border:none; color:var(--dim); font-family:var(--mono); font-size:11px;
+    text-decoration:underline; cursor:pointer}
+
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto}
+    .caret,.star,.drop{animation:none}
+    .fx{transition:none}
+  }
+
+  @media print{
+    body{background:#fff; color:#000}
+    .topnav,.demo,.copy,.hero .badge,footer .resetp{display:none}
+    a{color:#000}
+    .chapter p, .chapter h2, .hero p, .hero h1{color:#000}
+    code.ic,kbd{color:#000; background:#eee; border-color:#bbb}
+    .chip{border-color:#bbb; background:#f4f4f4}
+    .chip code{color:#000}
+    .cheat th,.cheat td{color:#000; border-bottom:1px solid #ccc}
+    .cheat td:first-child{color:#000; font-weight:700}
+    .cheat tr.sect td{color:#000}
+  }
+</style>
+</head>
+<body>
+
+<nav class="topnav" aria-label="Chapters">
+  <a class="brand" href="index.html"><span class="sh">oshell</span> tutorial</a>
+  <ol class="dots" id="dots">
+    <li><a class="dotlink" href="#ch1" data-ch="1" title="Install &amp; first run"><span class="n">1</span></a></li>
+    <li><a class="dotlink" href="#ch2" data-ch="2" title="Chat &amp; slash commands"><span class="n">2</span></a></li>
+    <li><a class="dotlink" href="#ch3" data-ch="3" title="Manage models"><span class="n">3</span></a></li>
+    <li><a class="dotlink" href="#ch4" data-ch="4" title="Pipe the shell in"><span class="n">4</span></a></li>
+    <li><a class="dotlink" href="#ch5" data-ch="5" title="oshell do"><span class="n">5</span></a></li>
+    <li><a class="dotlink" href="#ch6" data-ch="6" title="Sessions"><span class="n">6</span></a></li>
+    <li><a class="dotlink" href="#ch7" data-ch="7" title="Live in your shell"><span class="n">7</span></a></li>
+    <li><a class="dotlink" href="#ch8" data-ch="8" title="Machine memory"><span class="n">8</span></a></li>
+    <li><a class="dotlink" href="#ch9" data-ch="9" title="Make it yours"><span class="n">9</span></a></li>
+  </ol>
+  <span class="navcount" id="navcount">0/9 chapters</span>
+</nav>
+
+<main>
+  <header class="hero">
+    <div class="badge">hands-on · the terminals below type back</div>
+    <h1>Learn <span class="sh">oshell</span> in 10 minutes</h1>
+    <p>Ollama Shell is a local-first, agentic terminal assistant for
+    <a href="https://ollama.com">Ollama</a>. Nine tiny lessons, each with a fake
+    terminal you can drive. Nothing here touches a server — and neither does the
+    real thing.</p>
+    <p class="how">In every demo: <b>type</b> the ghosted command (any keys work),
+    press <kbd>Tab</kbd> to autocomplete, <kbd>Enter</kbd> or <b>▶ run</b> to run it.
+    Your progress is saved on this device.</p>
+  </header>
+
+  <!-- ─────────────────────────── 1 ─────────────────────────── -->
+  <section class="chapter" id="ch1" aria-labelledby="h-ch1">
+    <h2 id="h-ch1"><span class="chn">1</span>Install &amp; first run</h2>
+    <p>One pip away. Install it, then just say its name — <code class="ic">oshell</code>
+    drops you into a chat REPL with a privacy banner that means it. When you want the
+    full cockpit (panels, palette, ambient weather), <code class="ic">oshell tui</code>
+    opens the Textual workspace.</p>
+    <p>
+      <span class="chip"><code>pip install ollama-shell</code><button class="copy" data-copy="pip install ollama-shell" aria-label="Copy: pip install ollama-shell">copy</button></span>
+      <span class="chip"><code>oshell</code><button class="copy" data-copy="oshell" aria-label="Copy: oshell">copy</button></span>
+      <span class="chip"><code>oshell tui</code><button class="copy" data-copy="oshell tui" aria-label="Copy: oshell tui">copy</button></span>
+    </p>
+    <div class="demo" id="d1" data-ch="1" data-name="terminal — getting started" role="group" aria-label="Interactive demo: install and first run"></div>
+  </section>
+
+  <!-- ─────────────────────────── 2 ─────────────────────────── -->
+  <section class="chapter" id="ch2" aria-labelledby="h-ch2">
+    <h2 id="h-ch2"><span class="chn">2</span>Chat &amp; slash commands</h2>
+    <p>Inside the REPL, anything that starts with <code class="ic">/</code> is a command,
+    not a question. <code class="ic">/help</code> lists them, <code class="ic">/models</code>
+    and <code class="ic">/tools</code> show what you're working with, and
+    <code class="ic">/daydream</code> lets the model free-associate under a starfield —
+    the same one that closes the <a href="index.html">front-page demo</a>. Context is
+    yours to steer: <code class="ic">/pin</code> keeps a message forever,
+    <code class="ic">/exclude</code> quietly drops one.</p>
+    <div class="demo" id="d2" data-ch="2" data-name="oshell — chat" role="group" aria-label="Interactive demo: chat and slash commands"></div>
+  </section>
+
+  <!-- ─────────────────────────── 3 ─────────────────────────── -->
+  <section class="chapter" id="ch3" aria-labelledby="h-ch3">
+    <h2 id="h-ch3"><span class="chn">3</span>Manage models</h2>
+    <p>Models are files on <em>your</em> disk, so oshell treats them like it:
+    list, pull, remove. In the TUI's model picker the same moves are single keys —
+    <kbd>p</kbd> pulls, <kbd>d</kbd> deletes.</p>
+    <p>
+      <span class="chip"><code>oshell models</code><button class="copy" data-copy="oshell models" aria-label="Copy: oshell models">copy</button></span>
+      <span class="chip"><code>oshell models pull qwen3:8b</code><button class="copy" data-copy="oshell models pull qwen3:8b" aria-label="Copy: oshell models pull qwen3:8b">copy</button></span>
+      <span class="chip"><code>oshell models rm old:7b</code><button class="copy" data-copy="oshell models rm old:7b" aria-label="Copy: oshell models rm old:7b">copy</button></span>
+    </p>
+    <div class="demo" id="d3" data-ch="3" data-name="oshell — models" role="group" aria-label="Interactive demo: manage models"></div>
+  </section>
+
+  <!-- ─────────────────────────── 4 ─────────────────────────── -->
+  <section class="chapter" id="ch4" aria-labelledby="h-ch4">
+    <h2 id="h-ch4"><span class="chn">4</span>Pipe the shell in</h2>
+    <p>The oldest trick in Unix, now with a brain on the other end: whatever you pipe
+    into <code class="ic">oshell ask</code> becomes context for the question. Logs,
+    diffs, CSVs — stdin in, sense out. And because the model is local, your logs go
+    exactly nowhere.</p>
+    <p>
+      <span class="chip"><code>cat error.log | oshell ask "why is this failing?"</code><button class="copy" data-copy='cat error.log | oshell ask "why is this failing?"' aria-label="Copy: cat error.log piped to oshell ask">copy</button></span>
+      <span class="chip"><code>git diff | oshell ask "write the commit message"</code><button class="copy" data-copy='git diff | oshell ask "write the commit message"' aria-label="Copy: git diff piped to oshell ask">copy</button></span>
+    </p>
+    <div class="demo" id="d4" data-ch="4" data-name="zsh — stdin becomes context" role="group" aria-label="Interactive demo: piping into oshell ask"></div>
+  </section>
+
+  <!-- ─────────────────────────── 5 ─────────────────────────── -->
+  <section class="chapter" id="ch5" aria-labelledby="h-ch5">
+    <h2 id="h-ch5"><span class="chn">5</span>Say what you want done</h2>
+    <p><code class="ic">oshell do</code> is the agent with its hand raised, not on the
+    trigger: describe the outcome, it proposes the <em>exact</em> shell command, and
+    nothing runs until you say <kbd>y</kbd>. Press <kbd>e</kbd> to edit the command
+    first, <kbd>n</kbd> to walk away.</p>
+    <p>
+      <span class="chip"><code>oshell do "convert every png here to webp"</code><button class="copy" data-copy='oshell do "convert every png here to webp"' aria-label="Copy: oshell do convert every png here to webp">copy</button></span>
+    </p>
+    <div class="demo" id="d5" data-ch="5" data-name="oshell — do (confirm before run)" role="group" aria-label="Interactive demo: oshell do with confirmation"></div>
+  </section>
+
+  <!-- ─────────────────────────── 6 ─────────────────────────── -->
+  <section class="chapter" id="ch6" aria-labelledby="h-ch6">
+    <h2 id="h-ch6"><span class="chn">6</span>Sessions</h2>
+    <p>Every conversation autosaves — there is no save button to forget.
+    <code class="ic">oshell sessions</code> lists them; <code class="ic">oshell resume</code>
+    picks up the last one mid-thought, or name an id (any unique prefix works) to
+    reopen any of them — with the model you left it on.</p>
+    <p>
+      <span class="chip"><code>oshell sessions</code><button class="copy" data-copy="oshell sessions" aria-label="Copy: oshell sessions">copy</button></span>
+      <span class="chip"><code>oshell resume</code><button class="copy" data-copy="oshell resume" aria-label="Copy: oshell resume">copy</button></span>
+    </p>
+    <div class="demo" id="d6" data-ch="6" data-name="oshell — sessions" role="group" aria-label="Interactive demo: sessions and resume"></div>
+  </section>
+
+  <!-- ─────────────────────────── 7 ─────────────────────────── -->
+  <section class="chapter" id="ch7" aria-labelledby="h-ch7">
+    <h2 id="h-ch7"><span class="chn">7</span>Live in your shell</h2>
+    <p>One <code class="ic">eval</code> in your <code class="ic">.zshrc</code> and oshell
+    moves in: <kbd>⌃G</kbd> summons it with <em>whatever is on your command line</em>
+    as the question — perfect for the flag you can never remember — and mistyped
+    commands get a helpful hint instead of a shrug.</p>
+    <p>
+      <span class="chip"><code>eval "$(oshell init zsh)"</code><button class="copy" data-copy='eval "$(oshell init zsh)"' aria-label="Copy: eval oshell init zsh">copy</button></span>
+    </p>
+    <div class="demo" id="d7" data-ch="7" data-name="zsh — Ctrl+G widget" role="group" aria-label="Interactive demo: the Ctrl+G shell widget"></div>
+  </section>
+
+  <!-- ─────────────────────────── 8 ─────────────────────────── -->
+  <section class="chapter" id="ch8" aria-labelledby="h-ch8">
+    <h2 id="h-ch8"><span class="chn">8</span>Machine memory</h2>
+    <p>oshell knows what's <em>normal for your machine</em>. <code class="ic">oshell doctor</code>
+    health-checks the whole stack — backend, models, disk, optional features, and the
+    Mechanic&nbsp;×&nbsp;Drift machine-memory servers. Then, in chat, questions like
+    “is this fan speed normal?” get answered from <em>your</em> telemetry baselines,
+    not vibes.</p>
+    <p>
+      <span class="chip"><code>oshell doctor</code><button class="copy" data-copy="oshell doctor" aria-label="Copy: oshell doctor">copy</button></span>
+    </p>
+    <div class="demo" id="d8" data-ch="8" data-name="oshell — doctor · Mechanic × Drift" role="group" aria-label="Interactive demo: oshell doctor and machine memory"></div>
+  </section>
+
+  <!-- ─────────────────────────── 9 ─────────────────────────── -->
+  <section class="chapter" id="ch9" aria-labelledby="h-ch9">
+    <h2 id="h-ch9"><span class="chn">9</span>Make it yours</h2>
+    <p>Drop a markdown file in <code class="ic">~/.oshell/commands/</code> and it
+    <em>is</em> a slash command — the filename becomes the name, <code class="ic">$ARGS</code>
+    becomes whatever you type after it, in chat and the TUI alike. Set the sky with
+    <code class="ic">/mood rain</code>, restyle everything with the theme picker
+    (<kbd>Esc</kbd> → Theme, previews live), and let auto model routing do the
+    thinking about thinking: a fast model for chat, the big one for hard questions —
+    oshell switches and tells you.</p>
+    <div class="demo" id="d9" data-ch="9" data-name="oshell — custom commands · moods · routing" role="group" aria-label="Interactive demo: custom slash commands, moods and model routing"></div>
+  </section>
+
+  <!-- ─────────────────────── cheat sheet ─────────────────────── -->
+  <section class="chapter cheat" id="cheatsheet" aria-labelledby="h-cheat">
+    <h2 id="h-cheat"><span class="chn">✦</span>Cheat sheet</h2>
+    <p>Everything above, one screen, print-friendly. (<kbd>⌘P</kbd> makes a decent desk card.)</p>
+    <div class="tblwrap">
+    <table>
+      <thead><tr><th scope="col">Command / key</th><th scope="col">What it does</th></tr></thead>
+      <tbody>
+        <tr class="sect"><td colspan="2">Getting in</td></tr>
+        <tr><td>pip install ollama-shell</td><td>install</td></tr>
+        <tr><td>oshell</td><td>chat REPL (local-first, autosaves)</td></tr>
+        <tr><td>oshell tui</td><td>full Textual workspace</td></tr>
+        <tr class="sect"><td colspan="2">In chat</td></tr>
+        <tr><td>/help · /models · /tools</td><td>list commands, models, tools</td></tr>
+        <tr><td>/daydream</td><td>the model free-associates under a starfield</td></tr>
+        <tr><td>/pin N · /exclude N</td><td>keep / drop a message from context</td></tr>
+        <tr><td>/mood rain</td><td>set the ambient weather</td></tr>
+        <tr><td>/&lt;name&gt; …</td><td>your own commands from ~/.oshell/commands/&lt;name&gt;.md ($ARGS)</td></tr>
+        <tr class="sect"><td colspan="2">Models</td></tr>
+        <tr><td>oshell models</td><td>table: name, params, quant, disk</td></tr>
+        <tr><td>oshell models pull qwen3:8b</td><td>download with live progress</td></tr>
+        <tr><td>oshell models rm old:7b</td><td>delete, reclaim disk</td></tr>
+        <tr><td>p / d (TUI picker)</td><td>pull / delete the highlighted model</td></tr>
+        <tr class="sect"><td colspan="2">From the shell</td></tr>
+        <tr><td>… | oshell ask "q"</td><td>stdin becomes context for the question</td></tr>
+        <tr><td>oshell do "outcome"</td><td>proposes a command; y run · e edit · n cancel</td></tr>
+        <tr><td>oshell sessions</td><td>list saved conversations (id, title, when, model)</td></tr>
+        <tr><td>oshell resume [id]</td><td>reopen the last (or a specific) session</td></tr>
+        <tr><td>oshell doctor</td><td>health-check backend, models, disk, Mechanic × Drift</td></tr>
+        <tr class="sect"><td colspan="2">Shell integration</td></tr>
+        <tr><td>eval "$(oshell init zsh)"</td><td>install the widget + command-not-found hint</td></tr>
+        <tr><td>Ctrl+G</td><td>ask oshell about the command line you're writing</td></tr>
+        <tr class="sect"><td colspan="2">TUI keys</td></tr>
+        <tr><td>Esc · Ctrl+P</td><td>menu · command palette</td></tr>
+        <tr><td>Ctrl+B · Ctrl+Y</td><td>copy last code block · copy last reply</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <footer>
+    <p>That's the whole tour — the rest is between you and your machine.</p>
+    <p><a href="index.html">← watch it dream (the animated demo)</a> ·
+       <a href="https://github.com/sunkencity999/ollama_shell">source &amp; README on GitHub →</a></p>
+    <p><button class="resetp" id="resetp">reset tutorial progress</button></p>
+  </footer>
+</main>
+
+<script>
+(() => {
+  'use strict';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const sleep = ms => new Promise(r => setTimeout(r, reduce ? 0 : ms));
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const plain = h => h.replace(/<[^>]+>/g,'')
+    .replace(/&nbsp;/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+
+  /* ── progress (localStorage) ─────────────────────────────────── */
+  const KEY = 'oshell-tutorial-v1';
+  let done = new Set();
+  try { done = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch(e){}
+  const navcount = document.getElementById('navcount');
+  function saveDone(){ try { localStorage.setItem(KEY, JSON.stringify([...done])); } catch(e){} }
+  function refreshNav(){
+    navcount.textContent = done.size + '/9 chapters';
+    document.querySelectorAll('.dotlink').forEach(a =>
+      a.classList.toggle('done', done.has(+a.dataset.ch)));
+  }
+  function markDone(ch){ if(!done.has(ch)){ done.add(ch); saveDone(); refreshNav(); } }
+  document.getElementById('resetp').addEventListener('click', () => {
+    done.clear(); saveDone(); refreshNav();
+  });
+
+  /* scroll spy: light up the chapter you're reading */
+  const spy = new IntersectionObserver(es => {
+    es.forEach(e => {
+      if(!e.isIntersecting) return;
+      const n = e.target.id.replace('ch','');
+      document.querySelectorAll('.dotlink').forEach(a =>
+        a.classList.toggle('cur', a.dataset.ch === n));
+    });
+  }, { rootMargin: '-30% 0px -60% 0px' });
+  document.querySelectorAll('section[id^=ch]').forEach(s => spy.observe(s));
+
+  /* ── copy buttons ────────────────────────────────────────────── */
+  async function copyText(t){
+    try { await navigator.clipboard.writeText(t); }
+    catch(e){
+      const ta = document.createElement('textarea');
+      ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch(e2){}
+      ta.remove();
+    }
+  }
+  document.querySelectorAll('.copy').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await copyText(btn.dataset.copy);
+      btn.classList.add('did'); btn.textContent = 'copied ✓';
+      setTimeout(() => { btn.classList.remove('did'); btn.textContent = 'copy'; }, 1400);
+    });
+  });
+
+  /* ── demo step constructors ──────────────────────────────────── */
+  // L: line popped in after a delay · S: streamed char by char
+  const L = (h, c='', d=120) => ({h, c, d});
+  const S = (h, c='') => ({h, c, st:1});
+  const BOX = cmd => ({box:cmd});
+  const PROG = (name, gb) => ({p:1, name, gb});
+  const ASK = (ask, key, d=1000) => ({ask, key, d});
+  const FX = kind => ({fx:kind});
+  const CARET = () => ({h:"<span class='o-user'>›</span> <span class='caret'></span>", c:'', d:260});
+
+  /* ── the nine lessons ────────────────────────────────────────── */
+  const DEMOS = {
+    d1: { stages: [
+      { ps:'$', cmd:'pip install ollama-shell', out:[
+        L('Collecting ollama-shell','o-dim',300),
+        L('  Downloading ollama_shell-0.2.0-py3-none-any.whl (214 kB)','o-dim',260),
+        L('Installing collected packages: ollama-shell','o-dim',420),
+        L('Successfully installed ollama-shell-0.2.0','o-ok',300),
+      ]},
+      { ps:'$', cmd:'oshell', out:[
+        L("<span class='o-acc'>oshell</span> · chat · <b>gemma4</b> · ollama · 22 tools",'',340),
+        L('🔒 Local-first: the model runs on this machine.','o-warn',240),
+        L('type /help for commands · conversations autosave · Ctrl+C to leave','o-dim',220),
+        CARET(),
+      ]},
+      { ps:'$', cmd:'oshell tui', out:[
+        L('opening the full Textual workspace…','o-dim',320),
+        L('  panels: conversation · tools · context · activity','',260),
+        L('  extras: theme picker · command palette · ambient weather on the idle strip','',240),
+        L("(it's the terminal on the <a href='index.html'>front page</a> — the one that dreams)",'o-dim',300),
+      ]},
+    ]},
+
+    d2: { stages: [
+      { ps:'›', cmd:'/help', out:[
+        L('slash commands','o-acc',260),
+        L("  <span class='o-cyan'>/help</span>            this list",'',110),
+        L("  <span class='o-cyan'>/models</span>          list &amp; switch models",'',110),
+        L("  <span class='o-cyan'>/tools</span>           what I'm allowed to touch",'',110),
+        L("  <span class='o-cyan'>/daydream</span>        let the model free-associate ✨",'',110),
+        L("  <span class='o-cyan'>/pin &lt;n&gt;</span>         pin a message — survives trimming",'',110),
+        L("  <span class='o-cyan'>/exclude &lt;n&gt;</span>     drop a message from context",'',110),
+        L("  <span class='o-cyan'>/mood &lt;sky&gt;</span>      set the ambient weather",'',110),
+        L('  …plus anything you put in ~/.oshell/commands/','o-dim',160),
+      ]},
+      { ps:'›', cmd:'/daydream', out:[
+        FX('stars'),
+        L('the room goes quiet · a starfield settles over the terminal','o-dim',700),
+        S('💭 the cursor blinks like a lighthouse for ships made of seconds; every prompt you never sent drifts by as a paper boat, unhurried, sure of the harbor…','o-dream'),
+        L('(/daydream again for a new one · any key brings the room back)','o-dim',500),
+      ]},
+      { ps:'›', cmd:'/pin 2', out:[
+        L('📌 pinned message 2 — it will survive context trimming.','o-mag',300),
+      ]},
+      { ps:'›', cmd:'/exclude 5', out:[
+        L('🚫 message 5 excluded from context (still in the transcript).','o-dim',300),
+        L("context: <span class='o-acc'>▰▰▱▱▱▱▱▱▱▱</span> 18% of ~8k tokens",'o-dim',240),
+      ]},
+    ]},
+
+    d3: { stages: [
+      { ps:'$', cmd:'oshell models', out:[
+        L("  <b>NAME</b>            <b>PARAMS</b>   <b>QUANT</b>    <b>DISK</b>",'o-dim',300),
+        L("<span class='o-ok'>●</span> gemma4:latest    12.2B    Q4_K_M   7.6 GB   <span class='o-dim'>(default)</span>",'',140),
+        L('  llama3.2:3b       3.2B    Q4_K_M   2.0 GB','',140),
+        L('  old:7b            7.0B    Q4_0     3.8 GB','',140),
+        L('3 models · 13.4 GB on disk','o-dim',220),
+      ]},
+      { ps:'$', cmd:'oshell models pull qwen3:8b', out:[
+        L('resolving manifest… 5.2 GB in 3 layers','o-dim',420),
+        PROG('qwen3:8b', 5.2),
+        L('verifying sha256 · writing manifest','o-dim',420),
+        L('✓ qwen3:8b ready — try it with /models','o-ok',280),
+      ]},
+      { ps:'$', cmd:'oshell models rm old:7b', out:[
+        L('removed old:7b — reclaimed 3.8 GB','o-ok',420),
+        L("tip: in the TUI model picker, <b>p</b> pulls and <b>d</b> deletes.",'o-dim',260),
+      ]},
+    ]},
+
+    d4: { stages: [
+      { ps:'$', cmd:'cat error.log | oshell ask "why is this failing?"', out:[
+        L('reading 240 lines from stdin → context','o-dim',420),
+        S("Your service dies at <b>03:12</b> with ECONNREFUSED 127.0.0.1:5432 — Postgres isn't up yet when the app starts. The retry loop only tries twice, 100 ms apart. Give it exponential backoff (or a healthcheck dependency) and it will ride out the slow database boot.",''),
+        L('⏱ 2.4s · ~41 tok/s · nothing left this machine','o-dim',300),
+      ]},
+      { ps:'$', cmd:'git diff | oshell ask "write the commit message"', out:[
+        L('reading 3 files, +48 −12 from stdin','o-dim',420),
+        L("<b>fix(db): wait for postgres before accepting connections</b>",'',400),
+        L('','',60),
+        L('Retry with exponential backoff (max 30 s) instead of two','',130),
+        L('100 ms attempts; log each retry at debug level.','',130),
+        L("pipe it straight through: git diff | oshell ask … | git commit -F -",'o-dim',360),
+      ]},
+    ]},
+
+    d5: { stages: [
+      { ps:'$', cmd:'oshell do "convert every png here to webp"', out:[
+        L('plan: 14 png files · cwebp not found · ImageMagick 7.1 is installed','o-dim',540),
+        BOX('magick mogrify -format webp -quality 82 *.png'),
+        ASK('run it?  [y]es · [e]dit command · [n]o  › ', 'y', 1100),
+        L('converting… 14/14','o-dim',700),
+        L('✓ done — 14 webp written, originals kept (9.1 MB saved)','o-ok',320),
+        L('nothing ran until you pressed y — that is the whole contract.','o-dim',300),
+      ]},
+    ]},
+
+    d6: { stages: [
+      { ps:'$', cmd:'oshell sessions', out:[
+        L("  <b>ID</b>                <b>TITLE</b>                     <b>WHEN</b>          <b>MODEL</b>",'o-dim',300),
+        L('  20260812-091412   webp batch convert        2 min ago     gemma4','',140),
+        L('  20260812-081109   postgres startup crash    1 h ago       qwen3:8b','',140),
+        L('  20260811-223054   stargazing plan           yesterday     gemma4','',140),
+        L('conversations autosave — there is nothing to remember to save.','o-dim',240),
+      ]},
+      { ps:'$', cmd:'oshell resume', out:[
+        L("resuming <b>20260812-091412</b> · “webp batch convert” · 7 messages · gemma4",'o-dim',480),
+        CARET(),
+        L('a specific one: oshell resume 20260812-08   (any unique prefix works)','o-dim',320),
+      ]},
+    ]},
+
+    d7: { stages: [
+      { ps:'$', cmd:'eval "$(oshell init zsh)"', out:[
+        L('✓ zsh hooks installed','o-ok',380),
+        L("  <b>Ctrl+G</b>             summon oshell with your current command line",'o-dim',180),
+        L("  command-not-found  a hint instead of a shrug",'o-dim',180),
+      ]},
+      { ps:'$', cmd:'ffmpeg -i screen.mov', out:[
+        L("<kbd>⌃G</kbd> <span class='o-dim'>— stuck mid-command? oshell reads the line you were writing…</span>",'',600),
+        S('You want a web-friendly clip. Finish it like this:','o-acc'),
+        BOX('ffmpeg -i screen.mov -c:v libx264 -crf 23 -preset veryslow -an screen.mp4'),
+        L('↩ Enter puts it back on your prompt, ready to edit or run.','o-dim',320),
+      ]},
+      { ps:'$', cmd:'webpify photo.png', out:[
+        L('zsh: command not found: webpify','o-err',420),
+        L("<span class='o-acc'>oshell:</span> no webpify here — did you mean <b>magick photo.png photo.webp</b>? (imagemagick is installed)",'',420),
+      ]},
+    ]},
+
+    d8: { stages: [
+      { ps:'$', cmd:'oshell doctor', out:[
+        L("  <span class='o-ok'>✓</span> backend          ollama at 127.0.0.1:11434 (42 ms)",'',260),
+        L("  <span class='o-ok'>✓</span> models           3 installed · gemma4 default, loaded",'',180),
+        L("  <span class='o-ok'>✓</span> disk             118 GB free of 494 GB",'',180),
+        L("  <span class='o-ok'>✓</span> rag              knowledge base: 2 collections",'',180),
+        L("  <span class='o-dim'>– browser          optional, not installed</span>",'',180),
+        L("  <span class='o-ok'>✓</span> machine memory   Mechanic × Drift · baseline 21 days · snapshot 14 min ago",'',180),
+        L('healthy — 5 checks passed, 1 optional feature off','o-ok',300),
+      ]},
+      { ps:'›', cmd:'is this fan speed normal?', out:[
+        L("🔧 <span class='o-cyan'>mechanic_is_this_normal</span><span class='o-dim'>(sensors.fan_rpm)</span>",'',640),
+        L('   ↳ {"normal": false, "value": 4980, "mean": 1820, "z_score": 5.9}','o-dim',560),
+        L("🔧 <span class='o-cyan'>drift_diff_latest</span><span class='o-dim'>()</span>",'',560),
+        L('   ↳ processes: +1 (mediaanalysisd — high CPU since 21:40)','o-dim',560),
+        S("<b>Not normal for this machine.</b> Fans at 4,980 rpm against your usual ~1,800 — six sigma out. Drift pins it on mediaanalysisd re-indexing tonight's Photos import. CPU-bound, should settle within the hour; nothing malicious.",''),
+        L('⏱ 5.1s · answered from your baselines, not vibes','o-dim',300),
+      ]},
+    ]},
+
+    d9: { stages: [
+      { ps:'$', cmd:'cat ~/.oshell/commands/standup.md', out:[
+        L('Summarize my recent shell history and git commits into a','o-warn',380),
+        L('three-bullet standup. Keep it dry. Focus on: $ARGS','o-warn',160),
+        L('any .md in ~/.oshell/commands/ becomes /&lt;name&gt; in chat and the TUI.','o-dim',320),
+      ]},
+      { ps:'›', cmd:'/standup infra week', out:[
+        L('running your command standup.md ($ARGS = “infra week”)','o-dim',480),
+        L('• moved the webp pipeline to ImageMagick; 14 assets converted','',360),
+        L('• fixed the postgres startup race (exponential backoff, max 30 s)','',260),
+        L('• oshell doctor green across the fleet — Mechanic baselines rebuilt','',260),
+      ]},
+      { ps:'›', cmd:'/mood rain', out:[
+        FX('rain'),
+        L('🌧 rain settles over the workspace — the dream sky will remember it.','o-dim',700),
+      ]},
+      { ps:'›', cmd:'why does this segfault only under -O2?', out:[
+        L('↷ hard question — routing to <b>qwen3:8b</b> (gemma4 takes the chit-chat back after)','o-dim',700),
+        S("Almost certainly undefined behavior the optimizer is now allowed to exploit — start with that strict-aliasing cast in your ring buffer; -O2 assumes the two pointers never alias and reorders the store.",''),
+        L('⏱ 6.8s · answered by qwen3:8b · routed automatically','o-dim',300),
+      ]},
+    ]},
+  };
+
+  /* ── the demo engine ─────────────────────────────────────────── */
+  function makeFx(el, kind){
+    if(el.childElementCount) return;
+    if(kind === 'stars'){
+      for(let i=0;i<26;i++){
+        const s = document.createElement('div'); s.className = 'star';
+        s.style.left = (Math.random()*100)+'%'; s.style.top = (Math.random()*100)+'%';
+        s.style.animationDelay = (Math.random()*3)+'s';
+        s.style.opacity = String(0.2+Math.random()*0.6);
+        el.appendChild(s);
+      }
+    } else {
+      for(let i=0;i<18;i++){
+        const d = document.createElement('div'); d.className = 'drop';
+        d.style.left = (Math.random()*100)+'%';
+        d.style.animationDuration = (0.9+Math.random()*0.9)+'s';
+        d.style.animationDelay = (Math.random()*1.6)+'s';
+        el.appendChild(d);
+      }
+    }
+  }
+
+  function buildDemo(root){
+    const spec = DEMOS[root.id];
+    const ch = +root.dataset.ch;
+    root.innerHTML =
+      "<div class='dbar'>" +
+        "<span class='dot r'></span><span class='dot y'></span><span class='dot g'></span>" +
+        "<span class='dname'>" + esc(root.dataset.name) + "</span>" +
+        "<span class='dctl'>" +
+          "<button class='dbtn skip' aria-label='Skip this demo and show all output'>⏭ skip</button>" +
+          "<button class='dbtn replay' aria-label='Replay this demo from the start'>↺ replay</button>" +
+        "</span>" +
+      "</div>" +
+      "<div class='dwrap'>" +
+        "<div class='fx stars' aria-hidden='true'></div><div class='fx rain' aria-hidden='true'></div>" +
+        "<div class='out' role='log' aria-live='polite'></div>" +
+      "</div>" +
+      "<div class='ibar'>" +
+        "<span class='ps1'>$</span>" +
+        "<span class='iwrap'><span class='ghost' aria-hidden='true'><span class='mirror'></span><span class='rest'></span></span>" +
+        "<input class='iin' id='iin-" + root.id + "' name='iin-" + root.id + "' " +
+        "spellcheck='false' autocomplete='off' autocapitalize='off' autocorrect='off' " +
+        "aria-label='Type the suggested command. Tab completes it, Enter runs it.'></span>" +
+        "<span class='ihint'>Tab completes · Enter runs</span>" +
+        "<button class='runbtn'>▶ run</button>" +
+      "</div>";
+
+    const demo = {
+      root, spec, ch,
+      out: root.querySelector('.out'),
+      ps1: root.querySelector('.ps1'),
+      input: root.querySelector('.iin'),
+      mirror: root.querySelector('.mirror'),
+      rest: root.querySelector('.rest'),
+      runbtn: root.querySelector('.runbtn'),
+      stars: root.querySelector('.stars'),
+      rain: root.querySelector('.rain'),
+      idx: 0, run: 0, playing: false, finished: false, instant: false,
+      expected: '',
+    };
+
+    const scroll = () => { demo.out.scrollTop = demo.out.scrollHeight; };
+    const mkline = cls => {
+      const d = document.createElement('div');
+      d.className = 'oline' + (cls ? ' ' + cls : '');
+      demo.out.appendChild(d); scroll();
+      return d;
+    };
+
+    function ghostUpdate(){
+      const v = demo.input.value;
+      if(demo.expected && demo.expected.startsWith(v)){
+        demo.mirror.textContent = v;
+        demo.rest.textContent = demo.expected.slice(v.length);
+      } else {
+        demo.mirror.textContent = ''; demo.rest.textContent = '';
+      }
+    }
+
+    function arm(){
+      const st = demo.spec.stages[demo.idx];
+      demo.expected = st.cmd;
+      demo.ps1.textContent = st.ps;
+      demo.input.disabled = false; demo.runbtn.disabled = false;
+      demo.input.value = ''; ghostUpdate();
+    }
+
+    function disarm(){
+      demo.expected = ''; demo.input.value = ''; ghostUpdate();
+      demo.input.disabled = true; demo.runbtn.disabled = true;
+    }
+
+    function applyFx(kind){
+      if(kind === 'stars'){ makeFx(demo.stars, 'stars'); demo.root.classList.add('dreaming'); }
+      else { makeFx(demo.rain, 'rain'); demo.root.classList.add('raining'); }
+    }
+    function clearFx(){ demo.root.classList.remove('dreaming','raining'); }
+
+    async function playStep(step, myRun){
+      const alive = () => demo.run === myRun;
+      const fast = demo.instant || reduce;
+      if(step.fx){ applyFx(step.fx); return true; }
+      if(step.box){
+        if(!fast) await sleep(360); if(!alive()) return false;
+        const d = document.createElement('div'); d.className = 'obox';
+        d.innerHTML = '<code>' + esc(step.box) + '</code>';
+        demo.out.appendChild(d); scroll();
+        return true;
+      }
+      if(step.p){ // pull progress bar
+        if(!fast){ await sleep(300); if(!alive()) return false; }
+        const d = mkline('o-dim');
+        const dur = fast ? 0 : 2400, t0 = Date.now();
+        for(;;){
+          const p = dur ? Math.min(1, (Date.now()-t0)/dur) : 1;
+          const filled = Math.round(p*12);
+          d.textContent = 'pulling ' + step.name + '  ▕' + '█'.repeat(filled) + '▁'.repeat(12-filled)
+            + '▏ ' + String(Math.round(p*100)).padStart(3,' ') + '% · '
+            + (p*step.gb).toFixed(1) + '/' + step.gb.toFixed(1) + ' GB · '
+            + (p < 1 ? (86 + Math.round(Math.random()*18)) + ' MB/s' : 'done');
+          if(p >= 1) break;
+          await sleep(70); if(!alive()) return false;
+        }
+        return true;
+      }
+      if(step.ask){ // confirm prompt: [y]es · [e]dit · [n]o
+        if(!fast){ await sleep(420); if(!alive()) return false; }
+        const d = mkline('o-warn'); d.textContent = step.ask;
+        if(!fast){ await sleep(step.d); if(!alive()) return false; }
+        const k = document.createElement('span');
+        k.className = 'o-user'; k.style.fontWeight = '700'; k.textContent = step.key;
+        d.appendChild(k); scroll();
+        return true;
+      }
+      // plain line: popped, or streamed char by char
+      if(!fast) await sleep(step.st ? 420 : step.d);
+      if(!alive()) return false;
+      const d = mkline(step.c);
+      if(step.st && !fast){
+        const text = plain(step.h);
+        const cur = document.createElement('span'); cur.className = 'caret';
+        const span = document.createElement('span');
+        d.appendChild(span); d.appendChild(cur);
+        for(const chch of text){
+          await sleep(11); if(!alive()) return false;
+          span.insertAdjacentText('beforeend', chch); scroll();
+        }
+        cur.remove();
+      }
+      d.innerHTML = step.h; scroll();
+      return true;
+    }
+
+    async function playStage(i, myRun){
+      const st = demo.spec.stages[i];
+      if(demo.out.childElementCount){ const sp = mkline(''); sp.style.height = '8px'; }
+      const echo = mkline('');
+      echo.innerHTML = "<span class='o-user'>" + esc(st.ps) + "</span> <b>" + esc(st.cmd) + "</b>";
+      for(const step of st.out){
+        const ok = await playStep(step, myRun);
+        if(!ok) return false;
+      }
+      return true;
+    }
+
+    function finish(){
+      demo.finished = true; disarm();
+      const d = mkline('o-sys');
+      d.textContent = '— chapter ' + demo.ch + ' complete ✓ · replay anytime —';
+      markDone(demo.ch);
+    }
+
+    async function runCurrent(){
+      if(demo.playing || demo.finished) return;
+      const myRun = ++demo.run;
+      demo.playing = true; disarm();
+      const ok = await playStage(demo.idx, myRun);
+      demo.playing = false;
+      if(!ok) return;               // superseded by skip/replay
+      demo.idx++;
+      if(demo.idx >= demo.spec.stages.length) finish();
+      else arm();
+    }
+
+    async function skipAll(){
+      demo.run++; demo.playing = false; demo.finished = false;
+      demo.out.innerHTML = ''; clearFx();
+      demo.instant = true;
+      const myRun = ++demo.run;
+      for(let i = 0; i < demo.spec.stages.length; i++) await playStage(i, myRun);
+      demo.instant = false;
+      demo.idx = demo.spec.stages.length;
+      finish();
+      demo.out.scrollTop = demo.out.scrollHeight;
+    }
+
+    function replay(){
+      demo.run++; demo.playing = false; demo.finished = false;
+      demo.out.innerHTML = ''; clearFx();
+      demo.idx = 0; arm();
+      demo.input.focus({preventScroll:true});
+    }
+
+    demo.input.addEventListener('input', ghostUpdate);
+    demo.input.addEventListener('keydown', e => {
+      if(e.key === 'Tab'){
+        e.preventDefault();
+        demo.input.value = demo.expected; ghostUpdate();
+      } else if(e.key === 'Enter'){
+        e.preventDefault();
+        demo.input.value = demo.expected; ghostUpdate();
+        runCurrent();
+      }
+    });
+    demo.runbtn.addEventListener('click', runCurrent);
+    root.querySelector('.skip').addEventListener('click', skipAll);
+    root.querySelector('.replay').addEventListener('click', replay);
+
+    arm();
+    return demo;
+  }
+
+  document.querySelectorAll('.demo').forEach(buildDemo);
+  refreshNav();
+})();
+</script>
+</body>
+</html>
