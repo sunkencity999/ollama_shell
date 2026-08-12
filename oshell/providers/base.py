@@ -51,6 +51,26 @@ class ToolCall:
 
 
 @dataclass
+class PullProgress:
+    """One streamed step of a model download.
+
+    ``total``/``completed`` are bytes for the layer currently downloading;
+    either may be missing on bookkeeping steps ("verifying sha256", "success").
+    """
+
+    status: str = ""
+    total: int | None = None
+    completed: int | None = None
+
+    @property
+    def percent(self) -> float | None:
+        """Layer progress 0–100, when byte counts are known."""
+        if self.total and self.completed is not None:
+            return 100.0 * self.completed / self.total
+        return None
+
+
+@dataclass
 class ChatChunk:
     """One streamed piece of a response.
 
@@ -94,9 +114,9 @@ class LLMProvider(ABC):
         """Model names plus cheap display metadata, when the backend has it.
 
         Each dict has at least ``name``; backends that know more (Ollama's
-        /api/tags carries parameter size and quantization) add ``size`` and
-        ``quant``. Used for badges in the model picker — callers must tolerate
-        missing keys.
+        /api/tags carries parameter size, quantization, and bytes on disk) add
+        ``size``, ``quant``, and ``disk``. Used for badges in the model picker —
+        callers must tolerate missing keys.
         """
         return [{"name": n} for n in self.list_models()]
 
@@ -116,6 +136,22 @@ class LLMProvider(ABC):
         Backends that can introspect (Ollama's /api/show) override this.
         """
         return None
+
+    def supports_model_management(self) -> bool:
+        """Whether this backend can pull and delete models.
+
+        UIs use this to show or hide management affordances; the default
+        methods below raise for backends that leave it False.
+        """
+        return False
+
+    def pull_model(self, name: str) -> Iterator[PullProgress]:
+        """Download a model onto the backend, yielding progress steps."""
+        raise NotImplementedError(f"the {self.name} backend cannot pull models")
+
+    def delete_model(self, name: str) -> None:
+        """Remove a model from the backend."""
+        raise NotImplementedError(f"the {self.name} backend cannot delete models")
 
     def health(self) -> bool:
         """Cheap reachability check; defaults to 'can we list models'."""

@@ -89,6 +89,8 @@ SLASH_HELP = """\
 [bold]Commands[/bold]
   /help            show this help
   /models          list available models
+  /pull NAME       download a model (live progress)
+  /rm NAME         delete a model from the backend
   /context         show pinned / excluded message indices
   /pin N           pin message N (keep in context)
   /exclude N       drop message N from context
@@ -108,6 +110,22 @@ def _handle_slash(agent: Agent, line: str) -> bool:
         console.print(Panel(SLASH_HELP, border_style="cyan", expand=False))
     elif cmd == "/models":
         console.print("\n".join(agent.provider.list_models()))
+    elif cmd == "/pull" and len(parts) == 2:
+        try:
+            _pull_with_progress(agent.provider, parts[1])
+        except Exception as exc:
+            console.print(f"[red]{exc}[/red]")
+    elif cmd == "/rm" and len(parts) == 2:
+        name = parts[1]
+        if name == agent.model:
+            console.print("[yellow]That's the active model — switch first, then delete.[/yellow]")
+            return True
+        if typer.confirm(f"Delete {name} from the backend?"):
+            try:
+                agent.provider.delete_model(name)
+                console.print(f"[green]✓[/green] deleted {name}")
+            except Exception as exc:
+                console.print(f"[red]{exc}[/red]")
     elif cmd == "/tools":
         for t in agent.registry.active():
             tag = "" if t.local_only else " [yellow](network)[/yellow]"
@@ -179,16 +197,89 @@ def ask(prompt: str, model: str = typer.Option(None, "--model", "-m")) -> None:
     _render_turn(agent, prompt)
 
 
-@app.command()
-def models() -> None:
+models_app = typer.Typer(help="List and manage models on the configured backend.")
+app.add_typer(models_app, name="models")
+
+
+def _pull_with_progress(provider, name: str) -> None:
+    """Stream a model download to the console as a live progress bar."""
+    from rich.progress import (
+        BarColumn,
+        DownloadColumn,
+        Progress,
+        TextColumn,
+        TransferSpeedColumn,
+    )
+
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        DownloadColumn(),
+        TransferSpeedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(name, total=None)
+        for step in provider.pull_model(name):
+            # Bookkeeping steps ("verifying sha256", "success") carry no byte
+            # counts — keep the last layer's numbers on screen instead of
+            # resetting the bar.
+            kwargs: dict = {"description": step.status or name}
+            if step.total is not None:
+                kwargs["total"] = step.total
+            if step.completed is not None:
+                kwargs["completed"] = step.completed
+            progress.update(task, **kwargs)
+    console.print(f"[green]✓[/green] pulled {name}")
+
+
+@models_app.callback(invoke_without_command=True)
+def models(ctx: typer.Context) -> None:
     """List models available on the configured backend."""
+    if ctx.invoked_subcommand is not None:
+        return
     config = Config.load()
     provider = get_provider(config)
     table = Table(title=f"Models on {config.provider.name} ({config.provider.host})")
     table.add_column("name")
-    for name in provider.list_models():
-        table.add_row(name)
+    table.add_column("params")
+    table.add_column("quant")
+    table.add_column("disk")
+    for info in provider.list_models_info():
+        table.add_row(
+            info["name"],
+            info.get("size", ""),
+            info.get("quant", ""),
+            info.get("disk", ""),
+        )
     console.print(table)
+
+
+@models_app.command("pull")
+def models_pull(name: str) -> None:
+    """Download a model (e.g. `oshell models pull qwen3:8b`)."""
+    provider = get_provider(Config.load())
+    try:
+        _pull_with_progress(provider, name)
+    except Exception as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from None
+
+
+@models_app.command("rm")
+def models_rm(
+    name: str,
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt"),
+) -> None:
+    """Delete a model from the backend (frees its disk space)."""
+    provider = get_provider(Config.load())
+    if not yes and not typer.confirm(f"Delete {name} from the backend?"):
+        raise typer.Exit()
+    try:
+        provider.delete_model(name)
+    except Exception as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from None
+    console.print(f"[green]✓[/green] deleted {name}")
 
 
 _SECRET_HINT = ("token", "key", "secret", "password", "api_key")

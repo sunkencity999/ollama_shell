@@ -15,7 +15,7 @@ from typing import Any
 
 import requests
 
-from .base import ChatChunk, LLMProvider, Message, ToolCall
+from .base import ChatChunk, LLMProvider, Message, PullProgress, ToolCall
 
 
 class OllamaProvider(LLMProvider):
@@ -43,8 +43,48 @@ class OllamaProvider(LLMProvider):
                 info["size"] = details["parameter_size"]
             if details.get("quantization_level"):
                 info["quant"] = details["quantization_level"]
+            if m.get("size"):
+                info["disk"] = _human_bytes(m["size"])
             out.append(info)
         return out
+
+    def supports_model_management(self) -> bool:
+        return True
+
+    def pull_model(self, name: str) -> Iterator[PullProgress]:
+        """Stream /api/pull progress. Raises RuntimeError with Ollama's message
+        on failure (unknown model, no manifest, registry unreachable)."""
+        resp = requests.post(
+            f"{self.host}/api/pull",
+            json={"model": name, "stream": True},
+            stream=True,
+            timeout=self.timeout,
+        )
+        if resp.status_code >= 400:
+            raise RuntimeError(f"pull failed: {_error_detail(resp)}")
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            data = json.loads(line)
+            # Errors can also arrive mid-stream as their own NDJSON line.
+            if data.get("error"):
+                raise RuntimeError(f"pull failed: {data['error']}")
+            yield PullProgress(
+                status=data.get("status", ""),
+                total=data.get("total"),
+                completed=data.get("completed"),
+            )
+        # A re-pull can change the model (new weights/capabilities) — forget
+        # anything we learned about it via /api/show.
+        self._show_cache.pop(name, None)
+
+    def delete_model(self, name: str) -> None:
+        resp = requests.delete(
+            f"{self.host}/api/delete", json={"model": name}, timeout=self.timeout
+        )
+        if resp.status_code >= 400:
+            raise RuntimeError(f"delete failed: {_error_detail(resp)}")
+        self._show_cache.pop(name, None)
 
     def _show(self, model: str) -> dict[str, Any]:
         """The /api/show response for a model, cached (capabilities + model_info)."""
@@ -119,6 +159,22 @@ class OllamaProvider(LLMProvider):
                 continue
             data = json.loads(line)
             yield _chunk_from_message(data, done=data.get("done", False))
+
+
+def _human_bytes(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return f"{n:.1f} {unit}" if unit != "B" else f"{n} B"
+        n /= 1024
+    return f"{n:.1f} TB"  # pragma: no cover - unreachable
+
+
+def _error_detail(resp: requests.Response) -> str:
+    """Ollama puts the useful message in {"error": ...}; fall back to the body."""
+    try:
+        return resp.json().get("error") or resp.text
+    except Exception:
+        return resp.text or f"HTTP {resp.status_code}"
 
 
 def _chunk_from_message(data: dict[str, Any], *, done: bool) -> ChatChunk:

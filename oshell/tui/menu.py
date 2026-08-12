@@ -33,7 +33,7 @@ MENU_SECTIONS: list[tuple[str, list[tuple[str, str, str]]]] = [
     (
         "Model & capabilities",
         [
-            ("models", "Models", "Choose the active model"),
+            ("models", "Models", "Choose the active model, pull new, delete"),
             ("tools", "Tools", "Show available tools & capabilities"),
             ("features", "Install features", "Add optional capabilities (rag, docs, …)"),
             ("gui_toggle", "Computer-use (GUI)", "Desktop control on/off (vision model)"),
@@ -167,10 +167,12 @@ class MenuScreen(ModalScreen[str]):
         self.dismiss("chat")
 
 
-class ModelScreen(ModalScreen[str]):
-    """Pick the active model from those available on the backend.
+class ModelScreen(ModalScreen[object]):
+    """Pick the active model — or manage the library (pull / delete).
 
-    Dismisses with the chosen model name, or ``None`` on Esc/cancel.
+    Dismisses with the chosen model name (switch), ``("pull", None)`` to
+    download a new model, ``("delete", name)`` for the highlighted model, or
+    ``None`` on Esc/cancel.
     """
 
     CSS = """
@@ -182,30 +184,39 @@ class ModelScreen(ModalScreen[str]):
     #menu-title { padding-bottom: 1; }
     #menu-list { height: auto; max-height: 24; }
     """
-    BINDINGS = [Binding("escape", "cancel", "Back")]
+    BINDINGS = [
+        Binding("escape", "cancel", "Back"),
+        Binding("p", "pull", "Pull model"),
+        Binding("d", "delete", "Delete model"),
+    ]
 
     def __init__(
         self,
         models: list[str],
         current: str | None = None,
         infos: dict[str, dict] | None = None,
+        manageable: bool = False,
     ):
         super().__init__()
         self._models = models
         self._current = current
-        self._infos = infos or {}  # name -> {size, quant} badges (best-effort)
+        self._infos = infos or {}  # name -> {size, quant, disk} badges (best-effort)
+        self._manageable = manageable  # backend can pull/delete (Ollama)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="menu-box"):
+            manage = "  ·  [b]p[/b] pull new  ·  [b]d[/b] delete" if self._manageable else ""
             yield Static(
                 "[b]Select a model[/b]\n"
-                "[dim]↑/↓ + Enter, a number (1–9), or Esc to cancel[/dim]",
+                f"[dim]↑/↓ + Enter, a number (1–9), or Esc to cancel{manage}[/dim]",
                 id="menu-title",
             )
             options = []
             for i, m in enumerate(self._models):
                 info = self._infos.get(m, {})
-                badge = " · ".join(v for v in (info.get("size"), info.get("quant")) if v)
+                badge = " · ".join(
+                    v for v in (info.get("size"), info.get("quant"), info.get("disk")) if v
+                )
                 tag = f"  [dim]{badge}[/dim]" if badge else ""
                 if m == self._current:
                     tag += "  [green](current)[/green]"
@@ -226,8 +237,83 @@ class ModelScreen(ModalScreen[str]):
                 event.stop()
                 self.dismiss(self._models[n - 1])
 
+    def action_pull(self) -> None:
+        if self._manageable:
+            self.dismiss(("pull", None))
+
+    def action_delete(self) -> None:
+        if not self._manageable:
+            return
+        idx = self.query_one(OptionList).highlighted
+        if idx is not None:
+            self.dismiss(("delete", self._models[idx]))
+
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+
+class PullModelScreen(ModalScreen[str]):
+    """Prompt for a model to download. Returns the name, or ``None`` on Esc."""
+
+    CSS = """
+    PullModelScreen { align: center middle; }
+    #menu-box {
+        width: 72; height: auto; padding: 1 2;
+        border: round $accent; background: $surface;
+    }
+    #menu-title { padding-bottom: 1; }
+    """
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="menu-box"):
+            yield Static(
+                "[b]Pull a model[/b]\n"
+                "[dim]Name from ollama.com/library — e.g. qwen3:8b, gemma3:4b, "
+                "llama3.2:3b. Esc cancels.[/dim]",
+                id="menu-title",
+            )
+            yield Input(placeholder="model[:tag]", id="pull-name")
+
+    def on_mount(self) -> None:
+        self.query_one(Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value.strip() or None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class ConfirmScreen(ModalScreen[bool]):
+    """A yes/no question. Returns True only on explicit confirmation."""
+
+    CSS = """
+    ConfirmScreen { align: center middle; }
+    #menu-box {
+        width: 72; height: auto; padding: 1 2;
+        border: round $error; background: $surface;
+    }
+    """
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+        Binding("n", "cancel", "No"),
+        Binding("y", "confirm", "Yes"),
+    ]
+
+    def __init__(self, question: str):
+        super().__init__()
+        self._question = question
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="menu-box"):
+            yield Static(f"{self._question}\n\n[dim][b]y[/b] confirms · [b]n[/b]/Esc cancels[/dim]")
+
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
 
 
 class MoodScreen(ModalScreen[str]):

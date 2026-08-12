@@ -43,10 +43,12 @@ from ..tools import default_registry
 from .menu import (
     INSTALLABLE_FEATURES,
     AttachImageScreen,
+    ConfirmScreen,
     FeaturesScreen,
     MenuScreen,
     ModelScreen,
     MoodScreen,
+    PullModelScreen,
     ThemeScreen,
     feature_installed,
 )
@@ -610,14 +612,27 @@ class OllamaShellTUI(App):
             return
         self.call_from_thread(
             self.push_screen,
-            ModelScreen(models, self.agent.model, infos=infos),
+            ModelScreen(
+                models,
+                self.agent.model,
+                infos=infos,
+                manageable=self.agent.provider.supports_model_management(),
+            ),
             self._on_model_choice,
         )
 
-    def _on_model_choice(self, name: str | None) -> None:
-        if not name:
+    def _on_model_choice(self, choice: object) -> None:
+        if not choice:
             self.query_one(Input).focus()
             return
+        if isinstance(choice, tuple):  # ("pull", None) | ("delete", name)
+            action, target = choice
+            if action == "pull":
+                self.push_screen(PullModelScreen(), self._on_pull_name)
+            elif action == "delete":
+                self._confirm_delete_model(str(target))
+            return
+        name = str(choice)
         self.agent.model = name
         # Rebuild tools for the new model (GUI tools are vision-gated) and refresh
         # the system prompt so the model knows what it now has.
@@ -631,6 +646,66 @@ class OllamaShellTUI(App):
         except Exception as exc:  # pragma: no cover - defensive
             self.notify(f"Model set to {name} (not saved: {exc}).", severity="warning")
         self.query_one(Input).focus()
+
+    # ── model management (pull / delete via the picker) ───────────────────────
+    def _on_pull_name(self, name: str | None) -> None:
+        if not name:
+            self.query_one(Input).focus()
+            return
+        self.run_worker(lambda: self._pull_model_worker(name), thread=True, exclusive=True)
+
+    def _pull_model_worker(self, name: str) -> None:
+        """Download a model (worker thread), progress on the spinner + Activity tab."""
+        activity = self._activity()
+        self._status = f"Pulling {name}"
+        self._busy = True
+        self.call_from_thread(
+            self.notify, f"Pulling {name}… progress in the Activity tab.", timeout=6
+        )
+        try:
+            last_phase = ""
+            for step in self.agent.provider.pull_model(name):
+                pct = f" {step.percent:.0f}%" if step.percent is not None else ""
+                self._status = f"Pulling {name}: {step.status}{pct}"
+                if step.status and step.status != last_phase:
+                    # One Activity line per phase (manifest, each layer, verify),
+                    # not one per streamed byte-count update.
+                    last_phase = step.status
+                    self.call_from_thread(activity.write, f"[dim]pull {name}: {step.status}[/dim]")
+        except Exception as exc:
+            self.call_from_thread(self.notify, f"Pull failed: {exc}", severity="error")
+            return
+        finally:
+            self._busy = False
+            self._stream = ""
+        self.call_from_thread(self.notify, f"✓ Pulled {name} — it's in the model picker now.")
+
+    def _confirm_delete_model(self, name: str) -> None:
+        active = " — it is the ACTIVE model" if name == self.agent.model else ""
+        self.push_screen(
+            ConfirmScreen(f"Delete [b]{name}[/b] from the backend{active}? This frees its disk space."),
+            lambda ok: self._on_delete_confirmed(name, bool(ok)),
+        )
+
+    def _on_delete_confirmed(self, name: str, ok: bool) -> None:
+        if not ok:
+            self.query_one(Input).focus()
+            return
+        self.run_worker(lambda: self._delete_model_worker(name), thread=True, exclusive=True)
+
+    def _delete_model_worker(self, name: str) -> None:
+        try:
+            self.agent.provider.delete_model(name)
+        except Exception as exc:
+            self.call_from_thread(self.notify, f"Delete failed: {exc}", severity="error")
+            return
+        self.call_from_thread(self.notify, f"✓ Deleted {name}.")
+        if name == self.agent.model:
+            self.call_from_thread(
+                self.notify,
+                "That was the active model — pick another from the menu.",
+                severity="warning",
+            )
 
     # ── mood picking (idle-strip ambience; persisted like the theme) ──────────
     def _open_mood_picker(self) -> None:
