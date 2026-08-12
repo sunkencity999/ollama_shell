@@ -121,6 +121,11 @@ class LinkLog(RichLog):
         content_y = scroll_y + y
         if content_y >= len(self.lines):
             return strip  # blank filler below the content
+        # Highlight FIRST (it divides segments at the selection boundaries),
+        # then stamp offsets over the final segment layout — stamping first
+        # would leave divided pieces carrying their parent's start offset,
+        # skewing the mouse→text mapping while a drag is in progress.
+        strip = self._highlight_selection(strip, content_y, scroll_x)
         segments = []
         x = scroll_x
         for segment in strip:
@@ -134,6 +139,38 @@ class LinkLog(RichLog):
             )
             x += len(segment.text)
         return Strip(segments, strip.cell_length)
+
+    def _highlight_selection(self, strip: Strip, content_y: int, scroll_x: int) -> Strip:
+        """Paint the active selection span of this line, if any.
+
+        Textual paints selections in its Visual render path, which RichLog
+        (blitting cached strips) never enters — so a selection was invisible
+        even though ctrl+c copied it. Same span math as Selection.extract,
+        same component style the rest of the app uses; the selection style
+        goes on TOP so it stays visible over styled content (code blocks).
+        """
+        selection = self.text_selection
+        if selection is None:
+            return strip
+        span = selection.get_span(content_y)
+        if span is None:
+            return strip
+        start, end = span
+        if end == -1:
+            end = strip.cell_length
+        start, end = max(0, start - scroll_x), max(0, end - scroll_x)
+        if end <= start:
+            return strip
+        style = self.screen.get_component_rich_style("screen--selection")
+        before, selected, after = strip.divide([start, end, strip.cell_length])
+        highlighted = Strip(
+            [
+                Segment(seg.text, (seg.style + style) if seg.style else style, seg.control)
+                for seg in selected
+            ],
+            selected.cell_length,
+        )
+        return Strip.join([before, highlighted, after])
 
     def get_selection(self, selection) -> tuple[str, str] | None:
         if not self.lines:

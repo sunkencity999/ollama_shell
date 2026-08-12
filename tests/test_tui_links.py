@@ -79,6 +79,38 @@ async def test_multiline_drag_and_ctrl_c_copies_without_quitting():
         assert app.is_running  # ctrl+c with a selection copies; it must not quit
 
 
+async def test_selection_is_visibly_highlighted():
+    """The selected span paints with the screen--selection style — and the
+    highlight covers exactly the characters that ctrl+c would copy."""
+    app = _LinkApp()
+    async with app.run_test() as pilot:
+        log = app.query_one(LinkLog)
+        log.write(Text("hello selectable world"))
+        await pilot.pause()
+        await _drag(pilot, (2, 0), (10, 0))
+        sel_style = app.screen.get_component_rich_style("screen--selection")
+        highlighted = "".join(
+            seg.text
+            for seg in log.render_line(0)
+            if seg.style and seg.style.bgcolor == sel_style.bgcolor
+        )
+        assert highlighted == "llo selec"
+        assert app.screen.get_selected_text() == "llo selec"  # highlight == copy
+
+
+async def test_no_selection_paints_no_highlight():
+    app = _LinkApp()
+    async with app.run_test() as pilot:
+        log = app.query_one(LinkLog)
+        log.write(Text("nothing selected here"))
+        await pilot.pause()
+        sel_style = app.screen.get_component_rich_style("screen--selection")
+        assert not any(
+            seg.style and seg.style.bgcolor == sel_style.bgcolor
+            for seg in log.render_line(0)
+        )
+
+
 async def test_drag_ending_on_link_selects_instead_of_opening():
     app = _LinkApp()
     async with app.run_test() as pilot:
