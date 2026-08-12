@@ -112,9 +112,11 @@ fi
 cat <<'EOF'
 
 ==> Try it (open a new terminal if PATH was just updated):
+      oshell setup           # first-run wizard: sizes models to this machine
       oshell                 # interactive agent chat
       oshell tui             # Textual workspace
-      oshell config          # resolved config + capabilities
+      oshell doctor          # health-check the whole rig
+      eval "$(oshell init zsh)"   # Ctrl+G + command-not-found (add to ~/.zshrc)
 
 ==> With Mechanic + Drift installed, ask it things only YOUR box can answer:
       "is my CPU usage normal right now?"

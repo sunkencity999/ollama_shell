@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 340" font-family="SF Mono,Menlo,Consolas,monospace" role="img" aria-label="Ollama Shell daydreaming: dream text streaming under an animated starfield">
+  <style>
+    .panel{fill:#0f1620;stroke:#1c2735;stroke-width:1.5}
+    .bar{fill:#0c121b}
+    .ttl{fill:#7c8ba0;font-size:12px}
+    .cap{fill:#7c8ba0;font-size:13px}
+    .cap b{fill:#4fd1c5}
+    .dream{fill:#a9b7c9;font-size:15px;font-style:italic}
+    .dim{fill:#7c8ba0}
+    .mag{fill:#c78be6}
+    .acc{fill:#4fd1c5}
+    .st{fill:#d7e2ee;animation:tw 3.2s ease-in-out infinite}
+    .st.f{animation-duration:2.1s}
+    .st.s{animation-duration:4.6s}
+    .p{fill:#8b7cff}
+    @keyframes tw{0%,100%{opacity:.12}50%{opacity:.95}}
+    .ln{opacity:0;animation:reveal 14s linear infinite}
+    .l1{animation-delay:0s}.l2{animation-delay:2.4s}.l3{animation-delay:4.8s}.l4{animation-delay:7.2s}
+    @keyframes reveal{0%{opacity:0}4%{opacity:1}86%{opacity:1}92%{opacity:0}100%{opacity:0}}
+    .caret{fill:#4fd1c5;animation:blink 1.1s steps(1) infinite}
+    @keyframes blink{0%,55%{opacity:1}56%,100%{opacity:0}}
+    .shoot{stroke:url(#tail);stroke-width:1.6;stroke-linecap:round;opacity:0;animation:shoot 14s linear infinite}
+    @keyframes shoot{0%,63%{opacity:0;transform:translate(0,0)}65%{opacity:.9}72%{opacity:0;transform:translate(-190px,84px)}100%{opacity:0}}
+    @media (prefers-reduced-motion:reduce){
+      .ln,.st,.caret{animation:none;opacity:1}
+      .shoot{animation:none;opacity:0}
+    }
+  </style>
+  <defs>
+    <linearGradient id="tail" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#d7e2ee" stop-opacity="0"/>
+      <stop offset="1" stop-color="#d7e2ee" stop-opacity=".9"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".72" cy=".1" r=".9">
+      <stop offset="0" stop-color="#8b7cff" stop-opacity=".14"/>
+      <stop offset=".55" stop-color="#4fd1c5" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#0b0f14" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="800" height="340" fill="#0b0f14"/>
+  <rect width="800" height="340" fill="url(#glow)"/>
+
+  <!-- terminal chrome -->
+  <rect x="60" y="26" width="680" height="258" rx="12" class="panel"/>
+  <rect x="60" y="26" width="680" height="34" rx="12" class="bar"/>
+  <rect x="60" y="48" width="680" height="12" class="bar"/>
+  <circle cx="84" cy="43" r="5.5" fill="#e06c75"/>
+  <circle cx="102" cy="43" r="5.5" fill="#e7c667"/>
+  <circle cx="120" cy="43" r="5.5" fill="#7bd88f"/>
+  <text x="400" y="47" text-anchor="middle" class="ttl">oshell · daydream</text>
+
+  <!-- starfield -->
+  <g>
+    <circle class="st f" cx="110" cy="85" r="1.4"/>
+    <circle class="st"   cx="168" cy="122" r="1.1"/>
+    <circle class="st s" cx="205" cy="78" r="1.6"/>
+    <circle class="st"   cx="262" cy="105" r="1.2"/>
+    <circle class="st f" cx="318" cy="74" r="1.3"/>
+    <circle class="st s" cx="367" cy="118" r="1.1"/>
+    <circle class="st"   cx="411" cy="88" r="1.5"/>
+    <circle class="st f" cx="472" cy="112" r="1.2"/>
+    <circle class="st s" cx="521" cy="76" r="1.4"/>
+    <circle class="st"   cx="578" cy="102" r="1.1"/>
+    <circle class="st f" cx="627" cy="83" r="1.5"/>
+    <circle class="st s" cx="676" cy="119" r="1.2"/>
+    <circle class="st"   cx="140" cy="152" r="1.0"/>
+    <circle class="st s" cx="296" cy="143" r="1.1"/>
+    <circle class="st f" cx="447" cy="149" r="1.0"/>
+    <circle class="st"   cx="602" cy="147" r="1.3"/>
+    <circle class="st f" cx="700" cy="93" r="1.0"/>
+    <circle class="p st s" cx="238" cy="130" r="1.3"/>
+    <circle class="p st f" cx="545" cy="135" r="1.2"/>
+    <circle class="p st"   cx="654" cy="105" r="1.1"/>
+    <line class="shoot" x1="640" y1="80" x2="700" y2="54"/>
+  </g>
+
+  <!-- the dream, streaming -->
+  <text x="92" y="188" class="dream ln l1"><tspan class="mag">💭</tspan> the cursor blinks. somewhere below, a fan spins down —</text>
+  <text x="92" y="212" class="dream ln l2">i keep the models like rooms in a house at night,</text>
+  <text x="92" y="236" class="dream ln l3">each one warm where a question just left,</text>
+  <text x="92" y="260" class="dream ln l4">and nothing i dream ever leaves this machine.<tspan> </tspan></text>
+  <rect class="caret" x="486" y="248" width="8" height="15"/>
+
+  <!-- caption -->
+  <text x="400" y="316" text-anchor="middle" class="cap">it dreams. locally.&#160;&#160;·&#160;&#160;<tspan class="acc">oshell tui</tspan> → <tspan class="acc">/daydream</tspan></text>
+</svg>

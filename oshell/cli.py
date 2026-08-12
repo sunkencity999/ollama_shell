@@ -602,6 +602,14 @@ def init(shell: str = typer.Argument("zsh", help="Shell to integrate (zsh)")) ->
 
 
 @app.command()
+def setup() -> None:
+    """First-run wizard: size models to this machine, configure routing."""
+    from .setup import run_wizard
+
+    raise typer.Exit(code=run_wizard(console))
+
+
+@app.command()
 def doctor() -> None:
     """Health-check the rig: backend, models, routing, sessions, features."""
     from pathlib import Path

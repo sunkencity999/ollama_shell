@@ -177,6 +177,9 @@ class FunConfig(BaseModel):
     # starfield | embers | matrix | none. Pick from the menu ("Mood") or /mood.
     # rain/snow also carry into the /daydream sky.
     mood: str = "fireflies"
+    # Once per day on TUI start, quietly ask Drift what changed overnight and
+    # surface a one-line digest. Needs the drift MCP server; silent without it.
+    morning_digest: bool = True
     mood_idle_seconds: float = 45.0  # quiet time before the mood appears in the strip
     # After this much idle the mood takes the WHOLE stage — weather falling on
     # top of the (still visible, lightly dimmed) workspace; any key wakes.

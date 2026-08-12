@@ -1,5 +1,9 @@
 # Ollama Shell
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/sunkencity999/ollama_shell/main/docs/assets/dream.svg" alt="Ollama Shell daydreaming — dream text streaming under an animated starfield, entirely local" width="100%">
+</p>
+
 ### A local-first AI that lives on *your* machine, uses *your* tools, and keeps *your* secrets.
 
 No API keys. No cloud round-trips. No telemetry. Just a capable, agentic model
@@ -7,7 +11,7 @@ running on your own hardware — one that can read your files, run your shell,
 search the web when you ask, write you a report, drive a hidden browser… and,
 when the room goes quiet, sit there and **daydream**.
 
-### ▶ [**Watch the live demo →**](https://sunkencity999.github.io/ollama_shell/)
+### ▶ [**Watch the live demo →**](https://sunkencity999.github.io/ollama_shell/) · 🎓 [**Take the interactive tutorial →**](https://sunkencity999.github.io/ollama_shell/tutorial.html)
 
 A 90-second animated playthrough — a late-night session where the shell uses
 its **machine memory** (Mechanic flags a CPU anomaly, Drift finds the launchd
@@ -79,10 +83,13 @@ If the design philosophy interests you, here it is in one table:
 #   Windows (PowerShell):  .\install.ps1   (no monitors — they need launchd/systemd)
 
 # 2. Make sure Ollama is running (https://ollama.com), then — from anywhere:
+oshell setup            # first-run wizard: sizes models to THIS machine,
+                        #   pulls them, configures auto-routing. Start here.
 oshell                  # interactive agent chat (default command)
 oshell tui              # the Textual workspace (needs [tui]) — the good stuff
 oshell ask "What time is it? Use your tool."
 oshell models           # list backend models
+oshell doctor           # health-check the whole rig
 oshell config           # resolved config + which capabilities are live
 oshell finetune detect  # local LoRA training backend
 ```
@@ -91,6 +98,12 @@ oshell finetune detect  # local LoRA training backend
 dir to PATH. Prefer raw `uv`? `uv tool install --editable ".[tui]"`. For a dev
 checkout, `make install` builds a local `.venv`; `make run / tui / test` wrap the
 common flows. On macOS you can also double-click **Start Ollama Shell.command**.
+
+**Or straight from PyPI:** `pip install "ollama-shell[tui]"` gets you the shell
+and the TUI (add `[all]` for every extra). The one thing pip can't do is install
+the [Mechanic](https://github.com/sunkencity999/mechanic) ×
+[Drift](https://github.com/sunkencity999/drift) machine-memory monitors — grab
+those from their repos, or use `./install.sh`, which sets up everything.
 
 > Because the install is **editable**, code changes take effect on the next
 > launch — but a *running* `oshell` won't hot-reload. After updating, quit and
@@ -325,6 +338,13 @@ pattern**:
 off ("CPU is 8σ above your normal") → Drift says *what moved* ("a new launchd
 service appeared 2 hours ago") → `run_command` fixes it. Anomaly → cause → fix,
 entirely on your own hardware.
+
+**The morning digest.** Once a day, the first `oshell tui` of the morning
+quietly asks Drift what changed overnight and drops one calm line — *"☕
+overnight drift: services +1, ports +2"* — as a notification and in the
+Activity tab (Spotlight-worker churn filtered out; quiet nights stay quiet).
+Ask *"what changed?"* for the full story. Disable with
+`{"fun":{"morning_digest":false}}`.
 
 Both are fully standalone projects (local-first, user-level, no sudo, no
 egress) with their own daemons; oshell spawns their MCP servers on demand and

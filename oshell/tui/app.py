@@ -302,8 +302,59 @@ class OllamaShellTUI(App):
             )
         # Drives the live spinner / streaming preview.
         self.set_interval(0.1, self._tick)
+        if self.agent.config.fun.morning_digest:
+            self.run_worker(self._maybe_morning_digest, thread=True, exclusive=False)
         if self._show_menu_on_start:
             self.action_open_menu()
+
+    def _maybe_morning_digest(self) -> None:
+        """Once a day, quietly ask Drift what changed overnight (worker thread).
+
+        Entirely best-effort ambience: no drift server, a failed call, or a bad
+        payload all mean silence, never an error surfaced to the user.
+        """
+        import datetime as _dt
+        from pathlib import Path
+
+        stamp = Path("~/.oshell/last_digest").expanduser()
+        today = _dt.date.today().isoformat()
+        try:
+            if stamp.is_file() and stamp.read_text(encoding="utf-8").strip() == today:
+                return
+        except OSError:
+            return
+        tool = next(
+            (t for t in self.agent.registry.active() if t.name == "drift_diff_latest"), None
+        )
+        if tool is None:
+            return
+        time.sleep(3.0)  # let the app settle first; the MCP server cold-starts on use
+        try:
+            raw = tool.run()
+        except Exception:
+            return
+        from ..digest import summarize_drift
+
+        line = summarize_drift(raw)
+        try:
+            stamp.parent.mkdir(parents=True, exist_ok=True)
+            stamp.write_text(today, encoding="utf-8")
+        except OSError:
+            pass
+        if line:
+            self.call_from_thread(
+                self._activity().write, f"[dim]☕ overnight drift: {line}[/dim]"
+            )
+            self.call_from_thread(
+                self.notify,
+                f"☕ Overnight drift: {line} — ask “what changed?” for the story.",
+                timeout=8,
+            )
+        else:
+            self.call_from_thread(
+                self._activity().write,
+                "[dim]☕ quiet night — nothing drifted since the last snapshot.[/dim]",
+            )
 
     def _show_welcome(self) -> None:
         """A small card so a fresh conversation feels inhabited, not bare."""
