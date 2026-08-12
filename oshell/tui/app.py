@@ -38,6 +38,7 @@ from .. import desktop
 from ..agent import Agent, LimitReached, TextDelta, ToolFinished, ToolStarted, TurnComplete
 from ..capabilities import optional_features
 from ..config import Config
+from ..linkify import linkify_urls
 from ..providers import get_provider
 from ..tools import default_registry
 from .menu import (
@@ -78,6 +79,24 @@ class ChatInput(Input):
             self.post_message(self.MultilinePasted(event.text))
             event.prevent_default()
             event.stop()
+
+
+class LinkLog(RichLog):
+    """A RichLog whose hyperlinks actually open.
+
+    Rich renders markdown links with ``Style(link=…)``, but Textual only
+    dispatches clicks bound via ``@click=`` style meta — so a link *paints*
+    like a link and does nothing when clicked. Catch the click, read the link
+    style under the pointer, and hand the URL to the OS browser.
+    """
+
+    async def _on_click(self, event: events.Click) -> None:
+        link = getattr(event.style, "link", None)
+        if link:
+            event.stop()
+            self.app.open_url(link)
+            return
+        await super()._on_click(event)
 
 
 def _context_fill(agent: Agent) -> float:
@@ -258,7 +277,7 @@ class OllamaShellTUI(App):
                 # min_width: render to the pane's real width (the default of 78
                 # makes full-width renderables like Rule/Markdown overflow into
                 # a horizontal scrollbar on narrower panes).
-                yield RichLog(
+                yield LinkLog(
                     id="conversation", wrap=True, markup=True, highlight=True, min_width=20
                 )
             with TabbedContent(id="sidebar", initial="tab-tools"):
@@ -267,7 +286,7 @@ class OllamaShellTUI(App):
                 with TabPane("Context", id="tab-context"):
                     yield ContextInspector(id="context")
                 with TabPane("Activity", id="tab-activity"):
-                    yield RichLog(id="activity", wrap=True, markup=True)
+                    yield LinkLog(id="activity", wrap=True, markup=True)
         # Live region: spinner/status while working, streamed reply as it
         # builds, and the idle mood. Full-width — the weather isn't clipped to
         # the conversation column, it runs under the sidebar too.
@@ -414,12 +433,14 @@ class OllamaShellTUI(App):
     def _write_reply(self, text: str) -> None:
         """Commit a finished reply to the transcript as rendered Markdown.
 
+        Bare URLs are promoted to real links first (models rarely emit markdown
+        link syntax), so everything URL-shaped is clickable in the transcript.
         Model output is arbitrary — if the Markdown render chokes, fall back to
         inert escaped text rather than losing the reply (or the session).
         """
         convo = self._conversation()
         try:
-            convo.write(Markdown(text))
+            convo.write(Markdown(linkify_urls(text)))
         except Exception:
             convo.write(escape(text))
 
