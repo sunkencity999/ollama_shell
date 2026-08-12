@@ -161,7 +161,11 @@ class LinkLog(RichLog):
         start, end = max(0, start - scroll_x), max(0, end - scroll_x)
         if end <= start:
             return strip
-        style = self.screen.get_component_rich_style("screen--selection")
+        # Force a white foreground: the transcript is full of dim/colored text
+        # that would vanish against the selection background otherwise.
+        style = self.screen.get_component_rich_style("screen--selection") + RichStyle(
+            color="#ffffff"
+        )
         before, selected, after = strip.divide([start, end, strip.cell_length])
         highlighted = Strip(
             [

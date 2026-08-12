@@ -89,13 +89,18 @@ async def test_selection_is_visibly_highlighted():
         await pilot.pause()
         await _drag(pilot, (2, 0), (10, 0))
         sel_style = app.screen.get_component_rich_style("screen--selection")
-        highlighted = "".join(
-            seg.text
+        selected_segs = [
+            seg
             for seg in log.render_line(0)
             if seg.style and seg.style.bgcolor == sel_style.bgcolor
-        )
+        ]
+        highlighted = "".join(seg.text for seg in selected_segs)
         assert highlighted == "llo selec"
         assert app.screen.get_selected_text() == "llo selec"  # highlight == copy
+        # Selected text is forced white so dim/colored prose stays readable.
+        assert all(
+            seg.style.color and seg.style.color.name == "#ffffff" for seg in selected_segs
+        )
 
 
 async def test_no_selection_paints_no_highlight():
