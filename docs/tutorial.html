@@ -4,9 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Learn Ollama Shell — interactive tutorial</title>
-<meta name="description" content="Learn oshell in 10 minutes: nine tiny interactive lessons in a fake terminal. Install it, chat with it, pipe your shell into it, let it run commands (with your permission), and teach it your own slash commands. All local. No cloud." />
+<meta name="description" content="From zero to daily driver: sixteen interactive lessons in a fake terminal. Install oshell, chat with it, pipe your shell into it, configure it layer by layer, mount MCP servers, and let it learn your machine. All local. No cloud." />
 <meta property="og:title" content="Learn Ollama Shell — interactive tutorial" />
-<meta property="og:description" content="Nine tiny lessons in a fake terminal: chat, models, pipes, the agent, sessions, Ctrl+G, machine memory, and custom slash commands. Type along — it types back." />
+<meta property="og:description" content="Two parts, sixteen chapters, one starfield at the end. The first ten minutes get you running; the deep end makes it your daily driver. Type along — it types back." />
 <meta property="og:type" content="website" />
 <style>
   :root{
@@ -17,7 +17,7 @@
     --mono:"SF Mono",ui-monospace,"JetBrains Mono","Fira Code",Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box}
-  html{scroll-behavior:smooth; scroll-padding-top:74px}
+  html{scroll-behavior:smooth; scroll-padding-top:84px}
   html,body{margin:0}
   body{
     background:
@@ -32,47 +32,56 @@
 
   /* ── sticky chapter nav ── */
   .topnav{position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:12px;
-    padding:10px 16px; background:rgba(11,15,20,.86); backdrop-filter:blur(8px);
+    padding:8px 16px; background:rgba(11,15,20,.88); backdrop-filter:blur(8px);
     border-bottom:1px solid var(--line)}
   .topnav .brand{color:var(--ink); text-decoration:none; font-weight:700; font-size:14px; white-space:nowrap}
   .topnav .brand .sh{color:var(--accent)}
-  .dots{display:flex; gap:6px; list-style:none; margin:0; padding:0; flex:1; justify-content:center; flex-wrap:wrap}
-  .dotlink{display:flex; align-items:center; justify-content:center; width:26px; height:26px;
-    border:1px solid var(--line); border-radius:50%; color:var(--dim); font-size:11.5px;
+  .dots{display:flex; gap:5px; list-style:none; margin:0; padding:0; flex:1; justify-content:center; flex-wrap:wrap; align-items:center}
+  .dots .sep{width:1px; height:16px; background:var(--line); margin:0 4px}
+  .dotlink{display:flex; align-items:center; justify-content:center; width:24px; height:24px;
+    border:1px solid var(--line); border-radius:50%; color:var(--dim); font-size:10.5px;
     text-decoration:none; transition:.15s; background:var(--panel)}
   .dotlink:hover{border-color:var(--accent); color:var(--ink)}
   .dotlink.cur{border-color:var(--accent2); color:var(--ink); box-shadow:0 0 10px rgba(139,124,255,.35)}
   .dotlink.done{border-color:var(--accent); color:#08131a; background:var(--accent)}
   .dotlink.done::after{content:"✓"; font-weight:700}
   .dotlink.done .n{display:none}
-  .navcount{color:var(--dim); font-size:12px; white-space:nowrap}
-  @media (max-width:560px){
-    .topnav{gap:8px; padding:8px 10px}
-    .topnav .brand{font-size:12.5px}
-    .dotlink{width:20px; height:20px; font-size:10px}
-    .navcount{font-size:10.5px}
+  .navcount{color:var(--dim); font-size:11.5px; white-space:nowrap; text-align:right; line-height:1.5}
+  @media (max-width:680px){
+    .topnav{gap:8px; padding:6px 8px}
+    .topnav .brand{font-size:12px}
+    .dotlink{width:19px; height:19px; font-size:9px}
+    .navcount{font-size:10px}
+    .navcount .w{display:none}
   }
 
   main{max-width:880px; margin:0 auto; padding:26px 16px 40px}
 
   /* ── hero ── */
-  .hero{text-align:center; margin:14px 0 34px}
+  .hero{text-align:center; margin:14px 0 30px}
   .hero .badge{display:inline-block; font-size:12px; color:var(--accent2);
     border:1px solid rgba(139,124,255,.35); border-radius:999px; padding:2px 10px; margin-bottom:8px}
   .hero h1{font-size:clamp(22px,4vw,34px); margin:.2em 0; letter-spacing:.3px}
   .hero h1 .sh{color:var(--accent)}
-  .hero p{color:var(--dim); max-width:640px; margin:.5em auto; line-height:1.6; font-size:14px}
+  .hero p{color:var(--dim); max-width:660px; margin:.5em auto; line-height:1.6; font-size:14px}
   .hero .how{font-size:12.5px}
   .hero .how kbd{margin:0 2px}
 
+  /* ── part dividers ── */
+  .part{display:flex; align-items:center; gap:14px; margin:58px 0 6px;
+    color:var(--accent2); font-size:12.5px; text-transform:uppercase; letter-spacing:2.5px}
+  .part::after{content:""; flex:1; border-top:1px solid var(--line)}
+  .partsub{color:var(--dim); font-size:12.5px; margin:2px 0 26px; max-width:720px; line-height:1.6}
+
   /* ── chapters ── */
-  .chapter{margin:0 0 46px; scroll-margin-top:74px}
+  .chapter{margin:0 0 52px; scroll-margin-top:84px}
   .chapter h2{font-size:19px; margin:0 0 8px; letter-spacing:.2px}
-  .chn{display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px;
+  .chn{display:inline-flex; align-items:center; justify-content:center; min-width:26px; height:26px;
     border-radius:50%; border:1px solid var(--accent); color:var(--accent);
-    font-size:13px; margin-right:10px; vertical-align:-4px}
+    font-size:13px; margin-right:10px; vertical-align:-4px; padding:0 4px}
   .chapter p{color:var(--dim); line-height:1.7; font-size:13.5px; max-width:720px}
   .chapter p b, .chapter p strong{color:var(--ink)}
+  .chapter h3{font-size:13px; color:var(--ink); margin:20px 0 4px}
   code.ic{background:#16222f; border:1px solid var(--line); border-radius:4px;
     padding:0 4px; font-size:12.5px; color:var(--accent); white-space:nowrap}
   kbd{border:1px solid var(--line); border-bottom-width:2px; border-radius:5px;
@@ -86,6 +95,32 @@
     font-size:10.5px; border-radius:5px; padding:2px 7px; cursor:pointer; transition:.15s; white-space:nowrap}
   .copy:hover{border-color:var(--accent); color:var(--ink)}
   .copy.did{border-color:var(--green); color:var(--green)}
+
+  /* ── collapsible asides ── */
+  details.why,details.edge{border:1px solid var(--line); border-radius:9px; background:var(--panel2);
+    margin:12px 0; max-width:720px}
+  details summary{cursor:pointer; padding:9px 13px; font-size:12.5px; user-select:none; list-style-position:inside}
+  details.why summary{color:var(--accent2)}
+  details.edge summary{color:var(--yellow)}
+  details summary:hover{color:var(--ink)}
+  details .inner{padding:0 16px 12px; color:var(--dim); font-size:12.5px; line-height:1.75}
+  details .inner b{color:var(--ink)}
+  details .inner ul{margin:6px 0; padding-left:18px}
+  details .inner li{margin:3px 0}
+  details .inner code{color:var(--accent); font-size:12px}
+  .cfg{border:1px solid var(--line); border-left:3px solid var(--accent2); border-radius:7px;
+    background:#0a1119; padding:9px 12px; margin:8px 0; overflow-x:auto}
+  .cfg code{color:var(--yellow); white-space:pre; font-size:12px; display:block; line-height:1.6}
+
+  /* ── exercises ── */
+  .ex{border:1px solid rgba(123,216,143,.28); border-radius:9px; padding:10px 14px 12px;
+    margin:12px 0; max-width:720px; background:rgba(123,216,143,.04)}
+  .ex h3{margin:0 0 6px; font-size:11px; color:var(--green); text-transform:uppercase; letter-spacing:.8px}
+  .ex label{display:flex; gap:9px; align-items:flex-start; color:var(--dim); font-size:12.5px;
+    padding:3px 0; cursor:pointer; line-height:1.55}
+  .ex label:has(input:checked){color:var(--green)}
+  .ex input{accent-color:var(--accent); margin-top:2px; flex:none}
+  .ex code{color:var(--accent); font-size:12px}
 
   /* ── the interactive demo terminal ── */
   .demo{background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden;
@@ -110,7 +145,7 @@
     background:linear-gradient(180deg, transparent, #6fa8dcbb); animation:fall linear infinite}
   @keyframes fall{from{transform:rotate(13deg) translateY(-16px); opacity:0}
     12%{opacity:.9} to{transform:rotate(13deg) translateY(400px); opacity:.4}}
-  .out{padding:12px 14px; font-size:13px; line-height:1.62; min-height:54px; max-height:340px;
+  .out{padding:12px 14px; font-size:13px; line-height:1.62; min-height:54px; max-height:380px;
     overflow-y:auto; scroll-behavior:smooth}
   .out::-webkit-scrollbar{width:8px}
   .out::-webkit-scrollbar-thumb{background:#1e2b3b; border-radius:8px}
@@ -145,6 +180,14 @@
   .ihint{color:var(--dim); font-size:10.5px; flex:none}
   @media (max-width:520px){ .ihint{display:none} .out{font-size:12.5px} .ibar{font-size:12.5px} }
 
+  /* ── recipes (ch16) ── */
+  .recipe{border:1px solid var(--line); border-radius:9px; margin:10px 0; overflow:hidden; max-width:720px; background:var(--panel2)}
+  .rhead{display:flex; justify-content:space-between; align-items:center; gap:8px;
+    padding:6px 11px; background:linear-gradient(180deg,#121b26,#0e151e);
+    border-bottom:1px solid var(--line); color:var(--accent); font-size:12px}
+  .recipe pre{margin:0; padding:10px 13px; color:#a9b7c9; font-size:12px;
+    white-space:pre-wrap; line-height:1.65; font-family:var(--mono)}
+
   /* ── cheat sheet ── */
   .cheat table{width:100%; border-collapse:collapse; font-size:12.5px; margin-top:12px}
   .cheat th{color:var(--dim); text-transform:uppercase; letter-spacing:.6px; font-size:10.5px;
@@ -155,6 +198,21 @@
   .cheat tr.sect td{color:var(--accent2); font-weight:700; padding-top:16px;
     text-transform:uppercase; letter-spacing:.8px; font-size:10.5px; border-bottom-color:rgba(139,124,255,.35)}
   .cheat .tblwrap{overflow-x:auto}
+
+  /* ── graduation ── */
+  .grad{position:fixed; inset:0; z-index:50; background:rgba(4,8,13,.96);
+    display:none; align-items:center; justify-content:center; text-align:center; overflow:hidden}
+  .grad.show{display:flex}
+  .gstars{position:absolute; inset:0; pointer-events:none}
+  .ginner{position:relative; z-index:2; max-width:560px; padding:24px 20px}
+  .gbadge{display:inline-block; font-size:12px; color:var(--accent);
+    border:1px solid rgba(79,209,197,.4); border-radius:999px; padding:2px 12px; margin-bottom:14px}
+  .ginner h2{font-size:clamp(24px,5vw,38px); margin:.1em 0 .4em; letter-spacing:.4px}
+  .ginner p{color:var(--dim); line-height:1.7; font-size:13.5px}
+  .ginner .gsub{font-style:italic; font-size:12px; opacity:.8}
+  .gclose{background:#111a25; color:var(--accent); border:1px solid var(--accent);
+    border-radius:9px; padding:9px 18px; font-family:var(--mono); font-size:13px; cursor:pointer; margin-top:14px}
+  .gclose:hover{box-shadow:var(--glow)}
 
   footer{color:var(--dim); font-size:12px; margin:44px auto 0; text-align:center; max-width:640px; line-height:1.8;
     border-top:1px solid var(--line); padding:22px 8px 8px}
@@ -169,21 +227,27 @@
   }
 
   @media print{
-    body{background:#fff; color:#000}
-    .topnav,.demo,.copy,.hero .badge,footer .resetp{display:none}
-    a{color:#000}
-    .chapter p, .chapter h2, .hero p, .hero h1{color:#000}
-    code.ic,kbd{color:#000; background:#eee; border-color:#bbb}
+    body{background:#fff; color:#111}
+    .topnav,.demo,.copy,.hero .badge,.grad,footer .resetp,.ex input{display:none}
+    a{color:#111}
+    .chapter p,.chapter h2,.hero p,.hero h1,.partsub,details .inner{color:#111}
+    .part{color:#111}
+    code.ic,kbd{color:#111; background:#eee; border-color:#bbb}
     .chip{border-color:#bbb; background:#f4f4f4}
-    .chip code{color:#000}
-    .cheat th,.cheat td{color:#000; border-bottom:1px solid #ccc}
-    .cheat td:first-child{color:#000; font-weight:700}
-    .cheat tr.sect td{color:#000}
+    .chip code{color:#111}
+    .cheat th,.cheat td{color:#111; border-bottom:1px solid #ccc}
+    .cheat td:first-child{color:#111; font-weight:700}
+    .cheat tr.sect td{color:#111}
+    details{border-color:#ccc} details summary{color:#111}
+    .recipe{border-color:#ccc; background:#fafafa}
+    .recipe pre,.rhead{color:#111; background:#fafafa}
+    .cfg{background:#f4f4f4} .cfg code{color:#111}
+    .ex{border-color:#ccc; background:#fafafa}
+    .ex label,.ex h3{color:#111}
   }
 </style>
 </head>
 <body>
-
 <nav class="topnav" aria-label="Chapters">
   <a class="brand" href="index.html"><span class="sh">oshell</span> tutorial</a>
   <ol class="dots" id="dots">
@@ -196,181 +260,747 @@
     <li><a class="dotlink" href="#ch7" data-ch="7" title="Live in your shell"><span class="n">7</span></a></li>
     <li><a class="dotlink" href="#ch8" data-ch="8" title="Machine memory"><span class="n">8</span></a></li>
     <li><a class="dotlink" href="#ch9" data-ch="9" title="Make it yours"><span class="n">9</span></a></li>
+    <li class="sep" aria-hidden="true"></li>
+    <li><a class="dotlink" href="#ch10" data-ch="10" title="Configuration, layer by layer"><span class="n">10</span></a></li>
+    <li><a class="dotlink" href="#ch11" data-ch="11" title="Memory &amp; knowledge"><span class="n">11</span></a></li>
+    <li><a class="dotlink" href="#ch12" data-ch="12" title="TUI mastery"><span class="n">12</span></a></li>
+    <li><a class="dotlink" href="#ch13" data-ch="13" title="Machine memory, deep dive"><span class="n">13</span></a></li>
+    <li><a class="dotlink" href="#ch14" data-ch="14" title="Any MCP server + integrations"><span class="n">14</span></a></li>
+    <li><a class="dotlink" href="#ch15" data-ch="15" title="Computer use"><span class="n">15</span></a></li>
+    <li><a class="dotlink" href="#ch16" data-ch="16" title="Cookbook &amp; your first week"><span class="n">16</span></a></li>
   </ol>
-  <span class="navcount" id="navcount">0/9 chapters</span>
+  <span class="navcount" id="navcount">0/16 chapters</span>
 </nav>
 
 <main>
   <header class="hero">
     <div class="badge">hands-on · the terminals below type back</div>
-    <h1>Learn <span class="sh">oshell</span> in 10 minutes</h1>
+    <h1>Learn <span class="sh">oshell</span> — zero to daily driver</h1>
     <p>Ollama Shell is a local-first, agentic terminal assistant for
-    <a href="https://ollama.com">Ollama</a>. Nine tiny lessons, each with a fake
-    terminal you can drive. Nothing here touches a server — and neither does the
-    real thing.</p>
+    <a href="https://ollama.com">Ollama</a>. This page is two courses in one:
+    <b>Part I</b> gets you running in ten minutes; <b>Part II</b> is the deep
+    end — configuration, memory, machine telemetry, MCP servers, computer use —
+    everything between "neat demo" and "I open this before my inbox."
+    Finish all sixteen chapters and something nice happens.</p>
     <p class="how">In every demo: <b>type</b> the ghosted command (any keys work),
     press <kbd>Tab</kbd> to autocomplete, <kbd>Enter</kbd> or <b>▶ run</b> to run it.
-    Your progress is saved on this device.</p>
+    The green "try it for real" boxes are homework — check them off as you go.
+    Everything is saved on this device.</p>
   </header>
+
+  <div class="part" id="part1">Part I — the first ten minutes</div>
+  <p class="partsub">Install it, talk to it, feed it your shell. Nine chapters,
+  each with the demo, the <em>why</em>, the edge cases, and homework.</p>
 
   <!-- ─────────────────────────── 1 ─────────────────────────── -->
   <section class="chapter" id="ch1" aria-labelledby="h-ch1">
     <h2 id="h-ch1"><span class="chn">1</span>Install &amp; first run</h2>
-    <p>One pip away. Install it, then just say its name — <code class="ic">oshell</code>
-    drops you into a chat REPL with a privacy banner that means it. When you want the
-    full cockpit (panels, palette, ambient weather), <code class="ic">oshell tui</code>
-    opens the Textual workspace.</p>
+    <p>oshell installs from source — clone the repo and run the installer. On
+    macOS and Linux, <code class="ic">./install.sh</code> sets up the core, the
+    TUI, and the machine-memory monitors (Mechanic&nbsp;×&nbsp;Drift);
+    <code class="ic">./install.sh all</code> adds every optional feature —
+    <b>rag</b>, <b>docs</b>, <b>vision</b>, <b>finetune</b>. On Windows,
+    <code class="ic">.\install.ps1</code> installs everything except the
+    machine-memory monitors. Then just say its name: <code class="ic">oshell</code>
+    is the chat REPL, <code class="ic">oshell tui</code> the full Textual workspace.</p>
     <p>
-      <span class="chip"><code>pip install ollama-shell</code><button class="copy" data-copy="pip install ollama-shell" aria-label="Copy: pip install ollama-shell">copy</button></span>
-      <span class="chip"><code>oshell</code><button class="copy" data-copy="oshell" aria-label="Copy: oshell">copy</button></span>
-      <span class="chip"><code>oshell tui</code><button class="copy" data-copy="oshell tui" aria-label="Copy: oshell tui">copy</button></span>
+      <span class="chip"><code>git clone https://github.com/sunkencity999/ollama_shell.git</code><button class="copy" data-copy="git clone https://github.com/sunkencity999/ollama_shell.git" aria-label="Copy: git clone the ollama_shell repository">copy</button></span>
+      <span class="chip"><code>./install.sh</code><button class="copy" data-copy="./install.sh" aria-label="Copy: ./install.sh">copy</button></span>
+      <span class="chip"><code>./install.sh all</code><button class="copy" data-copy="./install.sh all" aria-label="Copy: ./install.sh all">copy</button></span>
+      <span class="chip"><code>.\install.ps1</code><button class="copy" data-copy=".\install.ps1" aria-label="Copy: install.ps1 for Windows PowerShell">copy</button></span>
     </p>
     <div class="demo" id="d1" data-ch="1" data-name="terminal — getting started" role="group" aria-label="Interactive demo: install and first run"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p>The installer builds a private virtualenv, installs the core plus the
+      extras you asked for, links <code>oshell</code> onto your PATH, and — on
+      macOS/Linux — registers the <b>Mechanic × Drift</b> telemetry monitors as
+      user services so your machine starts building baselines from day one
+      (chapter 13 is where that pays off).</p>
+      <p>Under the hood, oshell is an <b>agent loop that streams events</b>:
+      the model streams tokens; when it emits a tool call the stream pauses,
+      the tool runs locally, and the result is fed back in. Everything you see
+      in the demos — tool lines, vitals, toasts — is that event stream rendered.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li>Ollama must be running first: <code>ollama serve</code> (or the menu-bar app).</li>
+        <li>Python 3.10+ required; the installer tells you, politely, if not.</li>
+        <li>Extras are installable later, one at a time: <code>./install.sh rag</code>, <code>./install.sh vision</code>, … or live from the TUI Features menu (chapter 12).</li>
+        <li>Windows: <code>.\install.ps1</code> skips the machine-memory monitors — everything else works.</li>
+        <li>There is <b>no</b> <code>pip install</code> for this — it ships from the repo, on purpose: you can read every line of the thing you're about to give a shell to.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 1">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch1-ollama"> Install Ollama and confirm <code>ollama serve</code> answers on 11434</label>
+      <label><input type="checkbox" data-ex="ch1-install"> Clone the repo and run <code>./install.sh</code> (or <code>.\install.ps1</code>)</label>
+      <label><input type="checkbox" data-ex="ch1-first"> Say hi in <code>oshell</code>, then open <code>oshell tui</code> and look around</label>
+    </div>
   </section>
 
   <!-- ─────────────────────────── 2 ─────────────────────────── -->
   <section class="chapter" id="ch2" aria-labelledby="h-ch2">
     <h2 id="h-ch2"><span class="chn">2</span>Chat &amp; slash commands</h2>
-    <p>Inside the REPL, anything that starts with <code class="ic">/</code> is a command,
-    not a question. <code class="ic">/help</code> lists them, <code class="ic">/models</code>
-    and <code class="ic">/tools</code> show what you're working with, and
-    <code class="ic">/daydream</code> lets the model free-associate under a starfield —
-    the same one that closes the <a href="index.html">front-page demo</a>. Context is
-    yours to steer: <code class="ic">/pin</code> keeps a message forever,
-    <code class="ic">/exclude</code> quietly drops one.</p>
+    <p>Inside the REPL, anything that starts with <code class="ic">/</code> is a
+    command, not a question. <code class="ic">/help</code> lists them,
+    <code class="ic">/models</code> switches models mid-conversation,
+    <code class="ic">/tools</code> shows what the model may touch, and
+    <code class="ic">/daydream</code> lets it free-associate under a starfield —
+    the same one that closes the <a href="index.html">front-page demo</a>.
+    Context is yours to steer: <code class="ic">/pin</code> keeps a message
+    forever, <code class="ic">/exclude</code> quietly drops one.</p>
     <div class="demo" id="d2" data-ch="2" data-name="oshell — chat" role="group" aria-label="Interactive demo: chat and slash commands"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p>Slash commands are handled by the <b>client</b> — they are never sent to
+      the model, cost zero tokens, and work even while a reply is streaming.</p>
+      <p>Tools are <b>capability-gated per model</b>: oshell reads the model card
+      and only offers tool-calling to models that were trained for it. Point it
+      at a plain chat model and you get a plain chat loop — no silent failures,
+      no JSON soup in your transcript.</p>
+      <p>Pin and exclude exist because context is finite. When the window fills,
+      oshell trims oldest-first — <em>except</em> pinned messages, which ride
+      along until you unpin them.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li><code>/exclude</code> removes a message from the <b>model's</b> view only — your transcript keeps it, struck through.</li>
+        <li>Message numbers for <code>/pin</code>/<code>/exclude</code> are shown in the transcript gutter (TUI) or via <code>/context</code>.</li>
+        <li><code>/help</code> also lists your custom commands from <code>~/.oshell/commands/</code> (chapter 16 is a cookbook).</li>
+        <li>Switching models with <code>/models</code> keeps the transcript — the new model inherits the conversation.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 2">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch2-help"> Run <code>/help</code> and read your actual command list</label>
+      <label><input type="checkbox" data-ex="ch2-pin"> Pin one message, exclude another, and watch the context gauge move</label>
+      <label><input type="checkbox" data-ex="ch2-dream"> <code>/daydream</code> once, for science</label>
+    </div>
   </section>
 
   <!-- ─────────────────────────── 3 ─────────────────────────── -->
   <section class="chapter" id="ch3" aria-labelledby="h-ch3">
     <h2 id="h-ch3"><span class="chn">3</span>Manage models</h2>
     <p>Models are files on <em>your</em> disk, so oshell treats them like it:
-    list, pull, remove. In the TUI's model picker the same moves are single keys —
-    <kbd>p</kbd> pulls, <kbd>d</kbd> deletes.</p>
+    list, pull, remove. Names read <b>family:size-quant</b> — so
+    <code class="ic">qwen3:8b-q4_K_M</code> is the 8-billion-parameter Qwen&nbsp;3
+    at 4-bit quantization. <b>Q4_K_M</b> is the everyday choice (half the size,
+    barely dumber); <b>Q8_0</b> keeps more precision for twice the disk and RAM.
+    In the TUI's model picker the same moves are single keys — <kbd>p</kbd> pulls,
+    <kbd>d</kbd> deletes — and each row wears a badge with its disk size.</p>
     <p>
       <span class="chip"><code>oshell models</code><button class="copy" data-copy="oshell models" aria-label="Copy: oshell models">copy</button></span>
       <span class="chip"><code>oshell models pull qwen3:8b</code><button class="copy" data-copy="oshell models pull qwen3:8b" aria-label="Copy: oshell models pull qwen3:8b">copy</button></span>
       <span class="chip"><code>oshell models rm old:7b</code><button class="copy" data-copy="oshell models rm old:7b" aria-label="Copy: oshell models rm old:7b">copy</button></span>
     </p>
     <div class="demo" id="d3" data-ch="3" data-name="oshell — models" role="group" aria-label="Interactive demo: manage models"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p><b>Disk is not the whole bill.</b> A 5&nbsp;GB Q4_K_M model wants roughly
+      that much RAM for weights <em>plus</em> a KV cache that grows with context
+      length — a 32k-token conversation can add gigabytes. That's why oshell
+      sizes <code>num_ctx</code> deliberately instead of maxing it (chapter 10).</p>
+      <p>Quant cheat-math: Q4_K_M ≈ 4.5 bits/weight, Q8_0 ≈ 8.5. Same family,
+      same size, half the footprint — and for chat and tool use the quality gap
+      is usually smaller than the speed gap.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li><code>oshell models rm --yes old:7b</code> skips the confirm — for scripts and the very sure.</li>
+        <li>Pulls resume if interrupted; layers already on disk aren't re-downloaded.</li>
+        <li>The <span style="color:var(--green)">●</span> marks your default model; change it in config or with <code>/models</code>.</li>
+        <li>No tag means <code>:latest</code> — which is whatever the registry says it is. Pin a real tag for reproducibility.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 3">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch3-pull"> Pull a small model (<code>llama3.2:3b</code> is a fine pocket knife)</label>
+      <label><input type="checkbox" data-ex="ch3-rm"> Remove one model you never use — feel the gigabytes come back</label>
+      <label><input type="checkbox" data-ex="ch3-picker"> Open the TUI picker and read the disk badges</label>
+    </div>
   </section>
 
   <!-- ─────────────────────────── 4 ─────────────────────────── -->
   <section class="chapter" id="ch4" aria-labelledby="h-ch4">
     <h2 id="h-ch4"><span class="chn">4</span>Pipe the shell in</h2>
-    <p>The oldest trick in Unix, now with a brain on the other end: whatever you pipe
-    into <code class="ic">oshell ask</code> becomes context for the question. Logs,
-    diffs, CSVs — stdin in, sense out. And because the model is local, your logs go
+    <p>The oldest trick in Unix, now with a brain on the other end: whatever you
+    pipe into <code class="ic">oshell ask</code> becomes context for the question.
+    Logs, diffs, schemas, CSVs — any command's stdout. Long input is
+    <b>tail-truncated at 12,000 characters</b>, because errors live at the end.
+    Need a bigger brain for one question? <code class="ic">-m</code> overrides
+    the model for just that ask. And because the model is local, your logs go
     exactly nowhere.</p>
     <p>
       <span class="chip"><code>cat error.log | oshell ask "why is this failing?"</code><button class="copy" data-copy='cat error.log | oshell ask "why is this failing?"' aria-label="Copy: cat error.log piped to oshell ask">copy</button></span>
       <span class="chip"><code>git diff | oshell ask "write the commit message"</code><button class="copy" data-copy='git diff | oshell ask "write the commit message"' aria-label="Copy: git diff piped to oshell ask">copy</button></span>
+      <span class="chip"><code>oshell ask -m qwen3:8b "…"</code><button class="copy" data-copy='oshell ask -m qwen3:8b ""' aria-label="Copy: oshell ask with model override">copy</button></span>
     </p>
     <div class="demo" id="d4" data-ch="4" data-name="zsh — stdin becomes context" role="group" aria-label="Interactive demo: piping into oshell ask"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p><b>Why the tail and not the head?</b> Tracebacks, panics, and OOM kills
+      are written last. Keeping the final 12k characters preserves the part that
+      actually explains the failure, and a dim notice tells you when trimming
+      happened, so you're never guessing.</p>
+      <p><b>Why doesn't the model "forget the top of the file"?</b> Ollama runs
+      at a 4k-token context unless the client passes <code>num_ctx</code>. oshell
+      reads the model card, computes the model's trained maximum, and passes
+      <code>num_ctx</code> on <em>every</em> request — auto-sized, RAM-aware.
+      Chapter 10 shows the knob.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li>Works with any producer: <code>journalctl</code>, <code>kubectl logs</code>, <code>dmesg</code>, <code>curl</code>…</li>
+        <li><code>-m model</code> answers one question with another model; your config is untouched.</li>
+        <li>No stdin? <code>oshell ask "question"</code> works alone, like a one-shot chat turn.</li>
+        <li>Compose onward: <code>git diff | oshell ask "commit msg" | git commit -F -</code>.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 4">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch4-log"> Pipe a real log at a real question</label>
+      <label><input type="checkbox" data-ex="ch4-diff"> <code>git diff | oshell ask "write the commit message"</code> on actual work</label>
+      <label><input type="checkbox" data-ex="ch4-m"> Use <code>-m</code> to aim a bigger model at a harder pipe</label>
+    </div>
   </section>
 
   <!-- ─────────────────────────── 5 ─────────────────────────── -->
   <section class="chapter" id="ch5" aria-labelledby="h-ch5">
     <h2 id="h-ch5"><span class="chn">5</span>Say what you want done</h2>
-    <p><code class="ic">oshell do</code> is the agent with its hand raised, not on the
-    trigger: describe the outcome, it proposes the <em>exact</em> shell command, and
-    nothing runs until you say <kbd>y</kbd>. Press <kbd>e</kbd> to edit the command
-    first, <kbd>n</kbd> to walk away.</p>
+    <p><code class="ic">oshell do</code> is the agent with its hand raised, not on
+    the trigger: describe the outcome, it proposes the <em>exact</em> shell
+    command, and nothing runs until you say <kbd>y</kbd>. <kbd>e</kbd> opens the
+    command for editing first; <kbd>n</kbd> walks away. Every command you confirm
+    is logged to <code class="ic">~/.oshell/do_history.jsonl</code> — and becomes
+    a few-shot example, so the proposals get more <em>yours</em> over time. Ask
+    for something reckless and it refuses.</p>
     <p>
       <span class="chip"><code>oshell do "convert every png here to webp"</code><button class="copy" data-copy='oshell do "convert every png here to webp"' aria-label="Copy: oshell do convert every png here to webp">copy</button></span>
     </p>
-    <div class="demo" id="d5" data-ch="5" data-name="oshell — do (confirm before run)" role="group" aria-label="Interactive demo: oshell do with confirmation"></div>
+    <div class="demo" id="d5" data-ch="5" data-name="oshell — do (confirm before run)" role="group" aria-label="Interactive demo: oshell do with confirmation, editing, learning and refusals"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p>The y/e/n gate is the contract: the agent may be clever, but <b>your
+      machine only runs what you read</b>. Successful commands (and only those)
+      land in <code>do_history.jsonl</code> with the ask that produced them; on
+      the next similar ask they're injected as few-shot examples, which is why
+      the second webp run remembered your quality setting.</p>
+      <p>Refusals are cheap on purpose — a scoped ask ("delete the webp files I
+      generated today in ./out") gets a proposal; an unscoped one does not.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li><kbd>e</kbd> puts the command on an editable line (your <code>$EDITOR</code> for multiline).</li>
+        <li><code>--yes</code> exists for scripts. Respect it like a loaded tool: it skips the gate.</li>
+        <li><kbd>n</kbd> cancels and logs nothing — declined proposals never become examples.</li>
+        <li>The plan line tells you <em>why</em> it chose the tool it chose (e.g. cwebp missing, ImageMagick found).</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 5">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch5-do"> <code>oshell do</code> a real chore you'd otherwise google the flags for</label>
+      <label><input type="checkbox" data-ex="ch5-edit"> Press <kbd>e</kbd> once and edit a proposal before running it</label>
+      <label><input type="checkbox" data-ex="ch5-hist"> Read <code>~/.oshell/do_history.jsonl</code> — it's your greatest hits</label>
+    </div>
   </section>
 
   <!-- ─────────────────────────── 6 ─────────────────────────── -->
   <section class="chapter" id="ch6" aria-labelledby="h-ch6">
     <h2 id="h-ch6"><span class="chn">6</span>Sessions</h2>
-    <p>Every conversation autosaves — there is no save button to forget.
-    <code class="ic">oshell sessions</code> lists them; <code class="ic">oshell resume</code>
-    picks up the last one mid-thought, or name an id (any unique prefix works) to
-    reopen any of them — with the model you left it on.</p>
+    <p>Every conversation autosaves <b>after every turn</b> to
+    <code class="ic">~/.oshell/sessions/*.json</code> — plain files you can read,
+    grep, and back up. <code class="ic">oshell sessions</code> lists them;
+    <code class="ic">--resume</code> reopens the last one mid-thought, or any
+    other by id — a <b>unique prefix</b> is enough. Resuming also restores the
+    session's model, so a conversation you had with the big model comes back
+    with the big model.</p>
     <p>
       <span class="chip"><code>oshell sessions</code><button class="copy" data-copy="oshell sessions" aria-label="Copy: oshell sessions">copy</button></span>
-      <span class="chip"><code>oshell resume</code><button class="copy" data-copy="oshell resume" aria-label="Copy: oshell resume">copy</button></span>
+      <span class="chip"><code>oshell chat --resume</code><button class="copy" data-copy="oshell chat --resume" aria-label="Copy: oshell chat --resume">copy</button></span>
+      <span class="chip"><code>oshell sessions rm ID</code><button class="copy" data-copy="oshell sessions rm " aria-label="Copy: oshell sessions rm">copy</button></span>
     </p>
-    <div class="demo" id="d6" data-ch="6" data-name="oshell — sessions" role="group" aria-label="Interactive demo: sessions and resume"></div>
+    <div class="demo" id="d6" data-ch="6" data-name="oshell — sessions" role="group" aria-label="Interactive demo: sessions, resume by prefix, remove"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p>Autosave is per-turn, not per-exit, so a crash, a closed lid, or an
+      overzealous <kbd>Ctrl+C</kbd> costs you nothing.
+      <code>~/.oshell/last_session.json</code> is just a pointer — that's all
+      <code>--resume</code> reads before loading the real file.</p>
+      <p>Sessions store the model name because context <em>means</em> different
+      things to different models — replaying a 32k conversation into a 4k model
+      would silently amputate it. Restoring the model keeps the conversation whole.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li>Prefix resume needs a <b>unique</b> prefix; if two ids share it, oshell lists both and asks.</li>
+        <li><code>oshell sessions rm ID</code> deletes the file — the id, title, and transcript go together.</li>
+        <li>Titles are auto-generated from the first exchange; rename from the TUI Sessions menu.</li>
+        <li>The files are yours: <code>jq .messages ~/.oshell/sessions/b41f.json</code> works exactly like you hope.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 6">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch6-list"> Run <code>oshell sessions</code> after a day of use</label>
+      <label><input type="checkbox" data-ex="ch6-prefix"> Resume a session by unique prefix</label>
+      <label><input type="checkbox" data-ex="ch6-rm"> Delete one dead session</label>
+    </div>
   </section>
 
   <!-- ─────────────────────────── 7 ─────────────────────────── -->
   <section class="chapter" id="ch7" aria-labelledby="h-ch7">
     <h2 id="h-ch7"><span class="chn">7</span>Live in your shell</h2>
-    <p>One <code class="ic">eval</code> in your <code class="ic">.zshrc</code> and oshell
-    moves in: <kbd>⌃G</kbd> summons it with <em>whatever is on your command line</em>
-    as the question — perfect for the flag you can never remember — and mistyped
-    commands get a helpful hint instead of a shrug.</p>
+    <p>One <code class="ic">eval</code> in your <code class="ic">.zshrc</code> and
+    oshell moves in: <kbd>⌃G</kbd> summons it with <em>whatever is on your command
+    line</em> as the question — perfect for the flag you can never remember — and
+    mistyped commands get a helpful hint instead of a shrug.</p>
     <p>
       <span class="chip"><code>eval "$(oshell init zsh)"</code><button class="copy" data-copy='eval "$(oshell init zsh)"' aria-label="Copy: eval oshell init zsh">copy</button></span>
     </p>
-    <div class="demo" id="d7" data-ch="7" data-name="zsh — Ctrl+G widget" role="group" aria-label="Interactive demo: the Ctrl+G shell widget"></div>
+    <div class="demo" id="d7" data-ch="7" data-name="zsh — Ctrl+G widget" role="group" aria-label="Interactive demo: the Ctrl+G shell widget and command-not-found hint"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p><kbd>⌃G</kbd> is a <b>zle widget</b> — it reads the line buffer, asks,
+      and writes the answer back onto your prompt, so the loop never leaves the
+      shell. The typo hint rides zsh's <code>command_not_found_handler</code>:
+      it fires only when zsh itself gives up, adds no latency to commands that
+      exist, and answers from the local model.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li><kbd>⌃G</kbd> on an <b>empty</b> line opens a plain one-shot chat prompt.</li>
+        <li>The suggested command lands on your prompt to edit — it never auto-runs.</li>
+        <li>zsh today; the init script prints plain shell, so reading it takes one minute: <code>oshell init zsh | less</code>.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 7">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch7-eval"> Add the eval line to <code>~/.zshrc</code> and reload</label>
+      <label><input type="checkbox" data-ex="ch7-cg"> Summon <kbd>⌃G</kbd> mid-command, once, on purpose</label>
+      <label><input type="checkbox" data-ex="ch7-typo"> Typo a command and read the hint</label>
+    </div>
   </section>
 
   <!-- ─────────────────────────── 8 ─────────────────────────── -->
   <section class="chapter" id="ch8" aria-labelledby="h-ch8">
-    <h2 id="h-ch8"><span class="chn">8</span>Machine memory</h2>
-    <p>oshell knows what's <em>normal for your machine</em>. <code class="ic">oshell doctor</code>
-    health-checks the whole stack — backend, models, disk, optional features, and the
-    Mechanic&nbsp;×&nbsp;Drift machine-memory servers. Then, in chat, questions like
-    “is this fan speed normal?” get answered from <em>your</em> telemetry baselines,
-    not vibes.</p>
+    <h2 id="h-ch8"><span class="chn">8</span>Machine memory, first contact</h2>
+    <p>oshell knows what's <em>normal for your machine</em>.
+    <code class="ic">oshell doctor</code> health-checks the whole stack — backend,
+    models, disk, optional features, and the Mechanic&nbsp;×&nbsp;Drift
+    machine-memory servers. Then, in chat, questions like "is this fan speed
+    normal?" get answered from <em>your</em> telemetry baselines, not vibes.
+    This chapter is the handshake; <a href="#ch13">chapter 13</a> is the deep dive.</p>
     <p>
       <span class="chip"><code>oshell doctor</code><button class="copy" data-copy="oshell doctor" aria-label="Copy: oshell doctor">copy</button></span>
     </p>
-    <div class="demo" id="d8" data-ch="8" data-name="oshell — doctor · Mechanic × Drift" role="group" aria-label="Interactive demo: oshell doctor and machine memory"></div>
+    <div class="demo" id="d8" data-ch="8" data-name="oshell — doctor · Mechanic × Drift" role="group" aria-label="Interactive demo: oshell doctor and a machine-memory question"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p>Mechanic and Drift are <b>local MCP servers</b> that
+      <code>./install.sh</code> registered as user services. Mechanic samples
+      runtime metrics on a schedule and builds statistical baselines; Drift
+      snapshots system state. <code>oshell doctor</code> checks that both are
+      alive and how fresh their data is — a stale snapshot is a warning, not
+      an error.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li>Fresh install? Baselines need a day or two of samples before "normal" means anything.</li>
+        <li>Windows installs skip the monitors — doctor reports them as optional-off, not broken.</li>
+        <li>Doctor's exit code is scriptable: 0 healthy, non-zero otherwise. Cron it.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 8">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch8-doctor"> Run <code>oshell doctor</code> and read every line</label>
+      <label><input type="checkbox" data-ex="ch8-normal"> Ask "is my CPU usage normal right now?"</label>
+    </div>
   </section>
 
   <!-- ─────────────────────────── 9 ─────────────────────────── -->
   <section class="chapter" id="ch9" aria-labelledby="h-ch9">
     <h2 id="h-ch9"><span class="chn">9</span>Make it yours</h2>
     <p>Drop a markdown file in <code class="ic">~/.oshell/commands/</code> and it
-    <em>is</em> a slash command — the filename becomes the name, <code class="ic">$ARGS</code>
-    becomes whatever you type after it, in chat and the TUI alike. Set the sky with
-    <code class="ic">/mood rain</code>, restyle everything with the theme picker
-    (<kbd>Esc</kbd> → Theme, previews live), and let auto model routing do the
-    thinking about thinking: a fast model for chat, the big one for hard questions —
-    oshell switches and tells you.</p>
+    <em>is</em> a slash command — the filename becomes the name,
+    <code class="ic">$ARGS</code> becomes whatever you type after it, in chat and
+    the TUI alike. Set the sky with <code class="ic">/mood rain</code>, restyle
+    everything with the theme picker (<kbd>Esc</kbd> → Theme, previews live), and
+    let <b>auto model routing</b> do the thinking about thinking: a fast model
+    for chat, the big one for hard questions — oshell switches and tells you with
+    a dim <em>"→ model (reason)"</em> note.</p>
     <div class="demo" id="d9" data-ch="9" data-name="oshell — custom commands · moods · routing" role="group" aria-label="Interactive demo: custom slash commands, moods and model routing"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p>The commands directory is scanned at startup and watched for changes —
+      save the file, the command exists. No registration, no manifest, no restart.</p>
+      <p>Routing is configuration, not magic. The block lives in
+      <code>config.json</code>:</p>
+      <div class="cfg"><code>"routing": {
+  "enabled": true,
+  "fast_model": "gemma4",
+  "deep_model": "qwen3:8b",
+  "vision_model": "llama3.2-vision:11b"
+}</code></div>
+      <p>The router scores each turn (length, code presence, question shape) and
+      picks a lane. Every switch is announced in dim text — you always know who
+      answered.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li><code>/route off</code> pins the current model; <code>/route on</code> resumes. Per-session.</li>
+        <li><code>$ARGS</code> may appear multiple times in a template; empty args substitute to nothing.</li>
+        <li>A custom command named like a built-in loses — built-ins win the namespace.</li>
+        <li>Moods are cosmetic and honest: they never touch the model or your data, just the sky.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 9">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch9-cmd"> Create <code>~/.oshell/commands/standup.md</code> and run <code>/standup</code></label>
+      <label><input type="checkbox" data-ex="ch9-mood"> Set a mood you'll regret by Friday</label>
+      <label><input type="checkbox" data-ex="ch9-route"> Toggle <code>/route off</code> and back on; watch who answers</label>
+    </div>
+  </section>
+
+  <div class="part" id="part2">Part II — the deep end</div>
+  <p class="partsub">This is where oshell stops being a demo and starts being
+  infrastructure. Configuration layers, two kinds of memory, the whole TUI,
+  telemetry baselines, MCP servers, computer use — and a first week that ends
+  with a diploma. We are going to be almost weird about the detail. That's the point.</p>
+
+  <!-- ─────────────────────────── 10 ─────────────────────────── -->
+  <section class="chapter" id="ch10" aria-labelledby="h-ch10">
+    <h2 id="h-ch10"><span class="chn">10</span>Configuration, layer by layer</h2>
+    <p>Four layers, each one beating the last: <b>defaults</b> &lt;
+    <code class="ic">config.json</code> &lt; <code class="ic">config.local.json</code>
+    &lt; <code class="ic">OSHELL_*</code> environment variables. The single most
+    important line in the file is <code class="ic">"context_length": 0</code> —
+    zero means <b>auto</b>: oshell reads the model's trained maximum from the
+    model card, caps it to what your RAM can afford, and passes
+    <code class="ic">num_ctx</code> on every request. Without that, Ollama quietly
+    runs at 4k tokens and the top of your file falls off — the classic silent
+    truncation bug, permanently fixed.</p>
+    <div class="demo" id="d10" data-ch="10" data-name="~/.oshell — a guided tour" role="group" aria-label="Interactive demo: config file, env overrides, and a tour of the dot-oshell directory"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p><b>Why layers?</b> <code>config.json</code> is your policy — it can live
+      in your dotfiles repo. <code>config.local.json</code> is this machine's
+      exceptions (the laptop routes to a smaller deep model than the workstation).
+      Env vars are for one-offs and CI: <code>OSHELL_MODEL=… oshell ask …</code>
+      leaves both files untouched.</p>
+      <p><b>Temperature</b> defaults to 0.7 — conversational. Drop toward 0.2 for
+      commit messages and code, raise toward 1.0 for daydream-adjacent work.
+      It's a config key <em>and</em> respected per-request by routing lanes.</p>
+      <p><b>Everything lives in <code>~/.oshell/</code></b> — one directory to
+      read, back up, or nuke. No hidden state anywhere else.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li>Set <code>context_length</code> to a number to force it (e.g. <code>8192</code> to keep the KV cache lean on a small machine).</li>
+        <li>Auto caps at the model's trained max — asking a 8k model for 128k is a lie oshell won't tell Ollama.</li>
+        <li><code>config.local.json</code> is created on demand; add it to <code>.gitignore</code> if you version your dotfiles.</li>
+        <li>Every <code>OSHELL_*</code> var maps 1:1 to a config key: <code>OSHELL_TEMPERATURE</code>, <code>OSHELL_THEME</code>, <code>OSHELL_CONTEXT_LENGTH</code>…</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 10">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch10-read"> Open your <code>~/.oshell/config.json</code> and read it end to end</label>
+      <label><input type="checkbox" data-ex="ch10-ctx"> Confirm <code>context_length</code> is <code>0</code> (auto) — or decide, on purpose, that it shouldn't be</label>
+      <label><input type="checkbox" data-ex="ch10-env"> Override one setting with an <code>OSHELL_*</code> env var for a single command</label>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 11 ─────────────────────────── -->
+  <section class="chapter" id="ch11" aria-labelledby="h-ch11">
+    <h2 id="h-ch11"><span class="chn">11</span>Memory &amp; knowledge</h2>
+    <p>Two different organs, often confused. <b>Memory</b> is always on: say
+    "remember that…" and the model saves a durable fact — you'll see
+    <code class="ic">📝 remembered: …</code> in the transcript — into
+    <code class="ic">~/.oshell/memory.json</code>, plain JSON you can read and
+    edit. Say "forget X" and it's gone. <b>Knowledge</b> is the opt-in RAG base
+    (<code class="ic">./install.sh rag</code>, chromadb underneath): feed it
+    documents, and the model gains <code class="ic">add_knowledge</code> /
+    <code class="ic">search_knowledge</code> tools to consult them on demand.</p>
+    <p><b>The rule of thumb:</b> facts about <em>you</em> go in memory ("I'm in
+    Boulder Creek", "prod cluster is nimbus"); facts in <em>documents</em> go in
+    knowledge (runbooks, specs, the 40-page PDF you refuse to reread).</p>
+    <div class="demo" id="d11" data-ch="11" data-name="oshell — memory · knowledge" role="group" aria-label="Interactive demo: remember, forget, memory.json, and the RAG knowledge base"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p>Memory is small and rides along in the system prompt every turn — that's
+      why it's for durable, compact facts, and why the model is stingy about what
+      it saves. Knowledge is embedded into a local chromadb and retrieved only
+      when the model calls <code>search_knowledge</code> — big corpora, zero
+      cost until queried.</p>
+      <p>Both are files in <code>~/.oshell/</code>. Neither has a sync service,
+      a cloud, or an opinion about your privacy. They're yours the way your
+      shell history is yours.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li><code>memory.json</code> is hand-editable — fix a typo in a fact with your editor; it's read fresh each session.</li>
+        <li>Knowledge add accepts files or directories; markdown, text, and PDFs (with the docs extra) are chunked automatically.</li>
+        <li>RAG not installed? The knowledge tools simply don't exist — capability gating again, no error spam.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 11">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch11-fact"> Teach it one durable fact you're tired of repeating</label>
+      <label><input type="checkbox" data-ex="ch11-json"> Open <code>memory.json</code> and meet your file</label>
+      <label><input type="checkbox" data-ex="ch11-rag"> If you installed rag: add one folder of docs and ask a question only they can answer</label>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 12 ─────────────────────────── -->
+  <section class="chapter" id="ch12" aria-labelledby="h-ch12">
+    <h2 id="h-ch12"><span class="chn">12</span>TUI mastery</h2>
+    <p>The workspace is fully keyboard-driven. <kbd>Esc</kbd> opens a numbered
+    menu — models, themes (live preview), features, sessions, moods, doctor —
+    and <kbd>Ctrl+P</kbd> is the fuzzy command palette when you'd rather type
+    than count. Attach an image and a vision model reads it. The right-hand
+    <b>Tools panel</b> shows heat — tools the model has used this session glow
+    with a ×N count — and the <b>vitals bar</b> under each reply reads out
+    tokens/sec and the context gauge. You can even install optional features
+    from the Features menu while the app runs.</p>
+    <div class="demo" id="d12" data-ch="12" data-name="oshell tui — the workspace" role="group" aria-label="Interactive demo: the TUI menu, image attach, moods, and the tools panel"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p>The TUI is a <a href="https://textual.textualize.io/">Textual</a> app
+      rendering the same event stream as the REPL — same agent, different glass.
+      Replies stream as raw text, then commit as rendered markdown ("the ghost,
+      then the pretty version"). The context gauge is honest because chapter 10's
+      <code>num_ctx</code> is honest: the percentage is of the <em>real</em>
+      window, not a guess.</p>
+      <p>Keys worth binding to your fingers: <kbd>Ctrl+B</kbd> copy last code
+      block, <kbd>Ctrl+Y</kbd> copy last reply, <kbd>Esc</kbd> menu,
+      <kbd>Ctrl+P</kbd> palette. Pin/exclude live on the transcript too — hover
+      a message for its gutter actions.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li>Moods: <code>/mood rain · snow · aurora · ocean · clear</code> — and a stormy debugging session leaves rain in the dream sky on its own.</li>
+        <li>Image attach requires a vision model (<code>./install.sh vision</code> pulls one); routing sends vision questions there automatically.</li>
+        <li>Theme choice persists; it's the <code>"theme"</code> key in config.json wearing a nicer interface.</li>
+        <li>Copy-transcript lives in the palette: <kbd>Ctrl+P</kbd> → "copy transcript".</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 12">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch12-theme"> Switch themes with the live preview and keep one</label>
+      <label><input type="checkbox" data-ex="ch12-copy"> Copy a reply with <kbd>Ctrl+Y</kbd> and a code block with <kbd>Ctrl+B</kbd></label>
+      <label><input type="checkbox" data-ex="ch12-vitals"> Watch the vitals bar during one long answer</label>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 13 ─────────────────────────── -->
+  <section class="chapter" id="ch13" aria-labelledby="h-ch13">
+    <h2 id="h-ch13"><span class="chn">13</span>Machine memory, deep dive</h2>
+    <p>The pair, properly introduced. <b>Mechanic</b> keeps runtime baselines —
+    CPU, RAM, fans, temperatures, sampled on a schedule, time-of-day aware — so
+    "is this normal?" has a statistical answer with a z-score attached.
+    <b>Drift</b> keeps state snapshots — packages, services, launch agents, open
+    ports — so "what changed?" has a diff. Together they close a loop no cloud
+    assistant can: <b>mechanic says <em>whether</em>, drift says <em>what</em>,
+    <code class="ic">run_command</code> fixes, mechanic verifies.</b> Watch the
+    whole loop run:</p>
+    <div class="demo" id="d13" data-ch="13" data-name="oshell — the diagnosis loop" role="group" aria-label="Interactive demo: the full mechanic, drift, fix, verify diagnosis loop"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p>Both are <b>local stdio MCP servers</b>, mounted as native tools —
+      <code>mechanic_is_this_normal</code>, <code>mechanic_baseline_for</code>,
+      <code>drift_diff_latest</code>, <code>drift_latest</code>… The model calls
+      them like any other tool; the data never crosses a network interface,
+      because there is no network interface involved.</p>
+      <p>Baselines are per-metric and time-aware: 90% CPU is an anomaly at 2am
+      and a Tuesday afternoon compile is not. Drift snapshots on a schedule and
+      before/after installs, so "since the last snapshot" usually brackets the
+      culprit tightly.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li><code>oshell doctor</code> shows baseline age and snapshot freshness — the trust indicators for everything above.</li>
+        <li>The fix step still goes through <code>run_command</code>, which is an <b>exec</b>-class tool — visible in the Tools panel, logged in Activity.</li>
+        <li>Ask open-endedly: "what changed on this box since yesterday?" is a first-class question.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 13">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch13-normal"> Ask "is this normal?" about anything your machine is doing right now</label>
+      <label><input type="checkbox" data-ex="ch13-changed"> Ask "what changed on this box since yesterday?" and audit the answer</label>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 14 ─────────────────────────── -->
+  <section class="chapter" id="ch14" aria-labelledby="h-ch14">
+    <h2 id="h-ch14"><span class="chn">14</span>Any MCP server + integrations</h2>
+    <p>Mechanic and Drift aren't special cases — oshell is an <b>MCP client</b>.
+    Add any stdio MCP server to the <code class="ic">mcp_servers</code> block in
+    config and its tools mount as native tools, prefixed with the server name,
+    visible in <code class="ic">/tools</code>, gated like everything else.
+    Work uses Jira and Confluence Server? Set the env vars and four Atlassian
+    tools appear: <code class="ic">jira_search</code>,
+    <code class="ic">jira_get_issue</code>, <code class="ic">confluence_search</code>,
+    <code class="ic">confluence_get_page</code>.</p>
+    <div class="demo" id="d14" data-ch="14" data-name="oshell — MCP servers · Jira · Confluence" role="group" aria-label="Interactive demo: mounting an MCP server and querying Jira"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p>MCP (Model Context Protocol) is a plain contract: a server exposes
+      tools over stdio, a client mounts them. oshell speaks it natively, so the
+      whole MCP ecosystem — GitHub, Postgres, filesystems, your own weekend
+      project — plugs in with four lines of JSON and no oshell release.</p>
+      <div class="cfg"><code>"mcp_servers": {
+  "github": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"]
+  }
+}</code></div>
+      <p>The Atlassian env vars: <code>JIRA_URL</code> · <code>JIRA_API_KEY</code> ·
+      <code>JIRA_USER_EMAIL</code>, and <code>CONFLUENCE_URL</code> ·
+      <code>CONFLUENCE_API_TOKEN</code> · <code>CONFLUENCE_EMAIL</code>. The four
+      tools read and search — they don't write to your tracker.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li>Mounted tools show a <code>server·tool</code> name in <code>/tools</code> — you always know where a capability came from.</li>
+        <li>A server that talks to the network makes those tools <b>net</b>-class — they join the privacy banner's count.</li>
+        <li>Servers start lazily on first use and are restarted if they crash; a broken server disables its tools, not your chat.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 14">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch14-mount"> Mount one MCP server you'd actually use</label>
+      <label><input type="checkbox" data-ex="ch14-tools"> Run <code>/tools</code> and find its tools in the roster</label>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 15 ─────────────────────────── -->
+  <section class="chapter" id="ch15" aria-labelledby="h-ch15">
+    <h2 id="h-ch15"><span class="chn">15</span>Computer use</h2>
+    <p>Three rungs on one ladder. <code class="ic">fetch_url</code> grabs static
+    pages — fast, simple, enough for docs and changelogs. The <b>hidden browser</b>
+    (optional install) drives headless Chromium — open, type, click, screenshot —
+    for logins, dashboards, and anything JavaScript-shaped. And <b>desktop GUI
+    tools</b> act on your actual screen — <em>vision-gated</em>, so the model
+    screenshots, looks, acts, and screenshots again to verify. It never clicks blind.</p>
+    <p><b>The safety frame, plainly:</b> tools only run when the model calls
+    them in <em>your</em> conversation; network-capable tools are counted in the
+    privacy banner you see at every launch; browser and GUI are opt-in installs
+    that don't exist until you ask for them.</p>
+    <div class="demo" id="d15" data-ch="15" data-name="oshell — fetch · browser · desktop" role="group" aria-label="Interactive demo: fetch_url, the headless browser, and vision-gated desktop control"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p>Escalation is deliberate: each rung costs more (time, RAM, risk), so
+      the model is prompted to use the cheapest tool that can succeed — and the
+      GUI rung additionally requires a vision-capable model, because acting on
+      pixels you cannot see is how horror stories start. The
+      screenshot→act→screenshot pattern gives every GUI step a before and an
+      after in your Activity log.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li>The browser is hidden until installed (<code>./install.sh browser</code> or the Features menu) — it won't even appear in <code>/tools</code>.</li>
+        <li>Headless browser state (cookies, sessions) lives under <code>~/.oshell/</code> too — delete the folder, forget the logins.</li>
+        <li>GUI tools without a vision model configured simply refuse with a pointer to <code>./install.sh vision</code>.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 15">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch15-fetch"> Have it <code>fetch_url</code> a docs page and summarize it</label>
+      <label><input type="checkbox" data-ex="ch15-browser"> (Optional) install the browser and screenshot a dashboard you check daily</label>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 16 ─────────────────────────── -->
+  <section class="chapter" id="ch16" aria-labelledby="h-ch16">
+    <h2 id="h-ch16"><span class="chn">16</span>Cookbook &amp; your first week</h2>
+    <p>Five commands worth stealing. Each is a complete file — copy it into
+    <code class="ic">~/.oshell/commands/</code> under the name shown and the
+    slash command exists immediately.</p>
+
+    <div class="recipe"><div class="rhead"><span>~/.oshell/commands/standup.md</span><button class="copy rcopy" aria-label="Copy the standup.md recipe">copy</button></div>
+<pre>Summarize my recent shell history and git commits into a
+three-bullet standup. Keep it dry. Focus on: $ARGS</pre></div>
+
+    <div class="recipe"><div class="rhead"><span>~/.oshell/commands/commitmsg.md</span><button class="copy rcopy" aria-label="Copy the commitmsg.md recipe">copy</button></div>
+<pre>Write a conventional-commit message for the diff I give you.
+One-line subject (max 60 chars), blank line, then a short body
+explaining why, not what. Scope hint: $ARGS</pre></div>
+
+    <div class="recipe"><div class="rhead"><span>~/.oshell/commands/review.md</span><button class="copy rcopy" aria-label="Copy the review.md recipe">copy</button></div>
+<pre>Review the following code like a kind but unfooled senior
+engineer. Order findings by risk; flag anything that would page
+someone at 3am. Target: $ARGS</pre></div>
+
+    <div class="recipe"><div class="rhead"><span>~/.oshell/commands/eli5.md</span><button class="copy rcopy" aria-label="Copy the eli5.md recipe">copy</button></div>
+<pre>Explain $ARGS twice: first like I'm five, then like I'm a staff
+engineer. Two paragraphs. No hedging.</pre></div>
+
+    <div class="recipe"><div class="rhead"><span>~/.oshell/commands/oncall.md</span><button class="copy rcopy" aria-label="Copy the oncall.md recipe">copy</button></div>
+<pre>I'm on call and something is wrong with: $ARGS
+Ask me at most three questions, then give one hypothesis and the
+single safest next command. Consult machine memory first.</pre></div>
+
+    <div class="demo" id="d16" data-ch="16" data-name="oshell — the cookbook in action" role="group" aria-label="Interactive demo: the recipes installed, a review run, and oshell finetune"></div>
+
+    <h3 id="week1">Your first week</h3>
+    <p>Adoption is a habit, not a feature. One small thing a day; by Sunday it's
+    your daily driver. These count toward graduation.</p>
+    <div class="ex" role="group" aria-label="Your first week plan">
+      <h3>The 7-day plan</h3>
+      <label><input type="checkbox" data-ex="day1"> <b>Day 1</b> — pipe your first real error log: <code>… | oshell ask "why?"</code></label>
+      <label><input type="checkbox" data-ex="day2"> <b>Day 2</b> — <code>eval "$(oshell init zsh)"</code> in your .zshrc; use <kbd>⌃G</kbd> once</label>
+      <label><input type="checkbox" data-ex="day3"> <b>Day 3</b> — build your first custom command (steal from the cookbook)</label>
+      <label><input type="checkbox" data-ex="day4"> <b>Day 4</b> — turn on routing; let the big model take the hard ones</label>
+      <label><input type="checkbox" data-ex="day5"> <b>Day 5</b> — <code>oshell do</code> a chore you've been putting off</label>
+      <label><input type="checkbox" data-ex="day6"> <b>Day 6</b> — ask "what changed on this box since yesterday?"</label>
+      <label><input type="checkbox" data-ex="day7"> <b>Day 7</b> — on Apple Silicon, peek at <code>oshell finetune</code>: yes, it fine-tunes locally</label>
+    </div>
+    <p class="o-sys" style="max-width:720px">Finish all sixteen chapter demos and the sky does something.
+    <button class="dbtn" id="gradlink" hidden>🎓 view your graduation again</button></p>
   </section>
 
   <!-- ─────────────────────── cheat sheet ─────────────────────── -->
   <section class="chapter cheat" id="cheatsheet" aria-labelledby="h-cheat">
     <h2 id="h-cheat"><span class="chn">✦</span>Cheat sheet</h2>
-    <p>Everything above, one screen, print-friendly. (<kbd>⌘P</kbd> makes a decent desk card.)</p>
+    <p>The full surface, one screen, print-friendly. (<kbd>⌘P</kbd> makes a decent desk card.)</p>
     <div class="tblwrap">
     <table>
       <thead><tr><th scope="col">Command / key</th><th scope="col">What it does</th></tr></thead>
       <tbody>
         <tr class="sect"><td colspan="2">Getting in</td></tr>
-        <tr><td>pip install ollama-shell</td><td>install</td></tr>
-        <tr><td>oshell</td><td>chat REPL (local-first, autosaves)</td></tr>
-        <tr><td>oshell tui</td><td>full Textual workspace</td></tr>
+        <tr><td>git clone …/ollama_shell.git</td><td>get the source (github.com/sunkencity999/ollama_shell)</td></tr>
+        <tr><td>./install.sh [all|rag|vision|…]</td><td>install core + tui + machine memory; extras by name</td></tr>
+        <tr><td>.\install.ps1</td><td>Windows install (no machine-memory monitors)</td></tr>
+        <tr><td>oshell / oshell tui</td><td>chat REPL / full Textual workspace</td></tr>
+        <tr><td>oshell doctor</td><td>health-check backend, models, disk, features, Mechanic × Drift</td></tr>
         <tr class="sect"><td colspan="2">In chat</td></tr>
-        <tr><td>/help · /models · /tools</td><td>list commands, models, tools</td></tr>
+        <tr><td>/help · /models · /tools</td><td>list commands, switch models, see capabilities</td></tr>
         <tr><td>/daydream</td><td>the model free-associates under a starfield</td></tr>
         <tr><td>/pin N · /exclude N</td><td>keep / drop a message from context</td></tr>
-        <tr><td>/mood rain</td><td>set the ambient weather</td></tr>
-        <tr><td>/&lt;name&gt; …</td><td>your own commands from ~/.oshell/commands/&lt;name&gt;.md ($ARGS)</td></tr>
+        <tr><td>/mood rain|snow|aurora|ocean|clear</td><td>set the ambient weather</td></tr>
+        <tr><td>/route on|off</td><td>toggle auto model routing for the session</td></tr>
+        <tr><td>/attach file.png</td><td>attach an image (vision model answers)</td></tr>
+        <tr><td>/&lt;name&gt; …</td><td>your commands from ~/.oshell/commands/&lt;name&gt;.md ($ARGS)</td></tr>
         <tr class="sect"><td colspan="2">Models</td></tr>
         <tr><td>oshell models</td><td>table: name, params, quant, disk</td></tr>
-        <tr><td>oshell models pull qwen3:8b</td><td>download with live progress</td></tr>
-        <tr><td>oshell models rm old:7b</td><td>delete, reclaim disk</td></tr>
-        <tr><td>p / d (TUI picker)</td><td>pull / delete the highlighted model</td></tr>
+        <tr><td>oshell models pull family:size</td><td>download with live progress; resumes</td></tr>
+        <tr><td>oshell models rm [--yes] name</td><td>delete; --yes skips the confirm</td></tr>
+        <tr><td>p / d (TUI picker)</td><td>pull / delete the highlighted model (badges show disk)</td></tr>
         <tr class="sect"><td colspan="2">From the shell</td></tr>
-        <tr><td>… | oshell ask "q"</td><td>stdin becomes context for the question</td></tr>
-        <tr><td>oshell do "outcome"</td><td>proposes a command; y run · e edit · n cancel</td></tr>
-        <tr><td>oshell sessions</td><td>list saved conversations (id, title, when, model)</td></tr>
-        <tr><td>oshell resume [id]</td><td>reopen the last (or a specific) session</td></tr>
-        <tr><td>oshell doctor</td><td>health-check backend, models, disk, Mechanic × Drift</td></tr>
-        <tr class="sect"><td colspan="2">Shell integration</td></tr>
-        <tr><td>eval "$(oshell init zsh)"</td><td>install the widget + command-not-found hint</td></tr>
+        <tr><td>… | oshell ask [-m model] "q"</td><td>stdin becomes context (tail-kept at 12k chars)</td></tr>
+        <tr><td>oshell do [--yes] "outcome"</td><td>proposes a command; y run · e edit · n cancel</td></tr>
+        <tr><td>oshell sessions [rm ID]</td><td>list / delete saved conversations</td></tr>
+        <tr><td>oshell chat --resume [id|prefix]</td><td>reopen last (or any) session; restores its model</td></tr>
+        <tr><td>eval "$(oshell init zsh)"</td><td>Ctrl+G widget + command-not-found hint</td></tr>
         <tr><td>Ctrl+G</td><td>ask oshell about the command line you're writing</td></tr>
+        <tr class="sect"><td colspan="2">Configuration (~/.oshell/)</td></tr>
+        <tr><td>defaults &lt; config.json &lt; config.local.json &lt; OSHELL_*</td><td>the four layers, weakest to strongest</td></tr>
+        <tr><td>"context_length": 0</td><td>auto num_ctx from the model card — the silent-truncation fix</td></tr>
+        <tr><td>"routing": {…}</td><td>fast_model / deep_model / vision_model lanes</td></tr>
+        <tr><td>sessions/ · memory.json · do_history.jsonl · commands/ · last_session.json</td><td>everything it knows, in files you can read</td></tr>
+        <tr class="sect"><td colspan="2">Memory &amp; knowledge</td></tr>
+        <tr><td>"remember that…" / "forget…"</td><td>durable facts → memory.json (always on)</td></tr>
+        <tr><td>./install.sh rag</td><td>knowledge base: add_knowledge / search_knowledge (chromadb)</td></tr>
+        <tr class="sect"><td colspan="2">Machine memory</td></tr>
+        <tr><td>"is this … normal?"</td><td>Mechanic: baseline + z-score answer</td></tr>
+        <tr><td>"what changed since …?"</td><td>Drift: snapshot diff (services, ports, packages)</td></tr>
+        <tr class="sect"><td colspan="2">Integrations</td></tr>
+        <tr><td>"mcp_servers": {…}</td><td>mount any stdio MCP server as native tools</td></tr>
+        <tr><td>JIRA_URL · JIRA_API_KEY · JIRA_USER_EMAIL</td><td>enables jira_search, jira_get_issue</td></tr>
+        <tr><td>CONFLUENCE_URL · CONFLUENCE_API_TOKEN · CONFLUENCE_EMAIL</td><td>enables confluence_search, confluence_get_page</td></tr>
+        <tr class="sect"><td colspan="2">Computer use</td></tr>
+        <tr><td>fetch_url</td><td>static pages, changelogs, docs</td></tr>
+        <tr><td>browser (opt-in)</td><td>headless: open / type / click / screenshot</td></tr>
+        <tr><td>desktop GUI (vision-gated)</td><td>screenshot → act → screenshot, never blind</td></tr>
         <tr class="sect"><td colspan="2">TUI keys</td></tr>
         <tr><td>Esc · Ctrl+P</td><td>menu · command palette</td></tr>
         <tr><td>Ctrl+B · Ctrl+Y</td><td>copy last code block · copy last reply</td></tr>
+        <tr class="sect"><td colspan="2">Beyond</td></tr>
+        <tr><td>oshell finetune</td><td>local QLoRA fine-tuning on Apple Silicon (MLX)</td></tr>
       </tbody>
     </table>
     </div>
@@ -384,6 +1014,19 @@
   </footer>
 </main>
 
+<div class="grad" id="grad" role="dialog" aria-modal="true" aria-labelledby="gradtitle" aria-describedby="graddesc">
+  <div class="gstars" aria-hidden="true"></div>
+  <div class="ginner">
+    <div class="gbadge">16/16 chapters</div>
+    <h2 id="gradtitle">🎓 you're a resident now</h2>
+    <p id="graddesc">oshell isn't a demo on a webpage anymore — it lives on your
+    machine, knows what's normal there, answers to your slash commands, and
+    keeps everything it learns in files you can read. Go make it earn its keep.</p>
+    <p class="gsub">the starfield is the one it daydreams under. seemed right.</p>
+    <button class="gclose" id="gclose">back to the page</button>
+  </div>
+</div>
+
 <script>
 (() => {
   'use strict';
@@ -393,20 +1036,69 @@
   const plain = h => h.replace(/<[^>]+>/g,'')
     .replace(/&nbsp;/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
 
-  /* ── progress (localStorage) ─────────────────────────────────── */
-  const KEY = 'oshell-tutorial-v1';
-  let done = new Set();
+  /* ── progress: 16 chapters + exercises, one tracker ──────────── */
+  const KEY = 'oshell-tutorial-v2';
+  const EXKEY = 'oshell-tutorial-ex-v1';
+  const TOTAL = 16;
+  let done = new Set(), ex = new Set();
   try { done = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch(e){}
+  try { ex = new Set(JSON.parse(localStorage.getItem(EXKEY) || '[]')); } catch(e){}
   const navcount = document.getElementById('navcount');
-  function saveDone(){ try { localStorage.setItem(KEY, JSON.stringify([...done])); } catch(e){} }
+  const exBoxes = document.querySelectorAll('input[data-ex]');
+  const gradlink = document.getElementById('gradlink');
+  const saveDone = () => { try { localStorage.setItem(KEY, JSON.stringify([...done])); } catch(e){} };
+  const saveEx = () => { try { localStorage.setItem(EXKEY, JSON.stringify([...ex])); } catch(e){} };
   function refreshNav(){
-    navcount.textContent = done.size + '/9 chapters';
+    const cap = done.size >= TOTAL ? '🎓 ' : '';
+    navcount.innerHTML = cap + done.size + '/' + TOTAL + '<span class="w"> chapters</span>'
+      + '<br>' + ex.size + '/' + exBoxes.length + '<span class="w"> real-world tasks</span>';
     document.querySelectorAll('.dotlink').forEach(a =>
       a.classList.toggle('done', done.has(+a.dataset.ch)));
+    gradlink.hidden = done.size < TOTAL;
   }
-  function markDone(ch){ if(!done.has(ch)){ done.add(ch); saveDone(); refreshNav(); } }
+  function markDone(ch){
+    if(done.has(ch)) return;
+    done.add(ch); saveDone(); refreshNav();
+    if(done.size === TOTAL) graduate();
+  }
+  exBoxes.forEach(b => {
+    b.checked = ex.has(b.dataset.ex);
+    b.addEventListener('change', () => {
+      b.checked ? ex.add(b.dataset.ex) : ex.delete(b.dataset.ex);
+      saveEx(); refreshNav();
+    });
+  });
   document.getElementById('resetp').addEventListener('click', () => {
-    done.clear(); saveDone(); refreshNav();
+    done.clear(); ex.clear(); saveDone(); saveEx();
+    exBoxes.forEach(b => b.checked = false);
+    refreshNav();
+  });
+
+  /* ── graduation: the sky does something ──────────────────────── */
+  const grad = document.getElementById('grad');
+  function graduate(){
+    const gs = grad.querySelector('.gstars');
+    if(!gs.childElementCount){
+      for(let i=0;i<110;i++){
+        const s = document.createElement('div'); s.className = 'star';
+        s.style.left = (Math.random()*100)+'%'; s.style.top = (Math.random()*100)+'%';
+        s.style.animationDelay = (Math.random()*3)+'s';
+        s.style.opacity = String(0.2+Math.random()*0.7);
+        gs.appendChild(s);
+      }
+    }
+    grad.classList.add('show');
+    document.body.style.overflow = 'hidden';
+    document.getElementById('gclose').focus();
+  }
+  function ungraduate(){
+    grad.classList.remove('show');
+    document.body.style.overflow = '';
+  }
+  document.getElementById('gclose').addEventListener('click', ungraduate);
+  gradlink.addEventListener('click', graduate);
+  document.addEventListener('keydown', e => {
+    if(e.key === 'Escape' && grad.classList.contains('show')) ungraduate();
   });
 
   /* scroll spy: light up the chapter you're reading */
@@ -417,7 +1109,7 @@
       document.querySelectorAll('.dotlink').forEach(a =>
         a.classList.toggle('cur', a.dataset.ch === n));
     });
-  }, { rootMargin: '-30% 0px -60% 0px' });
+  }, { rootMargin: '-25% 0px -65% 0px' });
   document.querySelectorAll('section[id^=ch]').forEach(s => spy.observe(s));
 
   /* ── copy buttons ────────────────────────────────────────────── */
@@ -433,7 +1125,10 @@
   }
   document.querySelectorAll('.copy').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await copyText(btn.dataset.copy);
+      const t = btn.classList.contains('rcopy')
+        ? btn.closest('.recipe').querySelector('pre').textContent
+        : btn.dataset.copy;
+      await copyText(t);
       btn.classList.add('did'); btn.textContent = 'copied ✓';
       setTimeout(() => { btn.classList.remove('did'); btn.textContent = 'copy'; }, 1400);
     });
@@ -449,14 +1144,22 @@
   const FX = kind => ({fx:kind});
   const CARET = () => ({h:"<span class='o-user'>›</span> <span class='caret'></span>", c:'', d:260});
 
-  /* ── the nine lessons ────────────────────────────────────────── */
+  /* ── the sixteen lessons ─────────────────────────────────────── */
   const DEMOS = {
     d1: { stages: [
-      { ps:'$', cmd:'pip install ollama-shell', out:[
-        L('Collecting ollama-shell','o-dim',300),
-        L('  Downloading ollama_shell-0.2.0-py3-none-any.whl (214 kB)','o-dim',260),
-        L('Installing collected packages: ollama-shell','o-dim',420),
-        L('Successfully installed ollama-shell-0.2.0','o-ok',300),
+      { ps:'$', cmd:'git clone https://github.com/sunkencity999/ollama_shell.git', out:[
+        L("Cloning into 'ollama_shell'…",'o-dim',360),
+        L('remote: Enumerating objects: 412, done.','o-dim',260),
+        L('Receiving objects: 100% (412/412), 1.9 MiB | 8.4 MiB/s, done.','o-dim',300),
+      ]},
+      { ps:'$', cmd:'cd ollama_shell && ./install.sh', out:[
+        L('▸ python 3.12 found · creating venv .venv','o-dim',380),
+        L('▸ installing core + tui (Textual, Rich, httpx)…','o-dim',460),
+        L('▸ installing machine memory: Mechanic × Drift (local MCP servers)','o-dim',460),
+        L('▸ registering telemetry monitors (launchd, runs as you)','o-dim',400),
+        L('▸ linking oshell into ~/.local/bin','o-dim',340),
+        L('✓ installed. optional extras: ./install.sh all   (rag · docs · vision · finetune)','o-ok',340),
+        L('Windows: .\\install.ps1 — everything except the machine-memory monitors','o-dim',280),
       ]},
       { ps:'$', cmd:'oshell', out:[
         L("<span class='o-acc'>oshell</span> · chat · <b>gemma4</b> · ollama · 22 tools",'',340),
@@ -482,7 +1185,15 @@
         L("  <span class='o-cyan'>/pin &lt;n&gt;</span>         pin a message — survives trimming",'',110),
         L("  <span class='o-cyan'>/exclude &lt;n&gt;</span>     drop a message from context",'',110),
         L("  <span class='o-cyan'>/mood &lt;sky&gt;</span>      set the ambient weather",'',110),
+        L("  <span class='o-cyan'>/route on|off</span>    toggle auto model routing",'',110),
         L('  …plus anything you put in ~/.oshell/commands/','o-dim',160),
+      ]},
+      { ps:'›', cmd:'/models', out:[
+        L("  <b>MODEL</b>            <b>CTX</b>    <b>STATE</b>",'o-dim',280),
+        L("<span class='o-ok'>●</span> gemma4:latest    128k   loaded",'',130),
+        L('  qwen3:8b          32k    on disk','',130),
+        L('  llama3.2:3b       128k   on disk','',130),
+        L('pick a number to switch — the session keeps its transcript.','o-dim',240),
       ]},
       { ps:'›', cmd:'/daydream', out:[
         FX('stars'),
@@ -494,8 +1205,8 @@
         L('📌 pinned message 2 — it will survive context trimming.','o-mag',300),
       ]},
       { ps:'›', cmd:'/exclude 5', out:[
-        L('🚫 message 5 excluded from context (still in the transcript).','o-dim',300),
-        L("context: <span class='o-acc'>▰▰▱▱▱▱▱▱▱▱</span> 18% of ~8k tokens",'o-dim',240),
+        L('🚫 message 5 excluded from context (still in the transcript, struck through).','o-dim',300),
+        L("context: <span class='o-acc'>▰▰▱▱▱▱▱▱▱▱</span> 18% of 128k tokens",'o-dim',240),
       ]},
     ]},
 
@@ -506,16 +1217,18 @@
         L('  llama3.2:3b       3.2B    Q4_K_M   2.0 GB','',140),
         L('  old:7b            7.0B    Q4_0     3.8 GB','',140),
         L('3 models · 13.4 GB on disk','o-dim',220),
+        L('the TUI picker wears the same disk badges next to each row.','o-dim',240),
       ]},
       { ps:'$', cmd:'oshell models pull qwen3:8b', out:[
         L('resolving manifest… 5.2 GB in 3 layers','o-dim',420),
         PROG('qwen3:8b', 5.2),
         L('verifying sha256 · writing manifest','o-dim',420),
-        L('✓ qwen3:8b ready — try it with /models','o-ok',280),
+        L('✓ qwen3:8b ready — that name reads family:size (quant default: Q4_K_M)','o-ok',280),
       ]},
       { ps:'$', cmd:'oshell models rm old:7b', out:[
-        L('removed old:7b — reclaimed 3.8 GB','o-ok',420),
-        L("tip: in the TUI model picker, <b>p</b> pulls and <b>d</b> deletes.",'o-dim',260),
+        ASK('remove old:7b (3.8 GB)?  [y]es · [n]o  › ', 'y', 900),
+        L('removed old:7b — reclaimed 3.8 GB','o-ok',360),
+        L('scripts skip the question: oshell models rm --yes old:7b','o-dim',260),
       ]},
     ]},
 
@@ -533,6 +1246,14 @@
         L('100 ms attempts; log each retry at debug level.','',130),
         L("pipe it straight through: git diff | oshell ask … | git commit -F -",'o-dim',360),
       ]},
+      { ps:'$', cmd:'journalctl -u api --since today | oshell ask "find the crash"', out:[
+        L('stdin was 48,112 chars — kept the last 12,000 (errors live at the end)','o-warn',480),
+        S("The crash is an OOM kill at 14:02 — the kernel reaped <b>api</b> (rss 1.9 GB against a 2 GB cgroup limit). The allocation storm starts right after the CSV export request at 14:01. Cap the export batch size, or raise the limit and mean it.",''),
+      ]},
+      { ps:'$', cmd:'cat schema.sql | oshell ask -m qwen3:8b "index suggestions"', out:[
+        L('-m override: qwen3:8b answers this one (your config is untouched)','o-dim',460),
+        S('Two: a composite index on <b>events(user_id, created_at)</b> for your hot path, and drop the single-column index on user_id it shadows — you pay writes for it and read from it never.',''),
+      ]},
     ]},
 
     d5: { stages: [
@@ -542,22 +1263,52 @@
         ASK('run it?  [y]es · [e]dit command · [n]o  › ', 'y', 1100),
         L('converting… 14/14','o-dim',700),
         L('✓ done — 14 webp written, originals kept (9.1 MB saved)','o-ok',320),
-        L('nothing ran until you pressed y — that is the whole contract.','o-dim',300),
+        L('logged to ~/.oshell/do_history.jsonl — future proposals learn from this.','o-dim',300),
+      ]},
+      { ps:'$', cmd:'oshell do "find the biggest files here"', out:[
+        L('plan: du + sort — read-only, cheap','o-dim',500),
+        BOX('du -ah . | sort -rh | head -10'),
+        ASK('run it?  [y]es · [e]dit command · [n]o  › ', 'e', 1000),
+        L('editing — the command is on your line now:','o-dim',420),
+        BOX('du -ah . | sort -rh | head -25'),
+        ASK('run it?  [y]es · [n]o  › ', 'y', 800),
+        L('1.9G  ./models/qwen3-8b.gguf','o-dim',300),
+        L('812M  ./venv','o-dim',130),
+        L('406M  ./datasets/flightlogs.parquet   <span class="o-dim">… 22 more lines</span>','o-dim',130),
+      ]},
+      { ps:'$', cmd:'oshell do "convert the new screenshots to webp"', out:[
+        L('few-shot: 1 similar command in your do_history.jsonl (quality 82)','o-mag',540),
+        BOX('magick mogrify -format webp -quality 82 screenshots/*.png'),
+        ASK('run it?  [y]es · [e]dit command · [n]o  › ', 'y', 900),
+        L('✓ done — 6 webp written. it remembered your quality setting.','o-ok',360),
+      ]},
+      { ps:'$', cmd:'oshell do "delete everything"', out:[
+        L('✗ not proposing that.','o-err',520),
+        L('"everything" is unscoped and destructive. Tell me exactly what to delete —','o-dim',260),
+        L('e.g. "delete the webp files I generated today in ./out" — and I\'ll propose','o-dim',150),
+        L('something you can read before it runs.','o-dim',150),
       ]},
     ]},
 
     d6: { stages: [
       { ps:'$', cmd:'oshell sessions', out:[
-        L("  <b>ID</b>                <b>TITLE</b>                     <b>WHEN</b>          <b>MODEL</b>",'o-dim',300),
-        L('  20260812-091412   webp batch convert        2 min ago     gemma4','',140),
-        L('  20260812-081109   postgres startup crash    1 h ago       qwen3:8b','',140),
-        L('  20260811-223054   stargazing plan           yesterday     gemma4','',140),
-        L('conversations autosave — there is nothing to remember to save.','o-dim',240),
+        L("  <b>ID</b>     <b>TITLE</b>                     <b>WHEN</b>          <b>MODEL</b>",'o-dim',300),
+        L('  b41f   webp batch convert        2 min ago     gemma4','',140),
+        L('  9f3a   postgres startup crash    1 h ago       qwen3:8b','',140),
+        L('  77c2   stargazing plan           yesterday     gemma4','',140),
+        L('autosaved after every turn — nothing to remember to save.','o-dim',240),
       ]},
-      { ps:'$', cmd:'oshell resume', out:[
-        L("resuming <b>20260812-091412</b> · “webp batch convert” · 7 messages · gemma4",'o-dim',480),
+      { ps:'$', cmd:'ls ~/.oshell/sessions', out:[
+        L('77c2.json   9f3a.json   b41f.json','',380),
+        L('plain json — read them, grep them, back them up.','o-dim',260),
+      ]},
+      { ps:'$', cmd:'oshell chat --resume 9f', out:[
+        L("prefix <b>9f</b> → <b>9f3a</b> · “postgres startup crash” · 12 messages",'o-dim',460),
+        L("restoring the session's model: <b>qwen3:8b</b>",'o-dim',300),
         CARET(),
-        L('a specific one: oshell resume 20260812-08   (any unique prefix works)','o-dim',320),
+      ]},
+      { ps:'$', cmd:'oshell sessions rm 77c2', out:[
+        L('removed 77c2 · “stargazing plan” — the file, not your memories.','o-ok',420),
       ]},
     ]},
 
@@ -571,7 +1322,7 @@
         L("<kbd>⌃G</kbd> <span class='o-dim'>— stuck mid-command? oshell reads the line you were writing…</span>",'',600),
         S('You want a web-friendly clip. Finish it like this:','o-acc'),
         BOX('ffmpeg -i screen.mov -c:v libx264 -crf 23 -preset veryslow -an screen.mp4'),
-        L('↩ Enter puts it back on your prompt, ready to edit or run.','o-dim',320),
+        L('↩ Enter puts it back on your prompt, ready to edit or run. It never auto-runs.','o-dim',320),
       ]},
       { ps:'$', cmd:'webpify photo.png', out:[
         L('zsh: command not found: webpify','o-err',420),
@@ -594,8 +1345,8 @@
         L('   ↳ {"normal": false, "value": 4980, "mean": 1820, "z_score": 5.9}','o-dim',560),
         L("🔧 <span class='o-cyan'>drift_diff_latest</span><span class='o-dim'>()</span>",'',560),
         L('   ↳ processes: +1 (mediaanalysisd — high CPU since 21:40)','o-dim',560),
-        S("<b>Not normal for this machine.</b> Fans at 4,980 rpm against your usual ~1,800 — six sigma out. Drift pins it on mediaanalysisd re-indexing tonight's Photos import. CPU-bound, should settle within the hour; nothing malicious.",''),
-        L('⏱ 5.1s · answered from your baselines, not vibes','o-dim',300),
+        S("<b>Not normal for this machine.</b> Fans at 4,980 rpm against your usual ~1,800. Drift pins it on mediaanalysisd re-indexing tonight's Photos import. CPU-bound, should settle within the hour; nothing malicious.",''),
+        L('the deep dive — baselines, snapshots, the whole fix loop — is chapter 13.','o-dim',320),
       ]},
     ]},
 
@@ -616,9 +1367,185 @@
         L('🌧 rain settles over the workspace — the dream sky will remember it.','o-dim',700),
       ]},
       { ps:'›', cmd:'why does this segfault only under -O2?', out:[
-        L('↷ hard question — routing to <b>qwen3:8b</b> (gemma4 takes the chit-chat back after)','o-dim',700),
+        L('→ qwen3:8b (hard question — code + why)','o-dim',700),
         S("Almost certainly undefined behavior the optimizer is now allowed to exploit — start with that strict-aliasing cast in your ring buffer; -O2 assumes the two pointers never alias and reorders the store.",''),
         L('⏱ 6.8s · answered by qwen3:8b · routed automatically','o-dim',300),
+      ]},
+      { ps:'›', cmd:'/route off', out:[
+        L('routing off — <b>gemma4</b> answers everything now. /route on when you miss the big brain.','o-dim',420),
+      ]},
+    ]},
+
+    d10: { stages: [
+      { ps:'$', cmd:'cat ~/.oshell/config.json', out:[
+        L('{','o-warn',320),
+        L('  "model": "gemma4",','o-warn',110),
+        L('  "temperature": 0.7,','o-warn',110),
+        L('  "context_length": 0,   <span class="o-dim">← 0 = auto: read the model card, pass num_ctx, cap by RAM</span>','o-warn',110),
+        L('  "theme": "tokyo-night",','o-warn',110),
+        L('  "routing": { "enabled": true, "fast_model": "gemma4",','o-warn',110),
+        L('               "deep_model": "qwen3:8b", "vision_model": "llama3.2-vision:11b" },','o-warn',110),
+        L('  "mcp_servers": { }','o-warn',110),
+        L('}','o-warn',110),
+        L('layers: defaults &lt; config.json &lt; config.local.json &lt; OSHELL_* env','o-dim',300),
+      ]},
+      { ps:'$', cmd:'OSHELL_MODEL=qwen3:8b oshell ask "how big can my context go?"', out:[
+        L('override: env OSHELL_MODEL beats both config files, this command only','o-dim',480),
+        S("qwen3:8b was trained to 32k tokens; with your 32 GB of RAM I'll run the full 32k. I pass <b>num_ctx</b> on every request — without it, Ollama quietly runs at 4k and the top of your file falls off mid-conversation.",''),
+      ]},
+      { ps:'$', cmd:'ls ~/.oshell', out:[
+        L("config.json         <span class='o-dim'>your policy (dotfiles-repo friendly)</span>",'',340),
+        L("config.local.json   <span class='o-dim'>this machine's exceptions (wins over config.json)</span>",'',140),
+        L("commands/           <span class='o-dim'>your custom slash commands (*.md, $ARGS)</span>",'',140),
+        L("sessions/           <span class='o-dim'>every conversation, one json each</span>",'',140),
+        L("last_session.json   <span class='o-dim'>the pointer --resume follows</span>",'',140),
+        L("memory.json         <span class='o-dim'>durable facts it keeps about you</span>",'',140),
+        L("do_history.jsonl    <span class='o-dim'>every confirmed `oshell do` — few-shot fuel</span>",'',140),
+        L('one directory. read it, back it up, or nuke it — no hidden state elsewhere.','o-dim',300),
+      ]},
+    ]},
+
+    d11: { stages: [
+      { ps:'›', cmd:'remember that the prod cluster is called nimbus', out:[
+        L('📝 remembered: <b>Prod cluster is called nimbus.</b>','o-mag',560),
+        S('Got it — filed for every future session. When you say "prod", I\'ll know which sky you mean.',''),
+      ]},
+      { ps:'$', cmd:'cat ~/.oshell/memory.json', out:[
+        L('{','o-warn',340),
+        L('  "facts": [','o-warn',110),
+        L('    "User is in Boulder Creek, CA",','o-warn',110),
+        L('    "Prefers short answers",','o-warn',110),
+        L('    "Prod cluster is called nimbus"','o-warn',110),
+        L('  ],','o-warn',110),
+        L('  "updated": "2026-08-11T21:44:03"','o-warn',110),
+        L('}','o-warn',110),
+        L('plain JSON. edit it by hand; it reloads next session.','o-dim',280),
+      ]},
+      { ps:'›', cmd:'forget the old cluster name', out:[
+        L('🗑 forgot: <span style="text-decoration:line-through">Prod cluster is called stratus.</span>','o-mag',480),
+      ]},
+      { ps:'›', cmd:'what does our runbook say about failover?', out:[
+        L("🔧 <span class='o-cyan'>search_knowledge</span><span class='o-dim'>(\"failover\")</span>",'',600),
+        L('   ↳ 3 chunks · runbooks/failover.md (added via add_knowledge)','o-dim',520),
+        S("Your runbook says: promote the warm standby in <b>nimbus-2</b>, flip the DNS weight to 100/0, and only then restart the writers — step 4 warns that doing it in the other order re-splits the brain. Want the exact section?",''),
+        L('knowledge = documents (chromadb, opt-in: ./install.sh rag) · memory = facts about you','o-dim',340),
+      ]},
+    ]},
+
+    d12: { stages: [
+      { ps:'›', cmd:'/menu', out:[
+        L('menu — numbered, keyboard-driven','o-acc',320),
+        L("  <span class='o-cyan'>1</span>  Models     <span class='o-dim'>switch · p pull · d delete · disk badges</span>",'',130),
+        L("  <span class='o-cyan'>2</span>  Theme      <span class='o-dim'>↑/↓ previews live · Enter keeps it</span>",'',130),
+        L("  <span class='o-cyan'>3</span>  Features   <span class='o-dim'>install extras live: rag · docs · vision · browser</span>",'',130),
+        L("  <span class='o-cyan'>4</span>  Sessions   <span class='o-dim'>resume · rename · delete</span>",'',130),
+        L("  <span class='o-cyan'>5</span>  Mood       <span class='o-dim'>rain · snow · aurora · ocean · clear</span>",'',130),
+        L("  <span class='o-cyan'>6</span>  Doctor     <span class='o-dim'>health-check everything</span>",'',130),
+        L('or skip the numbers: Ctrl+P fuzzy-finds every action.','o-dim',260),
+      ]},
+      { ps:'›', cmd:'/attach chart.png', out:[
+        L('🖼 attached chart.png (1.1 MB)','o-mag',480),
+        L('→ llama3.2-vision:11b (image attached)','o-dim',420),
+        S('Revenue steps up in March; the April "anomaly" is one negative day — the 4th — not a trend. The y-axis starts at zero, so nobody is lying to you with geometry.',''),
+        L('⏱ 8.2s · 31 tok/s · ctx 41% of 128k   <span class="o-dim">← the vitals bar, always on</span>','o-dim',320),
+      ]},
+      { ps:'›', cmd:'/tools', out:[
+        L('tools this session — used ones glow','o-acc',320),
+        L("  <span class='o-ok'>local</span>  read_file <span class='o-dim'>×3</span> · list_dir <span class='o-dim'>×2</span> · create_document <span class='o-dim'>×1</span>",'',140),
+        L("  <span class='o-red' style='color:var(--red)'>exec</span>   run_command <span class='o-dim'>×2</span>",'',140),
+        L("  <span class='o-warn'>net</span>    web_search · fetch_url <span class='o-dim'>(2 network-capable — counted in the banner)</span>",'',140),
+        L("  <span class='o-dim'>cold</span>   remember · mechanic_* · drift_* · 11 more, waiting",'',140),
+      ]},
+      { ps:'›', cmd:'/mood aurora', out:[
+        FX('stars'),
+        L('✨ aurora drifts over the workspace · the vitals bar tints to match.','o-dim',700),
+      ]},
+    ]},
+
+    d13: { stages: [
+      { ps:'›', cmd:'the fans have been roaring for an hour. what is going on?', out:[
+        L("🔧 <span class='o-cyan'>mechanic_is_this_normal</span><span class='o-dim'>(os.cpu_pct)</span>",'',640),
+        L('   ↳ {"normal": false, "value": 91, "mean": 12, "z_score": 7.4}','o-dim',560),
+        L("🔧 <span class='o-cyan'>drift_diff_latest</span><span class='o-dim'>()</span>",'',560),
+        L('   ↳ services: +1 (dev.sky-indexer.plist) · ports: +1 (8931)','o-dim',560),
+        S("<b>Not normal.</b> You're at 91% CPU against your usual ~12% — seven sigma out. And a launchd service appeared since the last snapshot: <b>dev.sky-indexer.plist</b>, which also opened port 8931. That's your roar. Want it gone?",''),
+      ]},
+      { ps:'›', cmd:'kill it', out:[
+        L("🔧 <span class='o-cyan'>run_command</span><span class='o-dim'>(launchctl bootout gui/501/dev.sky-indexer)</span>",'',640),
+        L('   ↳ ok (exit 0)','o-dim',520),
+        L("🔧 <span class='o-cyan'>mechanic_is_this_normal</span><span class='o-dim'>(os.cpu_pct)</span>",'',520),
+        L('   ↳ {"normal": true, "value": 13}','o-dim',520),
+        S('Stopped and <b>verified</b> — CPU back to 13%, right on your baseline. That is the whole pattern: Mechanic says <b>whether</b>, Drift says <b>what</b>, run_command fixes, Mechanic confirms.',''),
+      ]},
+      { ps:'$', cmd:'oshell doctor', out:[
+        L("  <span class='o-ok'>✓</span> machine memory   Mechanic × Drift",'',340),
+        L("      baseline: 21 days · 38 metrics · time-of-day aware",'o-dim',180),
+        L("      last snapshot: 14 min ago · next: on the hour",'o-dim',180),
+        L('both are local stdio MCP servers. nothing leaves this machine —','o-dim',300),
+        L('there is no network to leave on.','o-dim',150),
+      ]},
+    ]},
+
+    d14: { stages: [
+      { ps:'$', cmd:'cat ~/.oshell/config.json', out:[
+        L('  "mcp_servers": {','o-warn',360),
+        L('    "github": { "command": "npx",','o-warn',120),
+        L('                "args": ["-y", "@modelcontextprotocol/server-github"] }','o-warn',120),
+        L('  }','o-warn',120),
+        L('any stdio MCP server. four lines. restart chat and its tools mount.','o-dim',300),
+      ]},
+      { ps:'›', cmd:'/tools', out:[
+        L("mounted from <b>github</b> (3 tools · net)",'o-acc',420),
+        L("  <span class='o-warn'>net</span>  github·search_repositories · github·get_issue · github·list_pulls",'',160),
+        L('server-prefixed, capability-gated, counted in the privacy banner.','o-dim',280),
+      ]},
+      { ps:'›', cmd:"what's assigned to me this sprint?", out:[
+        L('jira: env found (JIRA_URL · JIRA_API_KEY · JIRA_USER_EMAIL) — 4 tools live','o-dim',480),
+        L("🔧 <span class='o-cyan'>jira_search</span><span class='o-dim'>(assignee = me, sprint = active)</span>",'',560),
+        L('   ↳ 3 issues','o-dim',480),
+        S("Three: <b>OPS-214</b> rotate the registry creds (due Friday), <b>OPS-219</b> the flaky canary alert, and <b>OPS-221</b> — code review, small. Confluence works the same way: CONFLUENCE_URL · CONFLUENCE_API_TOKEN · CONFLUENCE_EMAIL.",''),
+      ]},
+    ]},
+
+    d15: { stages: [
+      { ps:'›', cmd:'fetch the latest ollama release notes and summarize', out:[
+        L("🔧 <span class='o-cyan'>fetch_url</span><span class='o-dim'>(github.com/ollama/ollama/releases/latest)</span>",'',600),
+        L('   ↳ 14 KB of markdown','o-dim',500),
+        S('Headline: flash-attention on by default for supported GPUs, ~15% faster prompt eval, and a fix for the model-unload race you hit last month. Nothing breaking for your setup.',''),
+        L('static pages: fetch_url is the cheap rung. dynamic ones need the next rung ↓','o-dim',340),
+      ]},
+      { ps:'›', cmd:'log into grafana and screenshot the error-rate panel', out:[
+        L('browser tools installed (./install.sh browser) — headless chromium','o-dim',480),
+        L("🔧 <span class='o-cyan'>browser_open</span><span class='o-dim'>(grafana.internal/d/api)</span>",'',480),
+        L("🔧 <span class='o-cyan'>browser_type</span><span class='o-dim'>(#password, ••••••••)</span>",'',420),
+        L("🔧 <span class='o-cyan'>browser_screenshot</span><span class='o-dim'>(panel: error rate)</span>",'',420),
+        L('   ↳ saved ~/Desktop/error-rate.png','o-dim',420),
+        S('Saved. The 5xx spike starts at <b>03:12</b> — the same minute your postgres race fired in chapter 4. Coincidence declined.',''),
+      ]},
+      { ps:'›', cmd:'click Export in the Keynote that is open', out:[
+        L('desktop GUI tools are vision-gated — the model sees the screen before it acts','o-dim',480),
+        L("🔧 <span class='o-cyan'>gui_screenshot</span><span class='o-dim'>()</span>  ↳ Keynote frontmost, toolbar visible",'',480),
+        L("🔧 <span class='o-cyan'>gui_click</span><span class='o-dim'>(1184, 62 — “Export”)</span>",'',440),
+        L("🔧 <span class='o-cyan'>gui_screenshot</span><span class='o-dim'>()</span>  ↳ export sheet open — verified",'',440),
+        S('Done — screenshot → act → screenshot, every step in the Activity log. It never clicks blind.',''),
+      ]},
+    ]},
+
+    d16: { stages: [
+      { ps:'$', cmd:'ls ~/.oshell/commands', out:[
+        L('commitmsg.md   eli5.md   oncall.md   review.md   standup.md','',380),
+        L('five files, five slash commands — no registration step, no restart.','o-dim',280),
+      ]},
+      { ps:'›', cmd:'/review src/api.py', out:[
+        L('running your command review.md ($ARGS = “src/api.py”)','o-dim',480),
+        L("1. <b>risk:</b> the retry loop swallows KeyboardInterrupt (line 88) — page-at-3am material",'',380),
+        L('2. auth token logged at debug level (line 141) — scrub it','',240),
+        L('3. nit: three near-identical pagination helpers want to be one','',240),
+      ]},
+      { ps:'$', cmd:'oshell finetune', out:[
+        L('Apple Silicon detected (M-series) · MLX backend available','o-ok',460),
+        L('fine-tune a local model on your own transcripts — QLoRA, on-device','',300),
+        L('day 7 material. the tutorial ends; the rabbit hole does not.','o-dim',320),
       ]},
     ]},
   };
@@ -727,7 +1654,7 @@
       const fast = demo.instant || reduce;
       if(step.fx){ applyFx(step.fx); return true; }
       if(step.box){
-        if(!fast) await sleep(360); if(!alive()) return false;
+        if(!fast){ await sleep(360); if(!alive()) return false; }
         const d = document.createElement('div'); d.className = 'obox';
         d.innerHTML = '<code>' + esc(step.box) + '</code>';
         demo.out.appendChild(d); scroll();
@@ -759,8 +1686,7 @@
         return true;
       }
       // plain line: popped, or streamed char by char
-      if(!fast) await sleep(step.st ? 420 : step.d);
-      if(!alive()) return false;
+      if(!fast){ await sleep(step.st ? 420 : step.d); if(!alive()) return false; }
       const d = mkline(step.c);
       if(step.st && !fast){
         const text = plain(step.h);
