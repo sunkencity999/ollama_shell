@@ -289,7 +289,9 @@ unique prefix) reopens a specific one.
 
 ## A daily driver, not a destination
 
-> 🎓 **[Interactive tutorial →](https://sunkencity999.github.io/ollama_shell/tutorial.html)** — learn all of this in 10 minutes, in your browser.
+> 🎓 **[Interactive tutorial →](https://sunkencity999.github.io/ollama_shell/tutorial.html)** — a hands-on course in your browser: Part I gets you running
+> in ten minutes, Part II is the deep end (16 chapters, 48 real-world exercises,
+> and a graduation ceremony under the stars).
 
 oshell meets you where you already work — the shell — instead of asking you to
 visit it:
