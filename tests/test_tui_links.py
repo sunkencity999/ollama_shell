@@ -45,6 +45,52 @@ async def test_click_on_plain_text_opens_nothing():
         assert app.opened == []
 
 
+async def _drag(pilot, start: tuple[int, int], end: tuple[int, int]) -> None:
+    await pilot.mouse_down(LinkLog, offset=start)
+    await pilot.hover(LinkLog, offset=end)
+    await pilot.mouse_up(LinkLog, offset=end)
+    await pilot.pause()
+
+
+async def test_drag_selects_exact_characters():
+    app = _LinkApp()
+    async with app.run_test() as pilot:
+        log = app.query_one(LinkLog)
+        log.write(Text("hello selectable world"))
+        await pilot.pause()
+        await _drag(pilot, (2, 0), (10, 0))
+        assert app.screen.get_selected_text() == "llo selec"
+
+
+async def test_multiline_drag_and_ctrl_c_copies_without_quitting():
+    app = _LinkApp()
+    copied: list[str] = []
+    app.copy_to_clipboard = copied.append  # no real clipboard in CI
+    async with app.run_test() as pilot:
+        log = app.query_one(LinkLog)
+        log.write(Text("first line here"))
+        log.write(Text("second line here"))
+        await pilot.pause()
+        await _drag(pilot, (6, 0), (6, 1))
+        await pilot.press("ctrl+c")
+        # (Textual's multi-line selection end is inclusive of the cell under
+        # the pointer, hence the strip before comparing.)
+        assert [c.rstrip() for c in copied] == ["line here\nsecond"]
+        assert app.is_running  # ctrl+c with a selection copies; it must not quit
+
+
+async def test_drag_ending_on_link_selects_instead_of_opening():
+    app = _LinkApp()
+    async with app.run_test() as pilot:
+        log = app.query_one(LinkLog)
+        log.write(Text("plain line"))
+        log.write(Text("visit the docs", style=Style(link="https://example.com/docs")))
+        await pilot.pause()
+        await _drag(pilot, (0, 0), (5, 1))
+        assert app.opened == []  # a selection drag never navigates
+        assert "plain line\nvisit" in (app.screen.get_selected_text() or "")
+
+
 async def test_markdown_reply_links_are_clickable():
     """The full path a reply takes: linkify -> rich Markdown -> LinkLog click."""
     from rich.markdown import Markdown

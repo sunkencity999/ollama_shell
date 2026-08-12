@@ -388,7 +388,13 @@ async def test_copy_falls_back_to_osc52(monkeypatch):
     osc = {}
     app = _app()
     async with app.run_test() as pilot:
-        monkeypatch.setattr(app, "copy_to_clipboard", lambda text: osc.update(text=text))
+        # _copy's fallback goes straight to the App base (OllamaShellTUI's own
+        # copy_to_clipboard override would loop back through clipboard_write).
+        from textual.app import App
+
+        monkeypatch.setattr(
+            App, "copy_to_clipboard", lambda self, text: osc.update(text=text)
+        )
         app._copy("hello", "thing")
         await pilot.pause()
         assert osc["text"] == "hello"  # OSC52 fallback used

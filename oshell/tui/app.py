@@ -24,6 +24,8 @@ from rich.markdown import Markdown
 from rich.markup import escape
 from rich.panel import Panel
 from rich.rule import Rule
+from rich.segment import Segment
+from rich.style import Style as RichStyle
 from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult, SystemCommand
@@ -32,6 +34,7 @@ from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import Screen
+from textual.strip import Strip
 from textual.widgets import Footer, Header, Input, RichLog, Static, TabbedContent, TabPane
 
 from .. import desktop
@@ -82,21 +85,61 @@ class ChatInput(Input):
 
 
 class LinkLog(RichLog):
-    """A RichLog whose hyperlinks actually open.
+    """A RichLog whose hyperlinks open and whose text can be selected + copied.
 
-    Rich renders markdown links with ``Style(link=…)``, but Textual only
-    dispatches clicks bound via ``@click=`` style meta — so a link *paints*
-    like a link and does nothing when clicked. Catch the click, read the link
-    style under the pointer, and hand the URL to the OS browser.
+    Three gaps in stock RichLog, one root cause — Textual owns the terminal's
+    mouse, so nothing native (cmd+click a URL, drag-select to copy) reaches the
+    text; it all has to go through Textual's machinery, which RichLog doesn't
+    fully participate in:
+
+    * Links: Rich renders markdown links with ``Style(link=…)``, but Textual
+      only dispatches clicks bound via ``@click=`` style meta — a link *paints*
+      like a link and does nothing. We read the link style under the pointer
+      and hand the URL to the OS browser.
+    * Precise selection: the compositor maps mouse cells to text positions via
+      per-segment ``meta["offset"]`` stamps, which RichLog strips don't carry —
+      so a drag could only ever grab whole widgets. We stamp offsets in
+      ``render_line`` so a drag selects exactly the characters under it.
+    * Extraction: the base ``get_selection`` only pulls text out of
+      Text/Content renders; RichLog renders strips, so ctrl+c copied nothing.
+      We rebuild the text from our strips (sans width-padding).
     """
 
     async def _on_click(self, event: events.Click) -> None:
         link = getattr(event.style, "link", None)
-        if link:
+        # A drag that happens to end on a link is a selection, not a click —
+        # (a plain click clears the selection before Click is dispatched).
+        if link and not self.screen.selections:
             event.stop()
             self.app.open_url(link)
             return
         await super()._on_click(event)
+
+    def render_line(self, y: int) -> Strip:
+        strip = super().render_line(y)
+        scroll_x, scroll_y = self.scroll_offset
+        content_y = scroll_y + y
+        if content_y >= len(self.lines):
+            return strip  # blank filler below the content
+        segments = []
+        x = scroll_x
+        for segment in strip:
+            meta = RichStyle(meta={"offset": (x, content_y)})
+            segments.append(
+                Segment(
+                    segment.text,
+                    segment.style + meta if segment.style else meta,
+                    segment.control,
+                )
+            )
+            x += len(segment.text)
+        return Strip(segments, strip.cell_length)
+
+    def get_selection(self, selection) -> tuple[str, str] | None:
+        if not self.lines:
+            return None
+        text = "\n".join(strip.text.rstrip() for strip in self.lines)
+        return selection.extract(text), "\n"
 
 
 def _context_fill(agent: Agent) -> float:
@@ -566,6 +609,19 @@ class OllamaShellTUI(App):
                 lines.append(m.content)
         return "\n\n".join(lines)
 
+    def copy_to_clipboard(self, text: str) -> None:
+        """Copy text, preferring the system clipboard over Textual's OSC 52.
+
+        This is what Screen's ctrl+c ("copy selected text") calls. The default
+        emits an OSC 52 escape, which macOS Terminal.app silently ignores —
+        pbcopy/xclip first, escape code as the over-SSH fallback.
+        """
+        if clipboard_write(text):
+            self.notify(f"Copied selection ({len(text)} chars).", timeout=2)
+            return
+        super().copy_to_clipboard(text)
+        self.notify(f"Copied selection via the terminal ({len(text)} chars).", timeout=2)
+
     def _copy(self, text: str, label: str) -> None:
         # Status chatter belongs in toasts, not the transcript.
         if not text.strip():
@@ -575,7 +631,7 @@ class OllamaShellTUI(App):
             self.notify(f"Copied {label} ({len(text)} chars).")
             return
         try:  # fall back to the terminal's clipboard via OSC 52 (works over SSH)
-            self.copy_to_clipboard(text)
+            super().copy_to_clipboard(text)
             self.notify(f"Copied {label} via the terminal ({len(text)} chars).")
         except Exception:
             self.notify("Couldn't access the clipboard.", severity="error")
