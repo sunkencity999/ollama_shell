@@ -295,15 +295,19 @@
   <!-- ─────────────────────────── 1 ─────────────────────────── -->
   <section class="chapter" id="ch1" aria-labelledby="h-ch1">
     <h2 id="h-ch1"><span class="chn">1</span>Install &amp; first run</h2>
-    <p>oshell installs from source — clone the repo and run the installer. On
-    macOS and Linux, <code class="ic">./install.sh</code> sets up the core, the
-    TUI, and the machine-memory monitors (Mechanic&nbsp;×&nbsp;Drift);
-    <code class="ic">./install.sh all</code> adds every optional feature —
+    <p>Two ways in. The fast lane is PyPI:
+    <code class="ic">pip install "ollama-shell[tui]"</code> gives you the shell and
+    the full workspace in one command (<code class="ic">[all]</code> for every
+    extra). The full experience is from source — on macOS and Linux,
+    <code class="ic">./install.sh</code> sets up everything pip does <i>plus</i> the
+    machine-memory monitors (Mechanic&nbsp;×&nbsp;Drift), which pip can't register
+    for you; <code class="ic">./install.sh all</code> adds every optional feature —
     <b>rag</b>, <b>docs</b>, <b>vision</b>, <b>finetune</b>. On Windows,
     <code class="ic">.\install.ps1</code> installs everything except the
     machine-memory monitors. Then just say its name: <code class="ic">oshell</code>
     is the chat REPL, <code class="ic">oshell tui</code> the full Textual workspace.</p>
     <p>
+      <span class="chip"><code>pip install "ollama-shell[tui]"</code><button class="copy" data-copy="pip install &quot;ollama-shell[tui]&quot;" aria-label="Copy: pip install ollama-shell with the tui extra">copy</button></span>
       <span class="chip"><code>git clone https://github.com/sunkencity999/ollama_shell.git</code><button class="copy" data-copy="git clone https://github.com/sunkencity999/ollama_shell.git" aria-label="Copy: git clone the ollama_shell repository">copy</button></span>
       <span class="chip"><code>./install.sh</code><button class="copy" data-copy="./install.sh" aria-label="Copy: ./install.sh">copy</button></span>
       <span class="chip"><code>./install.sh all</code><button class="copy" data-copy="./install.sh all" aria-label="Copy: ./install.sh all">copy</button></span>
@@ -327,13 +331,14 @@
         <li>Python 3.10+ required; the installer tells you, politely, if not.</li>
         <li>Extras are installable later, one at a time: <code>./install.sh rag</code>, <code>./install.sh vision</code>, … or live from the TUI Features menu (chapter 12).</li>
         <li>Windows: <code>.\install.ps1</code> skips the machine-memory monitors — everything else works.</li>
-        <li>There is <b>no</b> <code>pip install</code> for this — it ships from the repo, on purpose: you can read every line of the thing you're about to give a shell to.</li>
+        <li><code>pip install ollama-shell</code> is live on PyPI (extras: <code>[tui]</code>, <code>[rag]</code>, <code>[all]</code>, …) — the one thing pip <i>can't</i> do is register the Mechanic × Drift monitors. Add those from their repos later, or use <code>./install.sh</code>.</li>
+        <li>Either way the source is a clone away — you can read every line of the thing you're about to give a shell to.</li>
       </ul>
     </div></details>
     <div class="ex" role="group" aria-label="Try it for real: chapter 1">
       <h3>Try it for real</h3>
       <label><input type="checkbox" data-ex="ch1-ollama"> Install Ollama and confirm <code>ollama serve</code> answers on 11434</label>
-      <label><input type="checkbox" data-ex="ch1-install"> Clone the repo and run <code>./install.sh</code> (or <code>.\install.ps1</code>)</label>
+      <label><input type="checkbox" data-ex="ch1-install"> Install it: <code>pip install "ollama-shell[tui]"</code> — or clone + <code>./install.sh</code> for machine memory</label>
       <label><input type="checkbox" data-ex="ch1-first"> Say hi in <code>oshell</code>, then open <code>oshell tui</code> and look around</label>
     </div>
   </section>
@@ -952,6 +957,7 @@ single safest next command. Consult machine memory first.</pre></div>
       <thead><tr><th scope="col">Command / key</th><th scope="col">What it does</th></tr></thead>
       <tbody>
         <tr class="sect"><td colspan="2">Getting in</td></tr>
+        <tr><td>pip install "ollama-shell[tui]"</td><td>the fast lane — PyPI; [all] for every extra</td></tr>
         <tr><td>git clone …/ollama_shell.git</td><td>get the source (github.com/sunkencity999/ollama_shell)</td></tr>
         <tr><td>./install.sh [all|rag|vision|…]</td><td>install core + tui + machine memory; extras by name</td></tr>
         <tr><td>.\install.ps1</td><td>Windows install (no machine-memory monitors)</td></tr>
@@ -1147,6 +1153,13 @@ single safest next command. Consult machine memory first.</pre></div>
   /* ── the sixteen lessons ─────────────────────────────────────── */
   const DEMOS = {
     d1: { stages: [
+      { ps:'$', cmd:'pip install "ollama-shell[tui]"', out:[
+        L('Collecting ollama-shell','o-dim',300),
+        L('  Downloading ollama_shell-0.2.0-py3-none-any.whl (139 kB)','o-dim',280),
+        L('Installing collected packages: typer, rich, textual, … ollama-shell','o-dim',340),
+        L('✓ Successfully installed ollama-shell-0.2.0','o-ok',300),
+        L("the fast lane — for machine memory (chapter 13), use the installer below",'o-dim',260),
+      ]},
       { ps:'$', cmd:'git clone https://github.com/sunkencity999/ollama_shell.git', out:[
         L("Cloning into 'ollama_shell'…",'o-dim',360),
         L('remote: Enumerating objects: 412, done.','o-dim',260),

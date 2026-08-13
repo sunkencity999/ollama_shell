@@ -73,9 +73,12 @@ If the design philosophy interests you, here it is in one table:
 ## Quick start
 
 ```bash
-# 1. Install. Puts `oshell` on your PATH (uv tool install, editable;
-#    falls back to a venv + symlink). Warns if Ollama isn't running.
-#    Also installs the machine-memory pair (Mechanic + Drift) by default.
+# 1. Install — two ways in.
+#    The fast lane (PyPI):
+pip install "ollama-shell[tui]"  # the shell + full TUI in one command ([all] = every extra)
+
+#    The full experience (source) — same thing PLUS the machine-memory
+#    pair (Mechanic + Drift) registered as user services, which pip can't do:
 ./install.sh                    # macOS / Linux — core + tui + machine memory
 ./install.sh all                # the works: tui, rag, docs, vision, finetune
 ./install.sh rag                # …or any custom subset (web search is built in)
