@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .events import (
     AgentEvent,
+    Compacted,
     LimitReached,
     TextDelta,
     ToolFinished,
@@ -16,6 +17,7 @@ __all__ = [
     "Agent",
     "DEFAULT_SYSTEM_PROMPT",
     "AgentEvent",
+    "Compacted",
     "TextDelta",
     "ToolStarted",
     "ToolFinished",

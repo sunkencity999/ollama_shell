@@ -322,6 +322,37 @@ visit it:
   prompt template (`$ARGS`, `$1`…`$9` substituted) and `/standup` exists in the
   REPL and the TUI. The filesystem is the registry.
 
+## Guardrails — trust infrastructure for an agent with a shell
+
+- **Approval modes.** `{"approvals": "ask"}` (or `/approvals ask`) makes every
+  sensitive tool call — shell execution, GUI control — stop and confirm with
+  you first: a y/N prompt in the REPL, a modal in the TUI. `read-only` hides
+  those tools from the model entirely; `auto` (default) keeps today's behavior.
+  Non-interactive runs under `ask` **fail safe**: the action is denied, never
+  silently executed.
+- **Checkpoints & `/undo`.** Before the model overwrites or creates a file, the
+  prior state is snapshotted to `~/.oshell/checkpoints` — including the fact
+  that the file *didn't exist*. `/undo` rewinds the most recent write (newest
+  first, last 20 kept). Local models fumble; the rewind is what makes handing
+  them a pen feel safe.
+- **Auto-compaction.** Long sessions never silently truncate: when the
+  conversation fills ~85% of the model's context window, older turns are folded
+  into a summary (written by your routing fast model, so it's quick), pinned
+  messages survive verbatim, and a dim `✂ compacted…` note tells you it
+  happened. `/compact` triggers it manually; `{"compact_threshold": 0}`
+  disables. At local context sizes this isn't a nicety — it's the #1 long-chat
+  failure mode, solved.
+- **AGENTS.md.** Launched inside a repo with an `AGENTS.md` (the open
+  convention shared by Codex and friends — `OSHELL.md`/`CLAUDE.md` also
+  honored, closest file wins), oshell folds those instructions into its system
+  prompt. Write your project's conventions once; every agent tool follows them.
+- **`delegate`.** The model can hand a self-contained side quest to a fresh
+  helper agent with its own clean context (and your fast model, when routing is
+  configured) — research errands stop flooding the main conversation. Helpers
+  can't spawn helpers, and under `ask` they inherit fail-safe denials.
+- **`oshell ask --json`.** Structured `{answer, model, tools}` output for
+  scripts, cron, and CI — the composable sibling of piped stdin.
+
 ## Machine memory — Mechanic × Drift, over MCP
 
 Every AI assistant starts blind about your box: ask "why is this slow?" and it

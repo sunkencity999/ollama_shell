@@ -44,4 +44,12 @@ class LimitReached:
     iterations: int
 
 
-AgentEvent = TextDelta | ToolStarted | ToolFinished | TurnComplete | LimitReached
+@dataclass
+class Compacted:
+    """Older turns were summarized to free context (auto or /compact)."""
+
+    dropped: int  # messages replaced by the summary
+    summary_chars: int
+
+
+AgentEvent = TextDelta | ToolStarted | ToolFinished | TurnComplete | LimitReached | Compacted

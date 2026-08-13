@@ -24,6 +24,11 @@ _STACK_MARKERS = {
 }
 _README_CHARS = 1200
 _GIT_TIMEOUT = 3.0  # seconds — never let a slow repo stall startup
+# Project instruction files, in preference order. AGENTS.md is the open
+# convention shared across coding agents (Codex, Claude Code via symlink, …) —
+# write your repo's conventions once and oshell honors them too.
+_INSTRUCTION_FILES = ("AGENTS.md", "OSHELL.md", "CLAUDE.md")
+_INSTRUCTION_CHARS = 4000
 
 
 def _git(args: list[str], cwd: Path) -> str | None:
@@ -38,6 +43,24 @@ def _git(args: list[str], cwd: Path) -> str | None:
         return out.stdout.strip() if out.returncode == 0 else None
     except (OSError, subprocess.TimeoutExpired):  # pragma: no cover - defensive
         return None
+
+
+def _instructions(here: Path, root: Path) -> tuple[str, str] | None:
+    """The nearest project instruction file (closest directory wins, like Codex)."""
+    for base in dict.fromkeys([here.resolve(), root.resolve()]):
+        for name in _INSTRUCTION_FILES:
+            f = base / name
+            if f.is_file():
+                try:
+                    body = f.read_text(encoding="utf-8", errors="replace").strip()
+                except OSError:  # pragma: no cover - defensive
+                    continue
+                if body:
+                    clipped = body[:_INSTRUCTION_CHARS]
+                    if len(body) > _INSTRUCTION_CHARS:
+                        clipped += "\n[…truncated]"
+                    return name, clipped
+    return None
 
 
 def project_context(cwd: str | Path | None = None) -> str | None:
@@ -71,6 +94,13 @@ def project_context(cwd: str | Path | None = None) -> str | None:
     log = _git(["log", "--oneline", "-5"], root)
     if log:
         lines.append("Recent commits:\n" + "\n".join(f"  {line}" for line in log.splitlines()))
+
+    instructions = _instructions(here, root)
+    if instructions:
+        name, body = instructions
+        lines.append(
+            f"Project instructions from {name} — follow these when working here:\n{body}"
+        )
 
     for name in ("README.md", "README.rst", "README"):
         readme = root / name

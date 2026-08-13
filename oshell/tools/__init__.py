@@ -38,6 +38,7 @@ def default_registry(
     workspace: Path | str = ".",
     model: str | None = None,
     memory: Any = None,
+    delegate: bool = True,
 ) -> ToolRegistry:
     """Assemble the standard toolset. ``config.enabled_tools`` gates which are
     advertised to the model (``["*"]`` = all). GUI computer-use tools are added
@@ -85,6 +86,13 @@ def default_registry(
     from ..mcp import mcp_tools
 
     tools += mcp_tools(config)
+
+    # A helper agent the model can hand side quests to (its own clean context,
+    # fast model when routing is configured). Helpers don't get helpers.
+    if delegate:
+        from .delegate import DelegateTool
+
+        tools.append(DelegateTool(provider, config))
     return ToolRegistry(tools, enabled=config.enabled_tools)
 
 

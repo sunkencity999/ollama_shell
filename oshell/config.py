@@ -226,6 +226,16 @@ class Config(BaseModel):
     # Inject a brief about the git repo oshell was launched in
     project_context: bool = True
 
+    # Tool approvals: "auto" runs everything (current behavior); "ask" confirms
+    # each sensitive tool call (shell execution, GUI control) with the user
+    # before it runs; "read-only" hides sensitive tools from the model entirely.
+    approvals: str = "auto"
+
+    # Auto-compact: when the conversation fills this fraction of the model's
+    # context window, older turns are summarized (with the routing fast model
+    # when configured) so long sessions never silently truncate. 0 disables.
+    compact_threshold: float = 0.85
+
     # Local vector knowledge base
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
 

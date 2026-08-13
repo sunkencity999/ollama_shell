@@ -25,7 +25,15 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from .agent import Agent, LimitReached, TextDelta, ToolFinished, ToolStarted, TurnComplete
+from .agent import (
+    Agent,
+    Compacted,
+    LimitReached,
+    TextDelta,
+    ToolFinished,
+    ToolStarted,
+    TurnComplete,
+)
 from .config import Config
 from .providers import get_provider
 from .tools import default_registry
@@ -42,14 +50,41 @@ from .finetune.cli import finetune_app  # noqa: E402 - after app exists, before 
 app.add_typer(finetune_app, name="finetune")
 
 
-def _build_agent(config: Config, model: str | None) -> Agent:
+def _cli_approver(call) -> bool:
+    """Confirm a sensitive tool call at the prompt (approvals: ask)."""
+    from rich.markup import escape
+
+    args = ", ".join(f"{k}={v!r}" for k, v in call.arguments.items())
+    console.print(
+        Panel(
+            escape(f"{call.name}({args})"),
+            title="[yellow]the model wants to run this[/yellow]",
+            border_style="yellow",
+            expand=False,
+        )
+    )
+    try:
+        return typer.confirm("Allow it?", default=False)
+    except (typer.Abort, EOFError):  # non-interactive stdin → fail safe
+        console.print("[dim]denied (no interactive confirmation available)[/dim]")
+        return False
+
+
+def _build_agent(config: Config, model: str | None, interactive: bool = True) -> Agent:
     from .memory import MemoryStore
 
     provider = get_provider(config)
     m = model or config.default_model
     memory = MemoryStore(config.memory.path)
     registry = default_registry(provider, config, model=m, memory=memory)
-    return Agent(provider, registry, config, model=m, memory=memory)
+    return Agent(
+        provider,
+        registry,
+        config,
+        model=m,
+        memory=memory,
+        approver=_cli_approver if interactive else None,
+    )
 
 
 def _privacy_banner(agent: Agent) -> Panel:
@@ -81,6 +116,11 @@ def _render_turn(agent: Agent, text: str) -> None:
         elif isinstance(event, ToolFinished):
             preview = event.result.replace("\n", " ")[:120]
             console.print(f"[dim]  ↳ {preview}[/dim]")
+        elif isinstance(event, Compacted):
+            console.print(
+                f"[dim]✂ compacted {event.dropped} older messages into a "
+                f"{event.summary_chars}-char summary to free context[/dim]"
+            )
         elif isinstance(event, TurnComplete):
             console.print()
         elif isinstance(event, LimitReached):
@@ -97,6 +137,9 @@ SLASH_HELP = """\
   /pull NAME       download a model (live progress)
   /rm NAME         delete a model from the backend
   /route [on|off]  automatic model routing (fast/deep/vision per message)
+  /approvals [M]   tool approvals: auto | ask | read-only
+  /compact         summarize older turns to free context (auto at 85%)
+  /undo            restore the last file the model overwrote/created
   /context         show pinned / excluded message indices
   /pin N           pin message N (keep in context)
   /exclude N       drop message N from context
@@ -180,6 +223,45 @@ def _handle_slash(agent: Agent, line: str) -> bool:
                 "[yellow]No routing models configured — set routing.fast_model / "
                 "deep_model / vision_model in config.[/yellow]"
             )
+    elif cmd == "/approvals":
+        modes = ("auto", "ask", "read-only")
+        if len(parts) == 2 and parts[1] in modes:
+            agent.config.approvals = parts[1]
+            from .config import update_local_config
+
+            try:
+                update_local_config({"approvals": parts[1]})
+            except Exception:  # pragma: no cover - defensive
+                pass
+        elif len(parts) == 2:
+            console.print(f"[red]unknown mode:[/red] {parts[1]}  (try {', '.join(modes)})")
+            return True
+        mode = agent.config.approvals
+        notes = {
+            "auto": "everything runs without asking",
+            "ask": "sensitive tools (shell, GUI) confirm with you first",
+            "read-only": "sensitive tools are hidden from the model",
+        }
+        console.print(f"approvals: [bold]{mode}[/bold] — {notes.get(mode, '')}")
+    elif cmd == "/compact":
+        info = agent.compact()
+        if info:
+            console.print(
+                f"[green]✂[/green] compacted {info.dropped} messages "
+                f"into a {info.summary_chars}-char summary "
+                f"(context now {agent.context_fill():.0%} full)"
+            )
+        else:
+            console.print("[dim]Nothing to compact yet.[/dim]")
+    elif cmd == "/undo":
+        from . import checkpoints
+
+        try:
+            console.print(f"[green]↩[/green] {checkpoints.undo_last()}")
+        except FileNotFoundError as exc:
+            console.print(f"[dim]{exc}[/dim]")
+        except Exception as exc:
+            console.print(f"[red]undo failed: {exc}[/red]")
     elif cmd == "/commands":
         from . import commands as custom
 
@@ -309,10 +391,18 @@ _PIPE_LIMIT = 12_000  # chars of piped stdin to keep (the tail — errors live t
 
 
 @app.command()
-def ask(prompt: str, model: str = typer.Option(None, "--model", "-m")) -> None:
+def ask(
+    prompt: str,
+    model: str = typer.Option(None, "--model", "-m"),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit {answer, model, tools} as JSON (for scripts/CI)"
+    ),
+) -> None:
     """One-shot question. Piped stdin becomes context: cat err.log | oshell ask "why?" """
     config = Config.load()
-    agent = _build_agent(config, model)
+    # JSON mode is for machines: no approver (sensitive tools fail safe under
+    # "ask"), no rich rendering, structured output only.
+    agent = _build_agent(config, model, interactive=not json_out)
     if not sys.stdin.isatty():
         piped = sys.stdin.read().strip()
         if piped:
@@ -323,6 +413,24 @@ def ask(prompt: str, model: str = typer.Option(None, "--model", "-m")) -> None:
                 else ""
             )
             prompt = f"{prompt}\n\nPiped input:\n```\n{note}{clipped}\n```"
+    if json_out:
+        import json as _json
+
+        from .routing import pick_model
+
+        routed = pick_model(prompt, False, config.routing, agent.model)
+        if routed:
+            agent.model = routed[0]
+        answer, tools_used = "", []
+        for event in agent.send(prompt):
+            if isinstance(event, ToolStarted):
+                tools_used.append({"name": event.name, "arguments": event.arguments})
+            elif isinstance(event, ToolFinished) and tools_used:
+                tools_used[-1]["result_preview"] = event.result[:400]
+            elif isinstance(event, TurnComplete):
+                answer = event.text
+        print(_json.dumps({"answer": answer, "model": agent.model, "tools": tools_used}))
+        return
     _maybe_route(agent, prompt)
     _render_turn(agent, prompt)
 
@@ -646,6 +754,14 @@ def doctor() -> None:
     else:
         healthy = False
         table.add_row(f"{bad} backend", f"{cfg.provider.host} unreachable — is Ollama running?")
+
+    approvals_note = {
+        "auto": "everything runs unprompted",
+        "ask": "sensitive tools confirm first",
+        "read-only": "sensitive tools hidden",
+    }.get(cfg.approvals, "unknown mode!")
+    mark = ok if cfg.approvals in ("auto", "ask", "read-only") else warn
+    table.add_row(f"{mark} approvals", f"{cfg.approvals} — {approvals_note}")
 
     rcfg = cfg.routing
     if rcfg.enabled:

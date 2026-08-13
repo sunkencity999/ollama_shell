@@ -42,6 +42,31 @@ def test_repo_brief_contents(tmp_path):
     assert "A tiny test project." in ctx  # README head
 
 
+def test_agents_md_instructions_injected(tmp_path):
+    repo = _make_repo(tmp_path)
+    (repo / "AGENTS.md").write_text("# Rules\nAlways run make test before committing.\n")
+    ctx = project_context(repo)
+    assert ctx is not None
+    assert "Project instructions from AGENTS.md" in ctx
+    assert "make test before committing" in ctx
+
+
+def test_instruction_file_preference_order(tmp_path):
+    repo = _make_repo(tmp_path)
+    (repo / "CLAUDE.md").write_text("claude rules")
+    (repo / "AGENTS.md").write_text("agents rules")
+    ctx = project_context(repo)
+    assert "agents rules" in ctx  # AGENTS.md (the open convention) wins
+    assert "claude rules" not in ctx
+
+
+def test_long_instructions_truncated(tmp_path):
+    repo = _make_repo(tmp_path)
+    (repo / "AGENTS.md").write_text("rule\n" * 2000)
+    ctx = project_context(repo)
+    assert "[…truncated]" in ctx
+
+
 def test_agent_injects_project_block(tmp_path, monkeypatch):
     repo = _make_repo(tmp_path)
     monkeypatch.chdir(repo)

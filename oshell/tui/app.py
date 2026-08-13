@@ -38,7 +38,15 @@ from textual.strip import Strip
 from textual.widgets import Footer, Header, Input, RichLog, Static, TabbedContent, TabPane
 
 from .. import desktop
-from ..agent import Agent, LimitReached, TextDelta, ToolFinished, ToolStarted, TurnComplete
+from ..agent import (
+    Agent,
+    Compacted,
+    LimitReached,
+    TextDelta,
+    ToolFinished,
+    ToolStarted,
+    TurnComplete,
+)
 from ..capabilities import optional_features
 from ..config import Config
 from ..linkify import linkify_urls
@@ -184,17 +192,8 @@ class LinkLog(RichLog):
 
 
 def _context_fill(agent: Agent) -> float:
-    """Rough fraction of the context window the in-context messages occupy.
-
-    A chars/4 token estimate — honest enough for a gauge, cheap enough to run
-    on every refresh. Excluded messages don't count; that's the whole point.
-    """
-    chars = sum(
-        len(m.content) + 16  # + a little per-message wire overhead
-        for i, m in enumerate(agent.messages)
-        if i not in agent.excluded
-    )
-    return min(chars / 4 / max(agent.effective_context(), 1), 1.0)
+    """The agent's own context-fill estimate (shared with auto-compaction)."""
+    return agent.context_fill()
 
 
 def _fmt_tokens(n: int) -> str:
@@ -390,6 +389,9 @@ class OllamaShellTUI(App):
     def on_mount(self) -> None:
         self.title = "Ollama Shell"
         self.sub_title = self._subtitle()
+        # Approvals ("ask" mode): sensitive tool calls block the agent worker on
+        # a modal until the user answers.
+        self.agent.approver = self._approve_tool
         try:
             self.theme = self.agent.config.theme
         except Exception:
@@ -1221,6 +1223,7 @@ class OllamaShellTUI(App):
             self._menu_help()
             self._conversation().write(
                 "[dim]Commands: /clear (new conversation) · /daydream 💭 · /mood [name] · "
+                "/route [on|off] · /approvals [auto|ask|read-only] · /compact · /undo · "
                 "/help · /menu[/dim]"
             )
             return True
@@ -1252,6 +1255,38 @@ class OllamaShellTUI(App):
                 f"vision={rcfg.vision_model or '—'}"
             )
             return True
+        if cmd == "approvals":
+            modes = ("auto", "ask", "read-only")
+            if arg in modes:
+                self.agent.config.approvals = arg
+                from ..config import update_local_config
+
+                try:
+                    update_local_config({"approvals": arg})
+                except Exception:  # pragma: no cover - defensive
+                    pass
+            elif arg:
+                self.notify(f"Unknown mode: {arg}. Try {', '.join(modes)}.", severity="warning")
+                return True
+            self.notify(f"Approvals: {self.agent.config.approvals}")
+            return True
+        if cmd == "compact":
+            if self._busy:
+                return True
+            self._busy = True
+            self._status = "Compacting"
+            self.run_worker(self._compact_worker, thread=True, exclusive=True)
+            return True
+        if cmd == "undo":
+            from .. import checkpoints
+
+            try:
+                self.notify(f"↩ {checkpoints.undo_last()}")
+            except FileNotFoundError as exc:
+                self.notify(str(exc), severity="warning")
+            except Exception as exc:
+                self.notify(f"Undo failed: {exc}", severity="error")
+            return True
         # Not built in — maybe it's one of the user's ~/.oshell/commands/*.md.
         from .. import commands as custom
 
@@ -1267,6 +1302,25 @@ class OllamaShellTUI(App):
             severity="warning",
         )
         return True
+
+    def _compact_worker(self) -> None:
+        """Run /compact off the UI thread (it makes a model call)."""
+        try:
+            info = self.agent.compact()
+        finally:
+            self._busy = False
+            self._status = "Thinking"
+        if info:
+            self.call_from_thread(
+                self.notify,
+                f"✂ Compacted {info.dropped} messages — context now "
+                f"{self.agent.context_fill():.0%} full.",
+            )
+            self.call_from_thread(
+                self.query_one(ContextInspector).refresh_view, self.agent
+            )
+        else:
+            self.call_from_thread(self.notify, "Nothing to compact yet.")
 
     # ── daydreams 💭 ───────────────────────────────────────────────────────────
     def _start_daydream(self) -> None:
@@ -1378,6 +1432,25 @@ class OllamaShellTUI(App):
         self._maybe_route(text, bool(images))
         self._send_prompt(text, echo, images)
 
+    def _approve_tool(self, call) -> bool:
+        """Confirm a sensitive tool call (approvals: ask) via a modal.
+
+        Called from the agent worker thread — call_from_thread runs (and
+        awaits) push_screen_wait on the UI thread while this thread blocks for
+        the verdict. Any failure denies: fail safe, never fail open.
+        """
+        args = ", ".join(f"{k}={v!r}" for k, v in call.arguments.items())
+        question = (
+            f"The model wants to run [b]{escape(call.name)}[/b]\n\n"
+            f"[dim]{escape(args[:400] or '(no arguments)')}[/dim]"
+        )
+        try:
+            return bool(
+                self.call_from_thread(self.push_screen_wait, ConfirmScreen(question))
+            )
+        except Exception:
+            return False
+
     def _maybe_route(self, text: str, has_images: bool) -> None:
         """Switch models for this message when routing says so (visible note)."""
         from ..routing import pick_model
@@ -1418,6 +1491,17 @@ class OllamaShellTUI(App):
                         first_delta = time.monotonic()
                     n_deltas += 1
                     self._stream += event.text  # the spinner timer renders this live
+                elif isinstance(event, Compacted):
+                    self.call_from_thread(
+                        self.notify,
+                        f"✂ Compacted {event.dropped} older messages to free context.",
+                        timeout=4,
+                    )
+                    self.call_from_thread(
+                        activity.write,
+                        f"[dim]✂ auto-compact: {event.dropped} messages → "
+                        f"{event.summary_chars}-char summary[/dim]",
+                    )
                 elif isinstance(event, ToolStarted):
                     if event.name == "screenshot" or event.name.startswith("gui_"):
                         used_gui = True

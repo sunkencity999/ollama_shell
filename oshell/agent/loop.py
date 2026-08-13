@@ -15,10 +15,11 @@ from collections.abc import Iterator
 from typing import Any
 
 from ..config import Config
-from ..providers.base import LLMProvider, Message
+from ..providers.base import LLMProvider, Message, ToolCall
 from ..tools import ToolRegistry
 from .events import (
     AgentEvent,
+    Compacted,
     LimitReached,
     TextDelta,
     ToolFinished,
@@ -40,6 +41,13 @@ DEFAULT_SYSTEM_PROMPT = (
     "\n3. Natural conversation: if no tool is needed — greetings, questions "
     "about you, opinions, discussion — just respond naturally in your own voice. "
     "Never force a tool call into a conversational reply."
+)
+
+_COMPACT_PROMPT = (
+    "Summarize this conversation into compact notes the assistant will continue "
+    "from. Preserve: facts and preferences the user stated, decisions made, file "
+    "paths, commands run and their outcomes, and any open tasks or promises. "
+    "Omit pleasantries and dead ends. 300 words maximum. Output only the notes."
 )
 
 # Future-intent cues + action verbs. When a turn ends with text that pairs the
@@ -227,11 +235,15 @@ class Agent:
         model: str | None = None,
         system_prompt: str | None = None,
         memory: Any = None,
+        approver: Any = None,
     ):
         self.provider = provider
         self.registry = registry
         self.config = config
         self.memory = memory  # MemoryStore (or None) — injected facts + remember tool
+        # Callable[[ToolCall], bool] used when config.approvals == "ask": asked
+        # before each sensitive tool runs. None (non-interactive) means deny.
+        self.approver = approver
         self.model = model or config.default_model
         # Project brief (git repo at launch dir) — computed once; refreshed on
         # rebuild_system_prompt so long sessions see new commits.
@@ -288,6 +300,110 @@ class Agent:
                 self.registry, memory=self.memory, project=self._project
             )
 
+    def _authorize(self, call: ToolCall) -> str | None:
+        """Approval gate for sensitive tools. Returns denial text, or None to run.
+
+        "auto" runs everything; "read-only" blocks (belt to the specs-filter's
+        suspenders — a stubborn model may still emit the call); "ask" defers to
+        the approver callback, and denies when there isn't one (non-interactive
+        runs must fail safe, not execute silently).
+        """
+        mode = self.config.approvals
+        if mode == "auto":
+            return None
+        tool = next((t for t in self.registry.active() if t.name == call.name), None)
+        if tool is None or not tool.sensitive:
+            return None
+        if mode == "read-only":
+            return (
+                "[denied] read-only mode: this tool is disabled. Tell the user they "
+                "can re-enable it with /approvals auto (or ask)."
+            )
+        if self.approver is None:
+            return (
+                "[denied] this action needs the user's approval, and this is a "
+                "non-interactive run. Suggest re-running interactively."
+            )
+        try:
+            approved = bool(self.approver(call))
+        except Exception:
+            approved = False
+        if approved:
+            return None
+        return "[denied] the user declined this action. Ask before trying a different approach."
+
+    # ── context health: fill estimate + compaction ────────────────────────────
+    def context_fill(self) -> float:
+        """Rough fraction of the context window the in-context messages occupy.
+
+        A chars/4 token estimate — honest enough for a gauge and a compaction
+        trigger, cheap enough to run every turn. Excluded messages don't count.
+        """
+        chars = sum(
+            len(m.content) + 16  # + a little per-message wire overhead
+            for i, m in enumerate(self.messages)
+            if i not in self.excluded
+        )
+        return min(chars / 4 / max(self.effective_context(), 1), 1.0)
+
+    def compact(self, keep_recent: int = 6) -> Compacted | None:
+        """Fold older turns into a summary, freeing context without amnesia.
+
+        Pinned messages survive verbatim; excluded ones are finally dropped for
+        real. The summary is written by the routing fast model when configured
+        (compaction shouldn't cost big-model latency). Returns None when there
+        is nothing worth compacting or the summarizer fails — the conversation
+        is left untouched in that case.
+        """
+        body = self.messages[1:]
+        if len(body) <= keep_recent + 2:  # too young to be worth a summary call
+            return None
+        cut = len(body) - keep_recent
+        # Never let the kept tail open with an orphaned tool result — pull the
+        # boundary back to include its parent assistant message.
+        while cut > 0 and body[cut].role == "tool":
+            cut -= 1
+        if cut <= 0:
+            return None
+        old, tail = body[:cut], body[cut:]
+        keep_pinned = [m for i, m in enumerate(old, start=1) if i in self.pinned]
+        drop = [
+            m
+            for i, m in enumerate(old, start=1)
+            if i not in self.pinned and i not in self.excluded and m.content
+        ]
+        if not drop:
+            return None
+        transcript = "\n".join(f"{m.role}: {m.content}" for m in drop)[-24000:]
+        summarizer = self.config.routing.fast_model or self.model
+        try:
+            summary = "".join(
+                c.content
+                for c in self.provider.chat(
+                    [
+                        Message(role="system", content=_COMPACT_PROMPT),
+                        Message(role="user", content=transcript),
+                    ],
+                    model=summarizer,
+                    stream=False,
+                    temperature=0.2,
+                )
+            ).strip()
+        except Exception:
+            return None
+        if not summary:
+            return None
+        note = Message(
+            role="user",
+            content=f"[Earlier conversation, compacted to save context]\n{summary}",
+        )
+        before = len(self.messages)
+        self.messages = [self.messages[0], *keep_pinned, note, *tail]
+        # Everything up to and including the summary is structural — keep it.
+        self.pinned = set(range(len(keep_pinned) + 2))
+        self.excluded = set()
+        return Compacted(dropped=before - len(self.messages), summary_chars=len(summary))
+
     # ── context management ───────────────────────────────────────────────────
     def pin(self, index: int) -> None:
         self.pinned.add(index)
@@ -318,6 +434,12 @@ class Agent:
         for vision-capable models (passed through to the backend verbatim).
         """
         self.messages.append(Message(role="user", content=user_text, images=images or []))
+        # Long sessions must never silently truncate: when the transcript nears
+        # the context window, fold older turns into a summary first.
+        if self.config.compact_threshold and self.context_fill() >= self.config.compact_threshold:
+            compacted = self.compact()
+            if compacted:
+                yield compacted
         # Capability-aware: only advertise tools to models that support them.
         # This keeps tools on for image turns with models that do both (e.g.
         # gemma3/4), but suppresses them for vision-only models (e.g. llava) that
@@ -325,6 +447,11 @@ class Agent:
         tools = self.registry.specs() or None
         if tools and not self._model_supports_tools():
             tools = None
+        if tools and self.config.approvals == "read-only":
+            # Don't even advertise tools the mode forbids — a hidden tool can't
+            # be argued with, and the model won't burn rounds trying.
+            sensitive = {t.name for t in self.registry.active() if t.sensitive}
+            tools = [s for s in tools if s["function"]["name"] not in sensitive] or None
 
         nudges = 0  # how many "you promised — now do it" prods we've issued this turn
         for _ in range(self.config.max_tool_iterations):
@@ -379,6 +506,18 @@ class Agent:
             # vision model can see them on the next round.
             for call in tool_calls:
                 yield ToolStarted(call.name, call.arguments)
+                denial = self._authorize(call)
+                if denial is not None:
+                    self.messages.append(
+                        Message(role="tool", content=denial, tool_call_id=call.id)
+                    )
+                    yield ToolFinished(call.name, denial)
+                    continue
+                # Safety net: snapshot any file this tool is about to overwrite,
+                # so /undo can rewind a bad edit (best-effort, never blocks).
+                from ..checkpoints import before_tool
+
+                before_tool(call.name, call.arguments)
                 result = self.registry.dispatch_full(call)
                 self.messages.append(
                     Message(
