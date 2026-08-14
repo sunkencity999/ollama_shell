@@ -267,9 +267,10 @@
     <li><a class="dotlink" href="#ch13" data-ch="13" title="Machine memory, deep dive"><span class="n">13</span></a></li>
     <li><a class="dotlink" href="#ch14" data-ch="14" title="Any MCP server + integrations"><span class="n">14</span></a></li>
     <li><a class="dotlink" href="#ch15" data-ch="15" title="Computer use"><span class="n">15</span></a></li>
-    <li><a class="dotlink" href="#ch16" data-ch="16" title="Cookbook &amp; your first week"><span class="n">16</span></a></li>
+    <li><a class="dotlink" href="#ch16" data-ch="16" title="Guardrails"><span class="n">16</span></a></li>
+    <li><a class="dotlink" href="#ch17" data-ch="17" title="Cookbook &amp; your first week"><span class="n">17</span></a></li>
   </ol>
-  <span class="navcount" id="navcount">0/16 chapters</span>
+  <span class="navcount" id="navcount">0/17 chapters</span>
 </nav>
 
 <main>
@@ -281,7 +282,7 @@
     <b>Part I</b> gets you running in ten minutes; <b>Part II</b> is the deep
     end — configuration, memory, machine telemetry, MCP servers, computer use —
     everything between "neat demo" and "I open this before my inbox."
-    Finish all sixteen chapters and something nice happens.</p>
+    Finish all seventeen chapters and something nice happens.</p>
     <p class="how">In every demo: <b>type</b> the ghosted command (any keys work),
     press <kbd>Tab</kbd> to autocomplete, <kbd>Enter</kbd> or <b>▶ run</b> to run it.
     The green "try it for real" boxes are homework — check them off as you go.
@@ -295,19 +296,15 @@
   <!-- ─────────────────────────── 1 ─────────────────────────── -->
   <section class="chapter" id="ch1" aria-labelledby="h-ch1">
     <h2 id="h-ch1"><span class="chn">1</span>Install &amp; first run</h2>
-    <p>Two ways in. The fast lane is PyPI:
-    <code class="ic">pip install "ollama-shell[tui]"</code> gives you the shell and
-    the full workspace in one command (<code class="ic">[all]</code> for every
-    extra). The full experience is from source — on macOS and Linux,
-    <code class="ic">./install.sh</code> sets up everything pip does <i>plus</i> the
-    machine-memory monitors (Mechanic&nbsp;×&nbsp;Drift), which pip can't register
-    for you; <code class="ic">./install.sh all</code> adds every optional feature —
+    <p>oshell installs from source — clone the repo and run the installer. On
+    macOS and Linux, <code class="ic">./install.sh</code> sets up the core, the
+    TUI, and the machine-memory monitors (Mechanic&nbsp;×&nbsp;Drift);
+    <code class="ic">./install.sh all</code> adds every optional feature —
     <b>rag</b>, <b>docs</b>, <b>vision</b>, <b>finetune</b>. On Windows,
     <code class="ic">.\install.ps1</code> installs everything except the
     machine-memory monitors. Then just say its name: <code class="ic">oshell</code>
     is the chat REPL, <code class="ic">oshell tui</code> the full Textual workspace.</p>
     <p>
-      <span class="chip"><code>pip install "ollama-shell[tui]"</code><button class="copy" data-copy="pip install &quot;ollama-shell[tui]&quot;" aria-label="Copy: pip install ollama-shell with the tui extra">copy</button></span>
       <span class="chip"><code>git clone https://github.com/sunkencity999/ollama_shell.git</code><button class="copy" data-copy="git clone https://github.com/sunkencity999/ollama_shell.git" aria-label="Copy: git clone the ollama_shell repository">copy</button></span>
       <span class="chip"><code>./install.sh</code><button class="copy" data-copy="./install.sh" aria-label="Copy: ./install.sh">copy</button></span>
       <span class="chip"><code>./install.sh all</code><button class="copy" data-copy="./install.sh all" aria-label="Copy: ./install.sh all">copy</button></span>
@@ -331,14 +328,14 @@
         <li>Python 3.10+ required; the installer tells you, politely, if not.</li>
         <li>Extras are installable later, one at a time: <code>./install.sh rag</code>, <code>./install.sh vision</code>, … or live from the TUI Features menu (chapter 12).</li>
         <li>Windows: <code>.\install.ps1</code> skips the machine-memory monitors — everything else works.</li>
-        <li><code>pip install ollama-shell</code> is live on PyPI (extras: <code>[tui]</code>, <code>[rag]</code>, <code>[all]</code>, …) — the one thing pip <i>can't</i> do is register the Mechanic × Drift monitors. Add those from their repos later, or use <code>./install.sh</code>.</li>
-        <li>Either way the source is a clone away — you can read every line of the thing you're about to give a shell to.</li>
+        <li>There is <b>no</b> <code>pip install</code> for this — it ships from the repo, on purpose: you can read every line of the thing you're about to give a shell to.</li>
+        <li>The model can run commands via <code>run_command</code> — <code>/approvals ask</code> makes every one confirm first. Chapter 16 is the full trust story.</li>
       </ul>
     </div></details>
     <div class="ex" role="group" aria-label="Try it for real: chapter 1">
       <h3>Try it for real</h3>
       <label><input type="checkbox" data-ex="ch1-ollama"> Install Ollama and confirm <code>ollama serve</code> answers on 11434</label>
-      <label><input type="checkbox" data-ex="ch1-install"> Install it: <code>pip install "ollama-shell[tui]"</code> — or clone + <code>./install.sh</code> for machine memory</label>
+      <label><input type="checkbox" data-ex="ch1-install"> Clone the repo and run <code>./install.sh</code> (or <code>.\install.ps1</code>)</label>
       <label><input type="checkbox" data-ex="ch1-first"> Say hi in <code>oshell</code>, then open <code>oshell tui</code> and look around</label>
     </div>
   </section>
@@ -431,12 +428,15 @@
     Logs, diffs, schemas, CSVs — any command's stdout. Long input is
     <b>tail-truncated at 12,000 characters</b>, because errors live at the end.
     Need a bigger brain for one question? <code class="ic">-m</code> overrides
-    the model for just that ask. And because the model is local, your logs go
+    the model for just that ask. And there's a composable <em>output</em> half
+    too: <code class="ic">--json</code> emits a machine-readable answer on stdout
+    for scripts, cron, and CI. Because the model is local, your logs go
     exactly nowhere.</p>
     <p>
       <span class="chip"><code>cat error.log | oshell ask "why is this failing?"</code><button class="copy" data-copy='cat error.log | oshell ask "why is this failing?"' aria-label="Copy: cat error.log piped to oshell ask">copy</button></span>
       <span class="chip"><code>git diff | oshell ask "write the commit message"</code><button class="copy" data-copy='git diff | oshell ask "write the commit message"' aria-label="Copy: git diff piped to oshell ask">copy</button></span>
       <span class="chip"><code>oshell ask -m qwen3:8b "…"</code><button class="copy" data-copy='oshell ask -m qwen3:8b ""' aria-label="Copy: oshell ask with model override">copy</button></span>
+      <span class="chip"><code>oshell ask --json "…"</code><button class="copy" data-copy='oshell ask --json ""' aria-label="Copy: oshell ask with JSON output">copy</button></span>
     </p>
     <div class="demo" id="d4" data-ch="4" data-name="zsh — stdin becomes context" role="group" aria-label="Interactive demo: piping into oshell ask"></div>
     <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
@@ -456,6 +456,7 @@
         <li><code>-m model</code> answers one question with another model; your config is untouched.</li>
         <li>No stdin? <code>oshell ask "question"</code> works alone, like a one-shot chat turn.</li>
         <li>Compose onward: <code>git diff | oshell ask "commit msg" | git commit -F -</code>.</li>
+        <li><code>--json</code> emits <code>{"answer", "model", "tools": [{name, arguments, result_preview}]}</code> — and it builds without an approver, so under <code>/approvals ask</code> sensitive tools are <b>denied</b>, never hung (chapter 16).</li>
       </ul>
     </div></details>
     <div class="ex" role="group" aria-label="Try it for real: chapter 4">
@@ -675,6 +676,12 @@
     <code class="ic">num_ctx</code> on every request. Without that, Ollama quietly
     runs at 4k tokens and the top of your file falls off — the classic silent
     truncation bug, permanently fixed.</p>
+    <p>Configuration also lives <em>in your repos</em>: launch oshell in a
+    directory containing an <code class="ic">AGENTS.md</code> (the open
+    convention — <code class="ic">OSHELL.md</code> and
+    <code class="ic">CLAUDE.md</code> are honored too) and those instructions
+    fold into the system prompt. Write your conventions once; every agent tool
+    follows them.</p>
     <div class="demo" id="d10" data-ch="10" data-name="~/.oshell — a guided tour" role="group" aria-label="Interactive demo: config file, env overrides, and a tour of the dot-oshell directory"></div>
     <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
       <p><b>Why layers?</b> <code>config.json</code> is your policy — it can live
@@ -694,6 +701,8 @@
         <li>Auto caps at the model's trained max — asking a 8k model for 128k is a lie oshell won't tell Ollama.</li>
         <li><code>config.local.json</code> is created on demand; add it to <code>.gitignore</code> if you version your dotfiles.</li>
         <li>Every <code>OSHELL_*</code> var maps 1:1 to a config key: <code>OSHELL_TEMPERATURE</code>, <code>OSHELL_THEME</code>, <code>OSHELL_CONTEXT_LENGTH</code>…</li>
+        <li><code>AGENTS.md</code>: the <b>closest</b> file wins — cwd before repo root — and the fold-in is capped at 4k chars, so a rambling one gets truncated, not obeyed at length.</li>
+        <li><code>compact_threshold</code> (default 0.85) sets when auto context compaction fires; <code>0</code> disables it (chapter 16).</li>
       </ul>
     </div></details>
     <div class="ex" role="group" aria-label="Try it for real: chapter 10">
@@ -901,7 +910,71 @@
 
   <!-- ─────────────────────────── 16 ─────────────────────────── -->
   <section class="chapter" id="ch16" aria-labelledby="h-ch16">
-    <h2 id="h-ch16"><span class="chn">16</span>Cookbook &amp; your first week</h2>
+    <h2 id="h-ch16"><span class="chn">16</span>Guardrails</h2>
+    <p>Trust infrastructure, shipped as four small levers. <b>Approval modes</b>
+    decide how much rope the agent gets: <code class="ic">auto</code> (default —
+    everything runs unprompted), <code class="ic">ask</code> (every sensitive
+    tool call — shell execution, GUI control — stops at a yellow y/N panel
+    first; a blocking modal in the TUI), and <code class="ic">read-only</code>
+    (sensitive tools are hidden from the model entirely). Set it in config
+    (<code class="ic">{"approvals": "ask"}</code>) or live with
+    <code class="ic">/approvals ask</code> — it persists.</p>
+    <p><b>Checkpoints</b> make writes reversible: before
+    <code class="ic">write_file</code> or <code class="ic">create_document</code>
+    touch anything, the target's prior state — including "this file didn't
+    exist" — is snapshotted to <code class="ic">~/.oshell/checkpoints</code>.
+    <code class="ic">/undo</code> rewinds newest-first: it restores overwritten
+    contents, or <em>deletes</em> a file the model shouldn't have created.
+    <b>Auto compaction</b> keeps long chats honest: at ~85% of the context
+    window, older non-pinned turns fold into a summary written by the fast
+    model — you see the dim <em>"✂ compacted…"</em> line, and the conversation
+    keeps its memory instead of silently losing its head. And
+    <b>delegate</b> lets the model hand a side quest to a fresh helper with a
+    clean context; only the final answer comes back.</p>
+    <div class="demo" id="d16" data-ch="16" data-name="oshell — approvals · undo · compaction · delegate" role="group" aria-label="Interactive demo: approval modes, checkpoints and undo, context compaction, and the delegate tool"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p><b>Fail safe, not silent.</b> In <code>ask</code> mode with nobody to
+      ask — cron, CI, <code>--json</code> — sensitive actions are <em>denied</em>,
+      never quietly executed. The denial goes back to the model as the tool
+      result, which is why it says "execution was denied" instead of
+      hallucinating success. Deny &gt; silently run, always.</p>
+      <p><b>The checkpoint manifest records absence.</b> Each snapshot stores
+      the prior contents <em>or</em> <code>existed: false</code> — that's how
+      <code>/undo</code> knows the difference between "restore these bytes" and
+      "this file is a mistake; delete it."</p>
+      <p><b>Compaction is surgical.</b> Pinned messages survive verbatim, and
+      the fold never splits a tool call from its result — a summary that
+      orphans half an exchange would be worse than the truncation it prevents.
+      Why local models need this: an 8–32k window fills fast, and once it does,
+      Ollama drops the oldest tokens without telling anyone. Compaction trades
+      a little fidelity for not forgetting the plot.</p>
+      <p><b>Helpers are sandboxed by construction.</b> A delegate gets no
+      approver — so in <code>ask</code> mode it simply cannot run sensitive
+      tools — and it cannot spawn helpers of its own. No recursion, no
+      approval-laundering.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li><code>read-only</code> hides sensitive tools from the model's advertised set <em>and</em> blocks them at dispatch if a stubborn model calls one anyway. Belt, suspenders.</li>
+        <li><code>/approvals</code> with no argument shows the current mode; the setting persists across sessions (REPL and TUI share it).</li>
+        <li>Checkpoints keep the last <b>20</b>; <code>/undo</code> is strictly newest-first — undo twice to reach the write before last.</li>
+        <li><code>/compact</code> triggers compaction manually; <code>compact_threshold: 0</code> disables the automatic kind.</li>
+        <li>The delegate runs the routing <code>fast_model</code> — cheap, quick, disposable context.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 16">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch16-ask"> Turn on <code>/approvals ask</code> and deny something on purpose — read the model's honest follow-up</label>
+      <label><input type="checkbox" data-ex="ch16-undo"> Let it write a file, then <code>/undo</code> and diff the result</label>
+      <label><input type="checkbox" data-ex="ch16-json"> Run <code>oshell ask --json</code> inside a script and <code>jq</code> the answer out</label>
+      <label><input type="checkbox" data-ex="ch16-agents"> Add an <code>AGENTS.md</code> to a repo you work in; watch it obeyed</label>
+      <label><input type="checkbox" data-ex="ch16-compact"> Have one properly long conversation and catch the ✂ in the act</label>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 17 ─────────────────────────── -->
+  <section class="chapter" id="ch17" aria-labelledby="h-ch17">
+    <h2 id="h-ch17"><span class="chn">17</span>Cookbook &amp; your first week</h2>
     <p>Five commands worth stealing. Each is a complete file — copy it into
     <code class="ic">~/.oshell/commands/</code> under the name shown and the
     slash command exists immediately.</p>
@@ -929,7 +1002,7 @@ engineer. Two paragraphs. No hedging.</pre></div>
 Ask me at most three questions, then give one hypothesis and the
 single safest next command. Consult machine memory first.</pre></div>
 
-    <div class="demo" id="d16" data-ch="16" data-name="oshell — the cookbook in action" role="group" aria-label="Interactive demo: the recipes installed, a review run, and oshell finetune"></div>
+    <div class="demo" id="d17" data-ch="17" data-name="oshell — the cookbook in action" role="group" aria-label="Interactive demo: the recipes installed, a review run, and oshell finetune"></div>
 
     <h3 id="week1">Your first week</h3>
     <p>Adoption is a habit, not a feature. One small thing a day; by Sunday it's
@@ -944,7 +1017,7 @@ single safest next command. Consult machine memory first.</pre></div>
       <label><input type="checkbox" data-ex="day6"> <b>Day 6</b> — ask "what changed on this box since yesterday?"</label>
       <label><input type="checkbox" data-ex="day7"> <b>Day 7</b> — on Apple Silicon, peek at <code>oshell finetune</code>: yes, it fine-tunes locally</label>
     </div>
-    <p class="o-sys" style="max-width:720px">Finish all sixteen chapter demos and the sky does something.
+    <p class="o-sys" style="max-width:720px">Finish all seventeen chapter demos and the sky does something.
     <button class="dbtn" id="gradlink" hidden>🎓 view your graduation again</button></p>
   </section>
 
@@ -957,7 +1030,6 @@ single safest next command. Consult machine memory first.</pre></div>
       <thead><tr><th scope="col">Command / key</th><th scope="col">What it does</th></tr></thead>
       <tbody>
         <tr class="sect"><td colspan="2">Getting in</td></tr>
-        <tr><td>pip install "ollama-shell[tui]"</td><td>the fast lane — PyPI; [all] for every extra</td></tr>
         <tr><td>git clone …/ollama_shell.git</td><td>get the source (github.com/sunkencity999/ollama_shell)</td></tr>
         <tr><td>./install.sh [all|rag|vision|…]</td><td>install core + tui + machine memory; extras by name</td></tr>
         <tr><td>.\install.ps1</td><td>Windows install (no machine-memory monitors)</td></tr>
@@ -971,6 +1043,12 @@ single safest next command. Consult machine memory first.</pre></div>
         <tr><td>/route on|off</td><td>toggle auto model routing for the session</td></tr>
         <tr><td>/attach file.png</td><td>attach an image (vision model answers)</td></tr>
         <tr><td>/&lt;name&gt; …</td><td>your commands from ~/.oshell/commands/&lt;name&gt;.md ($ARGS)</td></tr>
+        <tr class="sect"><td colspan="2">Guardrails</td></tr>
+        <tr><td>/approvals [auto|ask|read-only]</td><td>how much rope the agent gets; ask = y/N panel before sensitive tools; persists</td></tr>
+        <tr><td>/undo</td><td>rewind the last write (restore contents, or delete a file that didn't exist); newest-first, last 20</td></tr>
+        <tr><td>/compact</td><td>fold older non-pinned turns into a summary now (auto at ~85% full)</td></tr>
+        <tr><td>delegate</td><td>model hands a side quest to a clean-context helper (fast model, no approver, can't spawn helpers)</td></tr>
+        <tr><td>~/.oshell/checkpoints</td><td>prior state of every file the model writes — /undo's source of truth</td></tr>
         <tr class="sect"><td colspan="2">Models</td></tr>
         <tr><td>oshell models</td><td>table: name, params, quant, disk</td></tr>
         <tr><td>oshell models pull family:size</td><td>download with live progress; resumes</td></tr>
@@ -978,6 +1056,7 @@ single safest next command. Consult machine memory first.</pre></div>
         <tr><td>p / d (TUI picker)</td><td>pull / delete the highlighted model (badges show disk)</td></tr>
         <tr class="sect"><td colspan="2">From the shell</td></tr>
         <tr><td>… | oshell ask [-m model] "q"</td><td>stdin becomes context (tail-kept at 12k chars)</td></tr>
+        <tr><td>oshell ask --json "q"</td><td>{"answer", "model", "tools": […]} on stdout — scripts, cron, CI; denies sensitive tools instead of hanging</td></tr>
         <tr><td>oshell do [--yes] "outcome"</td><td>proposes a command; y run · e edit · n cancel</td></tr>
         <tr><td>oshell sessions [rm ID]</td><td>list / delete saved conversations</td></tr>
         <tr><td>oshell chat --resume [id|prefix]</td><td>reopen last (or any) session; restores its model</td></tr>
@@ -987,6 +1066,8 @@ single safest next command. Consult machine memory first.</pre></div>
         <tr><td>defaults &lt; config.json &lt; config.local.json &lt; OSHELL_*</td><td>the four layers, weakest to strongest</td></tr>
         <tr><td>"context_length": 0</td><td>auto num_ctx from the model card — the silent-truncation fix</td></tr>
         <tr><td>"routing": {…}</td><td>fast_model / deep_model / vision_model lanes</td></tr>
+        <tr><td>AGENTS.md (repo)</td><td>per-repo instructions folded into the system prompt (OSHELL.md / CLAUDE.md too; closest wins; 4k cap)</td></tr>
+        <tr><td>"approvals" · compact_threshold</td><td>auto|ask|read-only · when auto-compaction fires (0 disables)</td></tr>
         <tr><td>sessions/ · memory.json · do_history.jsonl · commands/ · last_session.json</td><td>everything it knows, in files you can read</td></tr>
         <tr class="sect"><td colspan="2">Memory &amp; knowledge</td></tr>
         <tr><td>"remember that…" / "forget…"</td><td>durable facts → memory.json (always on)</td></tr>
@@ -1023,7 +1104,7 @@ single safest next command. Consult machine memory first.</pre></div>
 <div class="grad" id="grad" role="dialog" aria-modal="true" aria-labelledby="gradtitle" aria-describedby="graddesc">
   <div class="gstars" aria-hidden="true"></div>
   <div class="ginner">
-    <div class="gbadge">16/16 chapters</div>
+    <div class="gbadge">17/17 chapters</div>
     <h2 id="gradtitle">🎓 you're a resident now</h2>
     <p id="graddesc">oshell isn't a demo on a webpage anymore — it lives on your
     machine, knows what's normal there, answers to your slash commands, and
@@ -1043,9 +1124,9 @@ single safest next command. Consult machine memory first.</pre></div>
     .replace(/&nbsp;/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
 
   /* ── progress: 16 chapters + exercises, one tracker ──────────── */
-  const KEY = 'oshell-tutorial-v2';
+  const KEY = 'oshell-tutorial-v3';   // bumped: 17 chapters now — stale 16-chapter progress must not misrender
   const EXKEY = 'oshell-tutorial-ex-v1';
-  const TOTAL = 16;
+  const TOTAL = 17;
   let done = new Set(), ex = new Set();
   try { done = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch(e){}
   try { ex = new Set(JSON.parse(localStorage.getItem(EXKEY) || '[]')); } catch(e){}
@@ -1153,13 +1234,6 @@ single safest next command. Consult machine memory first.</pre></div>
   /* ── the sixteen lessons ─────────────────────────────────────── */
   const DEMOS = {
     d1: { stages: [
-      { ps:'$', cmd:'pip install "ollama-shell[tui]"', out:[
-        L('Collecting ollama-shell','o-dim',300),
-        L('  Downloading ollama_shell-0.2.0-py3-none-any.whl (139 kB)','o-dim',280),
-        L('Installing collected packages: typer, rich, textual, … ollama-shell','o-dim',340),
-        L('✓ Successfully installed ollama-shell-0.2.0','o-ok',300),
-        L("the fast lane — for machine memory (chapter 13), use the installer below",'o-dim',260),
-      ]},
       { ps:'$', cmd:'git clone https://github.com/sunkencity999/ollama_shell.git', out:[
         L("Cloning into 'ollama_shell'…",'o-dim',360),
         L('remote: Enumerating objects: 412, done.','o-dim',260),
@@ -1266,6 +1340,17 @@ single safest next command. Consult machine memory first.</pre></div>
       { ps:'$', cmd:'cat schema.sql | oshell ask -m qwen3:8b "index suggestions"', out:[
         L('-m override: qwen3:8b answers this one (your config is untouched)','o-dim',460),
         S('Two: a composite index on <b>events(user_id, created_at)</b> for your hot path, and drop the single-column index on user_id it shadows — you pay writes for it and read from it never.',''),
+      ]},
+      { ps:'$', cmd:'git log --oneline -5 | oshell ask --json "which commit broke ci?"', out:[
+        L('{','o-warn',420),
+        L('  "answer": "abc123f — the urllib3 pin to 2.x; the CI image still ships 1.26.",','o-warn',130),
+        L('  "model": "gemma4",','o-warn',130),
+        L('  "tools": [{"name": "read_file",','o-warn',130),
+        L('             "arguments": {"path": ".github/workflows/ci.yml"},','o-warn',130),
+        L('             "result_preview": "python: 3.12 · deps: requirements.txt"}]','o-warn',130),
+        L('}','o-warn',130),
+        L('machine-readable stdout for scripts, cron, CI — jq away.','o-dim',320),
+        L('built without an approver: under /approvals ask, sensitive tools are denied — never hung, never silently run.','o-dim',200),
       ]},
     ]},
 
@@ -1414,7 +1499,21 @@ single safest next command. Consult machine memory first.</pre></div>
         L("last_session.json   <span class='o-dim'>the pointer --resume follows</span>",'',140),
         L("memory.json         <span class='o-dim'>durable facts it keeps about you</span>",'',140),
         L("do_history.jsonl    <span class='o-dim'>every confirmed `oshell do` — few-shot fuel</span>",'',140),
+        L("checkpoints/        <span class='o-dim'>prior state of files the model writes — /undo lives here</span>",'',140),
         L('one directory. read it, back it up, or nuke it — no hidden state elsewhere.','o-dim',300),
+      ]},
+      { ps:'$', cmd:'cat AGENTS.md', out:[
+        L('# conventions for agents working in this repo','o-warn',380),
+        L('- python: uv only, never pip; run tests with `make test`','o-warn',140),
+        L('- commit style: conventional commits, no emoji','o-warn',140),
+        L('- never touch migrations/ without asking','o-warn',140),
+        L('found at the repo root — folded into the system prompt (capped at 4k chars).','o-dim',320),
+        L('closest file wins: cwd before repo root · OSHELL.md and CLAUDE.md honored too.','o-dim',160),
+      ]},
+      { ps:'›', cmd:'add requests to this project', out:[
+        L("🔧 <span class='o-cyan'>run_command</span><span class='o-dim'>(uv add requests)</span>",'',560),
+        L('   ↳ ok — resolved 4 packages','o-dim',480),
+        S('Added with <b>uv</b>, not pip — your AGENTS.md says so, and I read it before I typed. Write the conventions once; every agent tool follows them.',''),
       ]},
     ]},
 
@@ -1545,6 +1644,53 @@ single safest next command. Consult machine memory first.</pre></div>
     ]},
 
     d16: { stages: [
+      { ps:'›', cmd:'/approvals ask', out:[
+        L('approvals: <b>ask</b> — sensitive tools (run_command, GUI control) confirm before running.','o-warn',420),
+        L('persists to config · modes: auto (default) · ask · read-only (sensitive tools hidden entirely)','o-dim',260),
+      ]},
+      { ps:'›', cmd:'clear out the dist folder', out:[
+        L("🔧 <span class='o-cyan'>run_command</span><span class='o-dim'>(rm -rf dist/*)</span>",'',600),
+        ASK('⚠ run_command wants to execute:  rm -rf dist/*   — allow?  [y/N]  › ', 'y', 1100),
+        L('   ↳ ok (exit 0) — 212 MB freed','o-dim',480),
+        S('Cleared. Under <b>ask</b>, that yellow panel stands between every shell command and your disk. (In the TUI it is a blocking modal.)',''),
+      ]},
+      { ps:'›', cmd:'and the pip cache too', out:[
+        L("🔧 <span class='o-cyan'>run_command</span><span class='o-dim'>(rm -rf ~/.cache/pip)</span>",'',600),
+        ASK('⚠ run_command wants to execute:  rm -rf ~/.cache/pip   — allow?  [y/N]  › ', 'N', 1100),
+        L('   ↳ denied by user — the denial is returned to the model as the tool result','o-err',480),
+        S('The command was attempted, but <b>execution was denied</b> — your pip cache is untouched. Say the word if you change your mind.',''),
+        L('non-interactive runs (cron, --json) fail the same safe way: denied, never silently executed.','o-dim',320),
+      ]},
+      { ps:'›', cmd:'rewrite notes.txt as a haiku, and start a TODO file', out:[
+        L('⎘ checkpoint: notes.txt (1.4 KB) → ~/.oshell/checkpoints','o-mag',540),
+        L("🔧 <span class='o-cyan'>write_file</span><span class='o-dim'>(notes.txt)</span>  ↳ wrote 61 B",'',440),
+        L('⎘ checkpoint: TODO.md (did not exist) → ~/.oshell/checkpoints','o-mag',440),
+        L("🔧 <span class='o-cyan'>create_document</span><span class='o-dim'>(TODO.md)</span>  ↳ wrote 214 B",'',440),
+        S('Done — your notes are seventeen syllables now, and TODO.md exists. You may already regret both. Good news:',''),
+      ]},
+      { ps:'›', cmd:'/undo', out:[
+        L('↩ rewound: <b>TODO.md deleted</b> — it did not exist before the model created it.','o-ok',480),
+        L('newest-first · 19 checkpoints remain (last 20 kept)','o-dim',260),
+      ]},
+      { ps:'›', cmd:'/undo', out:[
+        L('↩ rewound: <b>notes.txt restored</b> (1.4 KB, checkpoint 5f2c) — prose again, haiku gone.','o-ok',480),
+      ]},
+      { ps:'›', cmd:'/compact', out:[
+        L('✂ compacted 14 older messages into a 900-char summary to free context (74% → 9%)','o-dim',560),
+        L('automatic at ~85% full (compact_threshold · 0 disables) · summary written by the routing fast model','o-dim',260),
+        L('📌 pinned messages survive verbatim — compaction never touches them.','o-dim',200),
+        L('this is THE fix for long local-model chats silently degrading: small windows fill, Ollama drops the oldest tokens, nobody tells you. Now something tells you.','o-dim',220),
+      ]},
+      { ps:'›', cmd:'compare the last three Textual releases for anything that breaks us', out:[
+        L('✂ compacted 6 older messages into a 380-char summary to free context (auto — window hit 85%)','o-dim',520),
+        L("🔧 <span class='o-cyan'>delegate</span><span class='o-dim'>(\"research: textual 0.58–0.60 release notes, breaking changes\")</span>",'',640),
+        L('   helper: fresh context · fast model (gemma4) · no approver · cannot spawn helpers','o-dim',480),
+        L('   ↳ 412-char summary returned — none of its reading entered this conversation','o-dim',560),
+        S('One thing bites us: 0.59 renamed <b>Widget.styles.animate</b>, and the vitals bar calls it. Everything else is additive. Your context never saw the 30 KB of release notes the helper read to learn that — at 8–32k tokens, that is the whole economy.',''),
+      ]},
+    ]},
+
+    d17: { stages: [
       { ps:'$', cmd:'ls ~/.oshell/commands', out:[
         L('commitmsg.md   eli5.md   oncall.md   review.md   standup.md','',380),
         L('five files, five slash commands — no registration step, no restart.','o-dim',280),
