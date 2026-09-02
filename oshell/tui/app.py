@@ -38,6 +38,7 @@ from textual.strip import Strip
 from textual.widgets import Footer, Header, Input, RichLog, Static, TabbedContent, TabPane
 
 from .. import desktop
+from .. import themes as themes_mod
 from ..agent import (
     Agent,
     Compacted,
@@ -52,6 +53,7 @@ from ..config import Config
 from ..linkify import linkify_urls
 from ..providers import get_provider
 from ..tools import default_registry
+from .keys import KeysScreen
 from .menu import (
     INSTALLABLE_FEATURES,
     AttachImageScreen,
@@ -64,6 +66,8 @@ from .menu import (
     ThemeScreen,
     feature_installed,
 )
+from .statusbar import StatusBar, nerd_font_enabled
+from .vitals import VitalsPanel, take_sample
 
 # Matches fenced code blocks in the model's reply (for "copy last code block").
 _CODE_FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.S)
@@ -307,12 +311,30 @@ class OllamaShellTUI(App):
     CSS = """
     #body { height: 1fr; }
     #convo-pane { width: 2fr; }
-    #conversation { height: 1fr; border: round $accent; padding: 0 1; }
+    /* Panes wear the theme's border color; the one holding focus lights up,
+       the others dim — Hyprland's active/inactive border, in a terminal. */
+    #conversation { height: 1fr; border: round $border-blurred; padding: 0 1; }
+    #convo-pane:focus-within #conversation { border: round $border; }
     #live { height: auto; max-height: 8; padding: 0 1; color: $text-muted; }
     #sidebar { width: 1fr; }
+    #sidebar ContentSwitcher { border: round $border-blurred; }
+    #sidebar:focus-within ContentSwitcher { border: round $border; }
     #tools, #context { padding: 0 1; }
     #activity { padding: 0 1; }
     Input { dock: bottom; }
+    /* Gaps: breathing room between panes and the screen edge. */
+    #body.gaps { padding: 0 1; }
+    #body.gaps #convo-pane { margin-right: 1; }
+    #body.gaps #sidebar { margin-top: 0; }
+    /* Tiles: the riced-desktop layout. Every tile is a titled, rounded window;
+       the vitals monitor sits above the tools tile; the input is a launcher. */
+    #side { width: 1fr; }
+    #vitals { border: round $border-blurred; margin-bottom: 0; }
+    #vitals:focus-within { border: round $border; }
+    #body.tiles #sidebar { height: 1fr; }
+    #body.tiles #conversation { border-title-align: left; }
+    .tiles-input { border: round $border-blurred; padding: 0 1; margin: 0 1; }
+    .tiles-input:focus { border: round $border; }
     """
     # Esc is the primary menu key — F-keys are unreliable on macOS (the OS grabs
     # them). F2 / Ctrl+O are kept as hidden alternates for other platforms.
@@ -322,6 +344,13 @@ class OllamaShellTUI(App):
         Binding("ctrl+y", "copy_reply", "Copy reply"),
         Binding("ctrl+b", "copy_code", "Copy code"),
         Binding("ctrl+c", "quit", "Quit"),
+        Binding("f1", "show_keys", "Keys"),
+        Binding("ctrl+g", "show_keys", "Keys", show=False),
+        # Workspaces, Waybar-style: Alt+1 chat · Alt+2 tools · Alt+3 context · Alt+4 activity
+        Binding("alt+1", "workspace(0)", "chat", show=False),
+        Binding("alt+2", "workspace(1)", "tools", show=False),
+        Binding("alt+3", "workspace(2)", "context", show=False),
+        Binding("alt+4", "workspace(3)", "activity", show=False),
         Binding("f2", "open_menu", "Menu", show=False),
         Binding("ctrl+o", "open_menu", "Menu", show=False),
     ]
@@ -350,12 +379,28 @@ class OllamaShellTUI(App):
         self._burst: float | None = None  # LimitReached spark storm (birth time)
         # Per-session tool usage — drives the "heat" in the Tools panel.
         self._tool_counts: Counter[str] = Counter()
+        self._last_tps: float | None = None  # last turn's tokens/second (status bar)
+        # Every bundled/imported palette becomes a Textual theme, so the picker
+        # offers Omarchy's set next to Textual's own.
+        for palette in themes_mod.list_palettes().values():
+            try:
+                self.register_theme(themes_mod.to_textual_theme(palette))
+            except Exception:  # pragma: no cover - a bad palette must not sink the TUI
+                continue
 
     _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=self._show_clock)
-        with Horizontal(id="body"):
+        ui = self.agent.config.ui
+        if ui.statusbar:
+            yield StatusBar(
+                nerd=nerd_font_enabled(ui.nerd_font), clock=self._show_clock and ui.clock
+            )
+        else:
+            yield Header(show_clock=self._show_clock)
+        tiles = ui.layout == "tiles"
+        classes = " ".join(c for c in ("gaps" if ui.gaps else "", "tiles" if tiles else "") if c)
+        with Horizontal(id="body", classes=classes):
             with Vertical(id="convo-pane"):
                 # min_width: render to the pane's real width (the default of 78
                 # makes full-width renderables like Rule/Markdown overflow into
@@ -363,21 +408,93 @@ class OllamaShellTUI(App):
                 yield LinkLog(
                     id="conversation", wrap=True, markup=True, highlight=True, min_width=20
                 )
-            with TabbedContent(id="sidebar", initial="tab-tools"):
-                with TabPane("Tools", id="tab-tools"):
-                    yield ToolsPanel(id="tools")
-                with TabPane("Context", id="tab-context"):
-                    yield ContextInspector(id="context")
-                with TabPane("Activity", id="tab-activity"):
-                    yield LinkLog(id="activity", wrap=True, markup=True)
+            with Vertical(id="side"):
+                if tiles and ui.vitals:
+                    yield VitalsPanel(id="vitals")
+                with TabbedContent(id="sidebar", initial="tab-tools"):
+                    with TabPane("Tools", id="tab-tools"):
+                        yield ToolsPanel(id="tools")
+                    with TabPane("Context", id="tab-context"):
+                        yield ContextInspector(id="context")
+                    with TabPane("Activity", id="tab-activity"):
+                        yield LinkLog(id="activity", wrap=True, markup=True)
         # Live region: spinner/status while working, streamed reply as it
         # builds, and the idle mood. Full-width — the weather isn't clipped to
         # the conversation column, it runs under the sidebar too.
         yield Static("", id="live")
         yield ChatInput(
-            placeholder="Message the model…  (Esc menu · Ctrl+P palette · Ctrl+C quit)"
+            placeholder="Message the model…  (Esc menu · F1 keys · Ctrl+P palette · Ctrl+C quit)",
+            classes="tiles-input" if tiles else "",
         )
         yield Footer()
+
+    # ── tiles: window titles, workspaces, vitals ──────────────────────────────
+    def _tiles(self) -> bool:
+        return self.agent.config.ui.layout == "tiles"
+
+    def _dress_tiles(self) -> None:
+        """Give every tile a window title, like a tiling WM's decorations."""
+        if not self._tiles():
+            return
+        self.query_one("#conversation").border_title = "chat"
+        try:
+            self.query_one("#vitals", VitalsPanel).border_title = "vitals"
+        except NoMatches:
+            pass
+        self.query_one(Input).border_title = "❯"
+
+    _TABS = ("tab-tools", "tab-context", "tab-activity")
+
+    def action_workspace(self, n: int) -> None:
+        """Alt+N / a click on the bar: 0 = chat, 1..3 = the sidebar tabs."""
+        if n <= 0:
+            self.query_one(Input).focus()
+        else:
+            from textual.widgets import Tabs
+
+            tabbed = self.query_one(TabbedContent)
+            tabbed.active = self._TABS[min(n, 3) - 1]
+            try:
+                tabbed.query_one(Tabs).focus()
+            except NoMatches:  # pragma: no cover - defensive
+                pass
+        self._refresh_bar()
+
+    def _current_workspace(self) -> int:
+        """0 while the prompt has focus; otherwise the active sidebar tab."""
+        try:
+            if self.query_one(Input).has_focus:
+                return 0
+            active = self.query_one(TabbedContent).active
+        except NoMatches:
+            return 0
+        return self._TABS.index(active) + 1 if active in self._TABS else 0
+
+    def on_descendant_focus(self, _event) -> None:
+        self._refresh_bar()
+
+    def on_tabbed_content_tab_activated(self, _event: TabbedContent.TabActivated) -> None:
+        self._refresh_bar()
+
+    def _vitals_tick(self) -> None:
+        """Sample the machine in a worker thread and repaint the vitals tile."""
+        try:
+            panel = self.query_one("#vitals", VitalsPanel)
+        except NoMatches:
+            return
+        a = self.agent
+
+        def work() -> None:
+            sample = take_sample(
+                a.provider,
+                self._last_tps,
+                _context_fill(a),
+                len(a.registry),
+                sum(1 for t in a.registry.active() if not t.local_only),
+            )
+            self.call_from_thread(panel.show, sample)
+
+        self.run_worker(work, thread=True, exclusive=True, group="vitals")
 
     def _subtitle(self) -> str:
         # A glance, not a paragraph — the Tools tab carries the full roster.
@@ -385,6 +502,61 @@ class OllamaShellTUI(App):
         n = len(self.agent.registry)
         tail = f"{len(net)} net" if net else "fully local"
         return f"{self.agent.model} · {self.agent.provider.name} · {n} tools · {tail}"
+
+    def _refresh_bar(self) -> None:
+        """Push the current state into the status bar (no-op without one)."""
+        try:
+            bar = self.query_one(StatusBar)
+        except NoMatches:
+            return
+        a = self.agent
+        st = bar.state
+        st.model = a.model
+        st.provider = a.provider.name
+        st.n_tools = len(a.registry)
+        st.n_net = sum(1 for t in a.registry.active() if not t.local_only)
+        st.ctx_fill = _context_fill(a)
+        st.tok_s = self._last_tps
+        st.approvals = a.config.approvals
+        st.mood = a.config.fun.mood if a.config.fun.effects else "none"
+        st.theme = self.theme or a.config.theme
+        st.busy = self._busy
+        st.status = self._status
+        st.workspace = self._current_workspace()
+        bar.repaint()
+
+    def action_show_keys(self) -> None:
+        """The keybindings overlay (F1 / Ctrl+G / /keys)."""
+        if isinstance(self.screen, KeysScreen):
+            self.pop_screen()
+            return
+        self.push_screen(KeysScreen(list(self.BINDINGS)))
+
+    def _start_screensaver(self) -> None:
+        """Play the mood over the workspace right now (the idle takeover, on demand)."""
+        from .overlay import MoodOverlay
+
+        mood = self.agent.config.fun.mood
+        if mood == "none":
+            mood = "starfield"
+        self.push_screen(MoodOverlay(mood, logo=True), self._on_takeover_wake)
+
+    def _set_theme(self, name: str, announce: bool = True) -> bool:
+        """Apply a theme everywhere: live TUI, config, ~/.oshell/current exports."""
+        if name not in self.available_themes:
+            self.notify(f"Unknown theme: {name}", severity="error")
+            return False
+        self.theme = name
+        self.agent.config.theme = name
+        try:
+            palette = themes_mod.apply_theme(name)
+            if announce:
+                extra = " · exports in ~/.oshell/current" if palette is not None else ""
+                self.notify(f"Theme → {name}{extra}")
+        except Exception as exc:  # pragma: no cover - defensive
+            self.notify(f"Theme set to {name} (not saved: {exc}).", severity="warning")
+        self._refresh_bar()
+        return True
 
     def on_mount(self) -> None:
         self.title = "Ollama Shell"
@@ -396,6 +568,13 @@ class OllamaShellTUI(App):
             self.theme = self.agent.config.theme
         except Exception:
             pass  # unknown theme name in config — keep the default
+        self._dress_tiles()
+        self._refresh_bar()
+        self.set_interval(1.0, self._refresh_bar)
+        self.theme_changed_signal.subscribe(self, lambda _theme: self._refresh_bar())
+        if self._tiles() and self.agent.config.ui.vitals:
+            self._vitals_tick()
+            self.set_interval(self.agent.config.ui.vitals_interval, self._vitals_tick)
         self.query_one(ToolsPanel).render_for(self.agent)
         self.query_one(ContextInspector).refresh_view(self.agent)
         if not self._maybe_resume_session():
@@ -481,18 +660,72 @@ class OllamaShellTUI(App):
             if any(n.startswith("drift_") for n in names)
             else "summarize ~/notes.md"
         )
-        body = (
-            f"[b]{escape(a.model)}[/b] [dim]· {escape(a.provider.name)} · "
-            f"{len(a.registry)} tools[/dim]  {badge}\n\n"
+        tips = (
             f"[dim]Try:[/dim] [italic]{first}[/italic]\n"
             f"[dim]  · [/dim][italic]{second}[/italic]\n"
             "[dim]  · [/dim][italic]/daydream[/italic] 💭\n\n"
-            "[dim]Esc menu · Ctrl+P palette\n"
-            "Ctrl+Y copy reply · Ctrl+B copy code[/dim]"
+            "[dim]Esc menu · F1 keys · Ctrl+P palette · Alt+1..4 workspaces\n"
+            "Ctrl+Y copy reply · Ctrl+B copy code · /theme[/dim]"
+        )
+        if self._tiles():
+            # fastfetch, the way a riced terminal greets you.
+            self._conversation().write(self._fetch_card(badge))
+            self._conversation().write(Text.from_markup(tips))
+            return
+        body = (
+            f"[b]{escape(a.model)}[/b] [dim]· {escape(a.provider.name)} · "
+            f"{len(a.registry)} tools[/dim]\n{badge}\n\n" + tips
         )
         self._conversation().write(
             Panel(body, border_style="dim", padding=(0, 1), expand=False)
         )
+
+    def _fetch_card(self, badge_markup: str):
+        """The fastfetch card: wordmark in the theme's hues + the rig at a glance."""
+        import os as _os
+        import platform as _platform
+
+        from rich.table import Table
+
+        from .. import fetch, themes
+        from ..roles import host_os, shell_name
+        from ..tools.system import _total_ram_gb
+
+        a = self.agent
+        palette = themes.get_palette(self.theme or a.config.theme) or themes.get_palette(
+            themes.DEFAULT_THEME
+        )
+        # The six-row wordmark needs ~85 columns beside the facts; otherwise
+        # the compact mark. Judged on the app width (panes may not be laid out yet).
+        width = self.size.width or 80
+        rows = fetch.LOGO if width >= 130 else fetch.MARK
+        facts = [
+            ("os", host_os()),
+            ("host", _platform.node().split(".")[0] or "?"),
+            ("shell", shell_name()),
+            ("cpu", f"{_os.cpu_count()} cores · {_platform.machine()}"),
+            ("ram", f"{_total_ram_gb() or '?'} GB"),
+            ("uptime", fetch._uptime()),
+            ("model", a.model),
+            ("backend", a.provider.name),
+            ("tools", str(len(a.registry))),
+            ("theme", self.theme or a.config.theme),
+            ("mood", a.config.fun.mood),
+        ]
+        right = Text()
+        right.append(f"{_os.environ.get('USER', 'you')}@oshell\n", style=f"bold {palette.accent}")
+        right.append("─" * 22 + "\n", style=palette.muted)
+        for label, value in facts:
+            right.append(f"{label:<9}", style=f"bold {palette.blue}")
+            right.append(f"{value}\n", style=palette.foreground)
+        right.append_text(Text.from_markup(badge_markup))
+        right.append("\n\n")
+        right.append_text(themes.swatch(palette))
+        grid = Table.grid(padding=(0, 3))
+        grid.add_column()
+        grid.add_column()
+        grid.add_row(fetch.logo_text(palette, rows), right)
+        return grid
 
     def _maybe_resume_session(self) -> bool:
         """Load and render the previous conversation, if any. True if resumed."""
@@ -617,7 +850,8 @@ class OllamaShellTUI(App):
         now = time.monotonic()
         parts = [f"⏱ {now - t0:.1f}s"]
         if first_delta is not None and n_deltas >= 5 and now - first_delta > 0.2:
-            parts.append(f"~{n_deltas / (now - first_delta):.0f} tok/s")
+            self._last_tps = n_deltas / (now - first_delta)
+            parts.append(f"~{self._last_tps:.0f} tok/s")
         parts.append(f"ctx {_context_fill(self.agent):.0%}")
         return " · ".join(parts)
 
@@ -714,6 +948,10 @@ class OllamaShellTUI(App):
         yield SystemCommand(
             "Daydream", "Let the model wander and free-associate 💭", self._start_daydream
         )
+        yield SystemCommand("Keybindings", "Every key and slash command", self.action_show_keys)
+        yield SystemCommand(
+            "Screensaver", "Play the mood over the workspace now", self._start_screensaver
+        )
 
     # ── menu ─────────────────────────────────────────────────────────────────
     def action_open_menu(self) -> None:
@@ -759,6 +997,10 @@ class OllamaShellTUI(App):
             self._open_theme_picker()
         elif choice == "mood":
             self._open_mood_picker()
+        elif choice == "screensaver":
+            self._start_screensaver()
+        elif choice == "keys":
+            self.action_show_keys()
         elif choice == "help":
             self._menu_help()
 
@@ -916,22 +1158,8 @@ class OllamaShellTUI(App):
         self.push_screen(ThemeScreen(names, current), self._on_theme_choice)
 
     def _on_theme_choice(self, name: str | None) -> None:
-        if not name:
-            self.query_one(Input).focus()
-            return
-        try:
-            self.theme = name
-        except Exception:
-            self.notify(f"Unknown theme: {name}", severity="error")
-            return
-        self.agent.config.theme = name
-        from ..config import update_local_config
-
-        try:
-            update_local_config({"theme": name})
-            self.notify(f"Theme set to {name} (saved as default).")
-        except Exception as exc:  # pragma: no cover - defensive
-            self.notify(f"Theme set to {name} (not saved: {exc}).", severity="warning")
+        if name:
+            self._set_theme(name)
         self.query_one(Input).focus()
 
     def _on_attach_image(self, source: str | None) -> None:
@@ -1193,7 +1421,8 @@ class OllamaShellTUI(App):
             "[b]Help[/b]\n"
             "  The model drives: type a request and it calls tools as needed.\n"
             "  Commands:  /clear (new conversation) · /daydream · /mood [name] · /menu · /help.\n"
-            "  Keys:  Esc menu · Ctrl+P command palette · Ctrl+T tools · Ctrl+C quit.\n"
+            "  Keys:  Esc menu · F1 keybindings · Ctrl+P command palette · Ctrl+T tools · "
+            "Ctrl+C quit.\n"
             "  Copy:  Ctrl+Y last reply · Ctrl+B last code block · menu copies the transcript.\n"
             "  Select text with the mouse: hold [b]Option[/b] (macOS/iTerm2) or "
             "[b]Shift[/b] (many terminals) while dragging — the app captures normal drags.\n"
@@ -1223,6 +1452,7 @@ class OllamaShellTUI(App):
             self._menu_help()
             self._conversation().write(
                 "[dim]Commands: /clear (new conversation) · /daydream 💭 · /mood [name] · "
+                "/theme [name] · /screensaver · /keys · "
                 "/route [on|off] · /approvals [auto|ask|read-only] · /compact · /undo · "
                 "/help · /menu[/dim]"
             )
@@ -1232,6 +1462,18 @@ class OllamaShellTUI(App):
                 self._set_mood(arg.lower())
             else:
                 self._open_mood_picker()
+            return True
+        if cmd == "theme":
+            if arg:
+                self._set_theme(arg.lower())
+            else:
+                self._open_theme_picker()
+            return True
+        if cmd == "keys":
+            self.action_show_keys()
+            return True
+        if cmd == "screensaver":
+            self._start_screensaver()
             return True
         if cmd == "menu":
             self.action_open_menu()

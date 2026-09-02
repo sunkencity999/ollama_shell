@@ -71,7 +71,7 @@ def test_roundtrip_save_load(tmp_path):
 
 def test_theme_and_sky_density_defaults():
     cfg = Config()
-    assert cfg.theme == "textual-dark"
+    assert cfg.theme == "tokyo-night"
     assert cfg.fun.sky_density == 1.0
 
 

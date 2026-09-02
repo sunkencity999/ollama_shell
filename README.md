@@ -58,9 +58,17 @@ Created by Christopher Bradford · [contact@christopherdanielbradford.com](mailt
   a moment to free-associate a small, surreal vignette about whatever you'd been
   discussing. Useless on purpose. Local-first, so indulging is free.
 - 🎨 **It's a place you want to be.** Markdown-rendered replies with highlighted
-  code, live-preview color themes (nord, gruvbox, tokyo-night…), a command
-  palette, tokens-per-second vitals under every reply — and a night sky that
-  rains after a stormy debugging session.
+  code, a Waybar-style status bar, **all 22 Omarchy themes** built in (and any
+  community one — same `colors.toml`), a command palette, a keybindings
+  overlay, tokens-per-second vitals under every reply — and a night sky that
+  rains after a stormy debugging session. One `oshell theme set osaka-jade`
+  restyles the TUI, the CLI, and hands your terminal matching colors.
+- ⌨️ **It's a layer over your shell, not an app you visit.** In the shell_gpt
+  tradition: `oshell do "…"` proposes a command (run / edit / describe / chat),
+  `oshell fix` explains why the last one failed and offers the fix,
+  `oshell explain` reads a command back to you, `oshell code` writes just code.
+  Type `# find files over 1G` and press **Ctrl+G** — the comment becomes the
+  command, on your line, ready to run.
 
 If the design philosophy interests you, here it is in one table:
 
@@ -95,6 +103,9 @@ oshell models           # list backend models
 oshell doctor           # health-check the whole rig
 oshell config           # resolved config + which capabilities are live
 oshell finetune detect  # local LoRA training backend
+oshell fetch            # neofetch for your assistant — see the rig at a glance
+oshell theme set osaka-jade   # one of 22 Omarchy themes; TUI + CLI + terminal exports
+eval "$(oshell init zsh)"     # Ctrl+G, '#…'→command, `oshell fix` knows your last command
 ```
 
 `oshell` not found? Open a new terminal (so PATH reloads) or add the printed bin
@@ -114,27 +125,40 @@ those from their repos, or use `./install.sh`, which sets up everything.
 
 ## What it feels like — the TUI workspace
 
-`oshell tui` opens a workspace, not a scrolling REPL: the conversation on the
-left, a tabbed sidebar — **Tools · Context · Activity** — on the right. The header
-shows the model, backend, tool count, and privacy posture at a glance
-(`gemma4:26b · ollama · 29 tools · 9 net`).
+`oshell tui` opens a **desktop, not a chat window** — the way a riced Linux VM
+greets you: a bar with workspaces across the top, tiled windows with titles and
+gaps, a monitor running in the corner, and a terminal already showing fastfetch.
 
-```
-┌────────────────────────────────┬──────────────────────────────┐
-│ Ollama Shell · llama3.2 · ollama · 12 tools · 2 net           │
-├────────────────────────────────┼──────────────────────────────┤
-│ ───────────────────── 10:25 ── │ [Tools] Context  Activity     │
-│ › what files are here?         │  Active tools                 │
-│ The directory contains …       │   local list_dir ×3           │
-│ 🔧 list_dir(.) → 14 entries    │   net   web_search            │
-│    ⏱ 2.1s · ~38 tok/s · ctx 9% │   …                           │
-│ › /daydream                    │  Optional features            │
-│ 💭 a clock made of warm rain…  │   ✓ rag (knowledge base)      │
-│                                │   ✗ docs  (pip install …[docs])│
-├────────────────────────────────┴──────────────────────────────┤
-│ Message the model…  (Esc menu · Ctrl+P palette · Ctrl+C quit) │
-└─────────────────────────────────────────────────────────────--┘
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/sunkencity999/ollama_shell/main/docs/assets/workspace.svg" alt="The oshell workspace in tokyo-night: status bar with workspaces, chat tile with the fastfetch card and a rendered reply, vitals tile with CPU/RAM/GPU sparklines, tools tile, launcher-style input" width="100%">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/sunkencity999/ollama_shell/main/docs/assets/workspace-osaka-jade.svg" alt="The same workspace in the osaka-jade theme" width="49%">
+  <img src="https://raw.githubusercontent.com/sunkencity999/ollama_shell/main/docs/assets/workspace-matte-black.svg" alt="The same workspace in the matte-black theme" width="49%">
+</p>
+
+- **The bar** (a Waybar for the shell): the wordmark, **workspaces 1–4**
+  (chat · tools · context · activity — click them or Alt+1…4), model · backend,
+  tool count and privacy posture, the context gauge, last turn's tok/s, the
+  approvals mode; on the right the mood, the theme, the clock.
+- **chat** — the conversation tile. A fresh session opens with a **fastfetch
+  card**: the OSHELL wordmark in the theme's hues beside the rig (OS, host,
+  shell, cores, RAM, uptime, model, backend, tools, theme, mood) and a privacy
+  badge. Then the transcript — Markdown-rendered replies, a timestamped rule per
+  exchange, a vitals line under each.
+- **vitals** — a small btop: CPU and RAM sparklines with heat colors, what
+  Ollama has loaded and how much of it sits on the GPU (`gemma4:26b · 28 GB ·
+  100% GPU`), a tok/s history, context fill, tools and privacy, uptime. Sampled
+  every two seconds in a worker thread on macOS, Linux and Windows (`psutil`
+  comes with the `[tui]` extra; without it, stdlib probes fill in).
+- **tools · context · activity** — the tabbed tile.
+- **❯** — the input, styled like a launcher. Esc menu · F1 keys · Ctrl+P palette.
+
+Every tile wears the theme's border; the one holding focus lights up,
+Hyprland-style. Prefer the older shape? `{"ui":{"layout":"classic"}}` brings
+back conversation + sidebar without vitals; `{"ui":{"statusbar":false}}` the
+stock header; `{"ui":{"gaps":false}}` reclaims two columns.
 
 - **Tools** — the live roster (local vs network), warmed by use: tools the model
   has actually reached for this session glow with a `×N` count. This panel is the
@@ -164,9 +188,9 @@ A faint constellation hangs behind it. From it:
 
 - **Models** — pick the active model, each badged with its size and quantization
   (`26B · Q8_0`); your choice is **saved as the default** across sessions.
-- **Theme** — restyle the whole app, previewed **live** as you arrow through
-  nord, gruvbox, tokyo-night, catppuccin, dracula, and friends. Enter keeps it
-  (persisted), Esc puts the room back the way it was.
+- **Theme** — all 22 Omarchy palettes (plus yours and Textual's), each with a
+  swatch, previewed **live** as you arrow through. Enter keeps it everywhere
+  (TUI, CLI, terminal exports), Esc puts the room back the way it was.
 - **Install features** — add RAG / docs / vision / fine-tuning / computer-use into
   the running environment *without leaving the app*. Output streams live into the
   Activity tab and the Tools panel ticks ✓ when it finishes.
@@ -293,7 +317,7 @@ unique prefix) reopens a specific one.
 ## A daily driver, not a destination
 
 > 🎓 **[Interactive tutorial →](https://sunkencity999.github.io/ollama_shell/tutorial.html)** — a hands-on course in your browser: Part I gets you running
-> in ten minutes, Part II is the deep end (16 chapters, 48 real-world exercises,
+> in ten minutes, Part II is the deep end (18 chapters, 57 real-world exercises,
 > and a graduation ceremony under the stars).
 
 oshell meets you where you already work — the shell — instead of asking you to
@@ -303,11 +327,13 @@ visit it:
   `cat error.log | oshell ask "why is this failing?"` ·
   `git diff | oshell ask "write the commit message"`
 - **`oshell do "convert every png here to webp"`** — proposes the exact shell
-  command, you confirm (`y` / `e` to edit / `n`), it runs. Successful commands are
+  command; then **r**un · **e**dit · **d**escribe (what does that flag do?) ·
+  **c**hat (refine it with the model) · **n**o. Successful commands are
   remembered and improve future suggestions (`~/.oshell/do_history.jsonl`).
-- **Live in your prompt.** `eval "$(oshell init zsh)"` in `.zshrc` gives you
-  **Ctrl+G** (summons oshell with whatever is on your command line as the
-  question) and a command-not-found hint that points at `oshell do`.
+  `ls | oshell do "delete the .tmp ones"` — piped input is context.
+- **Live in your prompt.** `eval "$(oshell init zsh)"` (or `bash`, `fish`, or
+  PowerShell) gives you **Ctrl+G** and three more things — see
+  [The shell is the conversation](#the-shell-is-the-conversation--the-shell_gpt-lineage).
 - **Auto model routing.** Turn on `/route on` and oshell picks per message:
   quick chat → your fast model, code/reasoning → the big one, images → the vision
   model, with a dim `→ model (reason)` note when it switches. Configure slots in
@@ -321,6 +347,84 @@ visit it:
 - **Your own slash commands.** Drop `~/.oshell/commands/standup.md` containing a
   prompt template (`$ARGS`, `$1`…`$9` substituted) and `/standup` exists in the
   REPL and the TUI. The filesystem is the registry.
+
+## The shell is the conversation — the shell_gpt lineage
+
+[shell_gpt](https://github.com/TheR1D/shell_gpt) taught a generation of people
+to treat the terminal as a conversation — `sgpt -s "…"` → a command →
+*execute / describe / abort* — and for some it quietly became the first layer of
+their OS. oshell picks that thread up, local-first, with the model already
+holding your tools and your machine's memory:
+
+| You type | What happens |
+|----------|--------------|
+| `oshell do "free up the docker disk"` | proposes one command → **r**un / **e**dit / **d**escribe / **c**hat / **n**o. Destructive patterns get a ⚠ and never run with `--yes`. |
+| `oshell explain "tar -xzf x.tgz -C /opt --strip-components=1"` | a terse description — each flag, hazards in bold. No argument = the last command you ran. |
+| `make 2>&1 \| oshell fix` | **why** it failed, then a **fix** command with the same confirm loop. Works from the recorded last command alone, too. |
+| `oshell code "parse this csv into a dict" -l python > parse.py` | just code, no fences, redirect-safe; `cat data.csv \| oshell code …` feeds input. |
+| `oshell ask --role sysadmin "why is launchd respawning this?"` | reusable system prompts. Built-ins: `default · sysadmin · shell · code · describe · fix`; yours in `~/.oshell/roles/NAME.md` (same name = override — retune how `do` writes commands for *your* box). |
+
+**In your shell.** `eval "$(oshell init zsh)"` — also `bash`,
+`oshell init fish | source`, and on Windows
+`oshell init powershell | Out-String | Invoke-Expression` in your `$PROFILE`
+(PSReadLine key handler + prompt hook) — installs four small things:
+
+- **Ctrl+G** asks about whatever is on your line (empty line → chat). Start the
+  line with `#` and the same key turns the comment into a command, placed on
+  your line to edit or run: `# find files over 1g modified this week` → Ctrl+G
+  → `find . -size +1G -mtime -7`. Nothing executes until you press Enter.
+- **Last-command capture** — a pure-shell hook (no process spawn) records the
+  command, exit status, and directory in `~/.oshell/last_cmd`, so `oshell fix`
+  and `oshell explain` work on whatever just happened without re-typing.
+- **command-not-found** → a nudge toward `oshell do` instead of a dead end.
+- **Theme colors** into your shell (`$OSHELL_ACCENT` & co.); `--prompt` adds
+  a small themed prompt if you want the full rice.
+
+## Riced — Omarchy-style themes for a terminal-native shell
+
+[Omarchy](https://omarchy.org)'s best idea: a theme is a small `colors.toml`,
+and *one command* restyles the whole system. oshell borrows the format
+wholesale. **All 22 Omarchy palettes ship built in** — tokyo-night (default),
+catppuccin, everforest, gruvbox, kanagawa, nord, rose-pine, osaka-jade,
+matte-black, ristretto, hackerman, ethereal, lumon, lupine, miasma,
+last-horizon, solitude, retro-82, vantablack, and the light ones: flexoki-light,
+catppuccin-latte, white — and any of the hundreds of community Omarchy themes
+drops straight in.
+
+```bash
+oshell theme list                       # swatches, dark/light, source
+oshell theme set osaka-jade             # TUI + CLI + ~/.oshell/current/* — everywhere
+oshell theme import ~/omarchy-nightfox  # a dir with colors.toml, or a GitHub URL
+oshell theme export ghostty             # also: alacritty · kitty · wezterm · windows-terminal · btop · sh
+```
+
+One palette becomes a Textual theme (the TUI, live-previewed in the picker with
+swatches), a Rich theme (every CLI prompt, panel, and tool line), and a set of
+terminal configs regenerated into `~/.oshell/current/` on every switch — so
+your terminal can follow along:
+
+```
+# Ghostty — one line, then the terminal tracks `oshell theme set`
+echo "config-file = ~/.oshell/current/ghostty.conf" >> ~/.config/ghostty/config
+```
+
+Drop your own `~/.oshell/themes/mine.toml` (only `accent`, `background`,
+`foreground` are required — the rest is derived), or a whole Omarchy theme
+directory. In the TUI: **menu → Style → Theme**, `/theme kanagawa`, or the
+command palette.
+
+**The chrome.** A Waybar-style **status bar** replaces the stock header:
+model · backend · tools and privacy posture · context gauge · last turn's
+tok/s · approvals mode · mood · theme · clock, with Nerd Font glyphs when your
+terminal has them (`{"ui":{"nerd_font":"on"}}`; `auto` sniffs Ghostty, kitty,
+WezTerm, Alacritty, iTerm) and plain Unicode when not. Panes wear the theme's
+border and the one holding focus lights up, Hyprland-style; a little gap
+between them (`{"ui":{"gaps":false}}` to reclaim two columns). **F1** (or
+`/keys`) is the keybindings overlay — every key and slash command, one Esc
+away. **`/screensaver`** plays the mood over the workspace with the wordmark
+adrift in the theme's hues; `oshell screensaver` does the same in any plain
+terminal. And `oshell fetch` is a neofetch for the assistant itself: logo, rig,
+model, backend, machine memory, sessions, memories, theme.
 
 ## Guardrails — trust infrastructure for an agent with a shell
 
@@ -632,6 +736,8 @@ browser-automation integrations. Open an issue if you'd like any migrated next.
 | Path | What |
 |------|------|
 | `oshell/` | the entire application (core + tools + integrations + finetune + tui) |
+| `oshell/shellops.py`, `roles.py`, `shellinit.py` | the shell_gpt lineage: do/explain/code/fix, roles, `oshell init` for zsh/bash/fish |
+| `oshell/themes/` | Omarchy-format palettes (22 bundled) → Textual/Rich themes + terminal exports |
 | `tests/` | the test suite (`tests/legacy/` holds archived v0.1 scratch tests) |
 | `examples/`, `scripts/` | relocated v0.1 demos and utilities |
 | `docs/` | guides; `docs/LEGACY_README.md` + `docs/legacy/` preserve v0.1 docs |

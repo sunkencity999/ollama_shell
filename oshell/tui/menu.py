@@ -47,8 +47,15 @@ MENU_SECTIONS: list[tuple[str, list[tuple[str, str, str]]]] = [
             ("memory", "Memory", "View what the assistant remembers"),
             ("knowledge", "Knowledge base", "How to store & recall local notes"),
             ("daydream", "Daydream", "Let the model wander and free-associate 💭"),
-            ("theme", "Theme", "Restyle the app (live preview)"),
+        ],
+    ),
+    (
+        "Style",
+        [
+            ("theme", "Theme", "22 Omarchy palettes + yours (live preview)"),
             ("mood", "Mood", "Idle ambience: rain, snow, aurora, ocean, …"),
+            ("screensaver", "Screensaver", "Play the mood over the workspace now"),
+            ("keys", "Keybindings", "Every key and slash command"),
         ],
     ),
     (
@@ -421,11 +428,11 @@ class ThemeScreen(ModalScreen[str]):
     CSS = """
     ThemeScreen { align: center middle; }
     #menu-box {
-        width: 56; height: auto; max-height: 80%; padding: 1 2;
+        width: 64; height: auto; max-height: 85%; padding: 1 2;
         border: round $accent; background: $surface;
     }
     #menu-title { padding-bottom: 1; }
-    #menu-list { height: auto; max-height: 24; }
+    #menu-list { height: auto; max-height: 26; }
     """
     BINDINGS = [Binding("escape", "cancel", "Back")]
 
@@ -435,17 +442,32 @@ class ThemeScreen(ModalScreen[str]):
         self._original = current
 
     def compose(self) -> ComposeResult:
+        from rich.text import Text
+
+        from .. import themes as themes_mod
+
+        palettes = themes_mod.list_palettes()
         with Vertical(id="menu-box"):
             yield Static(
                 "[b]Theme[/b]\n"
-                "[dim]↑/↓ previews live · Enter keeps it · Esc restores[/dim]",
+                "[dim]↑/↓ previews live · Enter keeps it (TUI, CLI, terminal exports) · "
+                "Esc restores[/dim]",
                 id="menu-title",
             )
             options = []
             for i, t in enumerate(self._themes):
-                tag = "  [green](current)[/green]" if t == self._original else ""
                 label = f" {i + 1}." if i < 9 else "   "
-                options.append(Option(f"{label}  {t}{tag}", id=t))
+                row = Text(f"{label}  ")
+                row.append(f"{t:<20}", style="bold" if t == self._original else "")
+                pal = palettes.get(t)
+                if pal is not None:
+                    row.append_text(themes_mod.swatch(pal))
+                    row.append(f"  {pal.mode}", style="dim")
+                else:
+                    row.append("(textual)", style="dim")
+                if t == self._original:
+                    row.append("  current", style="green")
+                options.append(Option(row, id=t))
             yield OptionList(*options, id="menu-list")
 
     def on_mount(self) -> None:

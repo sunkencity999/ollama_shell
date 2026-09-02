@@ -99,6 +99,22 @@ class OllamaProvider(LLMProvider):
                 self._show_cache[model] = {}
         return self._show_cache[model]
 
+    def loaded_models(self) -> list[dict[str, Any]]:
+        """What Ollama has resident right now (/api/ps): name, size, size_vram."""
+        resp = requests.get(f"{self.host}/api/ps", timeout=min(self.timeout, 5.0))
+        resp.raise_for_status()
+        out: list[dict[str, Any]] = []
+        for m in resp.json().get("models", []) or []:
+            out.append(
+                {
+                    "name": m.get("name") or m.get("model") or "?",
+                    "size": int(m.get("size") or 0),
+                    "size_vram": int(m.get("size_vram") or 0),
+                    "expires_at": m.get("expires_at"),
+                }
+            )
+        return out
+
     def capabilities(self, model: str) -> set[str]:
         """Capability tags from /api/show (e.g. completion, vision, tools), cached."""
         return set(self._show(model).get("capabilities", []))

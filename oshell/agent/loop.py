@@ -260,6 +260,9 @@ class Agent:
             else build_system_prompt(registry, memory=memory, project=self._project)
         )
         self.messages: list[Message] = [Message(role="system", content=content)]
+        # An optional role prompt (oshell roles) appended to the system prompt;
+        # survives rebuilds. Set via the ``system_extra`` property.
+        self._system_extra: str | None = None
         # Context management: indices into ``self.messages``.
         self.pinned: set[int] = {0}  # system prompt is pinned by default
         self.excluded: set[int] = set()
@@ -288,17 +291,31 @@ class Agent:
             self._ctx_cache[self.model] = min(trained or 8192, AUTO_CONTEXT_CAP)
         return self._ctx_cache[self.model]
 
+    @property
+    def system_extra(self) -> str | None:
+        """Extra system-prompt text (a role) layered on top of the built prompt."""
+        return self._system_extra
+
+    @system_extra.setter
+    def system_extra(self, text: str | None) -> None:
+        self._system_extra = text.strip() if text else None
+        self.rebuild_system_prompt()
+
     def rebuild_system_prompt(self) -> None:
         """Refresh the system message after the registry changes (tools toggled,
         model switched) or memory updates, so the model has the current tools+facts."""
-        if self._custom_prompt is None and self.messages and self.messages[0].role == "system":
-            if self.config.project_context:
-                from ..project import project_context
+        if self.messages and self.messages[0].role == "system":
+            if self._custom_prompt is None:
+                if self.config.project_context:
+                    from ..project import project_context
 
-                self._project = project_context()
-            self.messages[0].content = build_system_prompt(
-                self.registry, memory=self.memory, project=self._project
-            )
+                    self._project = project_context()
+                base = build_system_prompt(self.registry, memory=self.memory, project=self._project)
+            else:
+                base = self._custom_prompt
+            if self._system_extra:
+                base = f"{base}\n\n## Role\n{self._system_extra}"
+            self.messages[0].content = base
 
     def _authorize(self, call: ToolCall) -> str | None:
         """Approval gate for sensitive tools. Returns denial text, or None to run.

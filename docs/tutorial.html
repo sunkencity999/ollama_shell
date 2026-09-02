@@ -4,9 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Learn Ollama Shell — interactive tutorial</title>
-<meta name="description" content="From zero to daily driver: sixteen interactive lessons in a fake terminal. Install oshell, chat with it, pipe your shell into it, configure it layer by layer, mount MCP servers, and let it learn your machine. All local. No cloud." />
+<meta name="description" content="From zero to daily driver: eighteen interactive lessons in a fake terminal. Install oshell, chat with it, pipe your shell into it, configure it layer by layer, mount MCP servers, and let it learn your machine. All local. No cloud." />
 <meta property="og:title" content="Learn Ollama Shell — interactive tutorial" />
-<meta property="og:description" content="Two parts, sixteen chapters, one starfield at the end. The first ten minutes get you running; the deep end makes it your daily driver. Type along — it types back." />
+<meta property="og:description" content="Two parts, eighteen chapters, one starfield at the end. The first ten minutes get you running; the deep end makes it your daily driver. Type along — it types back." />
 <meta property="og:type" content="website" />
 <style>
   :root{
@@ -269,8 +269,9 @@
     <li><a class="dotlink" href="#ch15" data-ch="15" title="Computer use"><span class="n">15</span></a></li>
     <li><a class="dotlink" href="#ch16" data-ch="16" title="Guardrails"><span class="n">16</span></a></li>
     <li><a class="dotlink" href="#ch17" data-ch="17" title="Cookbook &amp; your first week"><span class="n">17</span></a></li>
+    <li><a class="dotlink" href="#ch18" data-ch="18" title="The shell layer &amp; the rice"><span class="n">18</span></a></li>
   </ol>
-  <span class="navcount" id="navcount">0/17 chapters</span>
+  <span class="navcount" id="navcount">0/18 chapters</span>
 </nav>
 
 <main>
@@ -282,7 +283,7 @@
     <b>Part I</b> gets you running in ten minutes; <b>Part II</b> is the deep
     end — configuration, memory, machine telemetry, MCP servers, computer use —
     everything between "neat demo" and "I open this before my inbox."
-    Finish all seventeen chapters and something nice happens.</p>
+    Finish all eighteen chapters and something nice happens.</p>
     <p class="how">In every demo: <b>type</b> the ghosted command (any keys work),
     press <kbd>Tab</kbd> to autocomplete, <kbd>Enter</kbd> or <b>▶ run</b> to run it.
     The green "try it for real" boxes are homework — check them off as you go.
@@ -472,8 +473,9 @@
     <h2 id="h-ch5"><span class="chn">5</span>Say what you want done</h2>
     <p><code class="ic">oshell do</code> is the agent with its hand raised, not on
     the trigger: describe the outcome, it proposes the <em>exact</em> shell
-    command, and nothing runs until you say <kbd>y</kbd>. <kbd>e</kbd> opens the
-    command for editing first; <kbd>n</kbd> walks away. Every command you confirm
+    command, and nothing runs until you say <kbd>r</kbd>un. <kbd>e</kbd> edits
+    it first, <kbd>d</kbd> describes what each flag does, <kbd>c</kbd> opens a
+    short chat to refine it, <kbd>n</kbd> walks away. Every command you confirm
     is logged to <code class="ic">~/.oshell/do_history.jsonl</code> — and becomes
     a few-shot example, so the proposals get more <em>yours</em> over time. Ask
     for something reckless and it refuses.</p>
@@ -482,7 +484,7 @@
     </p>
     <div class="demo" id="d5" data-ch="5" data-name="oshell — do (confirm before run)" role="group" aria-label="Interactive demo: oshell do with confirmation, editing, learning and refusals"></div>
     <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
-      <p>The y/e/n gate is the contract: the agent may be clever, but <b>your
+      <p>The r/e/d/c/n gate is the contract: the agent may be clever, but <b>your
       machine only runs what you read</b>. Successful commands (and only those)
       land in <code>do_history.jsonl</code> with the ask that produced them; on
       the next similar ask they're injected as few-shot examples, which is why
@@ -492,8 +494,9 @@
     </div></details>
     <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
       <ul>
-        <li><kbd>e</kbd> puts the command on an editable line (your <code>$EDITOR</code> for multiline).</li>
-        <li><code>--yes</code> exists for scripts. Respect it like a loaded tool: it skips the gate.</li>
+        <li><kbd>e</kbd> puts the command on an editable line; <kbd>d</kbd> asks the model to describe it flag by flag before you decide.</li>
+        <li><code>--yes</code> exists for scripts. Respect it like a loaded tool: it skips the gate — except for destructive patterns (<code>rm -rf</code>, <code>git push --force</code>…), which always ask.</li>
+        <li><code>ls | oshell do "delete the .tmp ones"</code> — piped input is context. <code>--print</code> emits only the command (what the <kbd>⌃G</kbd> widget uses).</li>
         <li><kbd>n</kbd> cancels and logs nothing — declined proposals never become examples.</li>
         <li>The plan line tells you <em>why</em> it chose the tool it chose (e.g. cwebp missing, ImageMagick found).</li>
       </ul>
@@ -550,10 +553,13 @@
   <!-- ─────────────────────────── 7 ─────────────────────────── -->
   <section class="chapter" id="ch7" aria-labelledby="h-ch7">
     <h2 id="h-ch7"><span class="chn">7</span>Live in your shell</h2>
-    <p>One <code class="ic">eval</code> in your <code class="ic">.zshrc</code> and
-    oshell moves in: <kbd>⌃G</kbd> summons it with <em>whatever is on your command
-    line</em> as the question — perfect for the flag you can never remember — and
-    mistyped commands get a helpful hint instead of a shrug.</p>
+    <p>One <code class="ic">eval</code> in your <code class="ic">.zshrc</code> (or
+    <code class="ic">.bashrc</code>, or <code class="ic">oshell init fish | source</code>)
+    and oshell moves in: <kbd>⌃G</kbd> summons it with <em>whatever is on your
+    command line</em> as the question; a line that starts with <code>#</code> and
+    <kbd>⌃G</kbd> becomes the command, right there on your line; every command's
+    exit status is remembered so <code class="ic">oshell fix</code> knows what just
+    broke; and mistyped commands get a helpful hint instead of a shrug.</p>
     <p>
       <span class="chip"><code>eval "$(oshell init zsh)"</code><button class="copy" data-copy='eval "$(oshell init zsh)"' aria-label="Copy: eval oshell init zsh">copy</button></span>
     </p>
@@ -569,7 +575,8 @@
       <ul>
         <li><kbd>⌃G</kbd> on an <b>empty</b> line opens a plain one-shot chat prompt.</li>
         <li>The suggested command lands on your prompt to edit — it never auto-runs.</li>
-        <li>zsh today; the init script prints plain shell, so reading it takes one minute: <code>oshell init zsh | less</code>.</li>
+        <li>zsh, bash and fish. The init script prints plain shell, so reading it takes one minute: <code>oshell init zsh | less</code>. Add <code>--prompt</code> for a small prompt in the theme's colors.</li>
+        <li>The last-command hook is pure shell (no process spawn per prompt); it writes four lines to <code>~/.oshell/last_cmd</code>.</li>
       </ul>
     </div></details>
     <div class="ex" role="group" aria-label="Try it for real: chapter 7">
@@ -1017,7 +1024,7 @@ single safest next command. Consult machine memory first.</pre></div>
       <label><input type="checkbox" data-ex="day6"> <b>Day 6</b> — ask "what changed on this box since yesterday?"</label>
       <label><input type="checkbox" data-ex="day7"> <b>Day 7</b> — on Apple Silicon, peek at <code>oshell finetune</code>: yes, it fine-tunes locally</label>
     </div>
-    <p class="o-sys" style="max-width:720px">Finish all seventeen chapter demos and the sky does something.
+    <p class="o-sys" style="max-width:720px">Finish all eighteen chapter demos and the sky does something.
     <button class="dbtn" id="gradlink" hidden>🎓 view your graduation again</button></p>
   </section>
 
@@ -1099,12 +1106,57 @@ single safest next command. Consult machine memory first.</pre></div>
        <a href="https://github.com/sunkencity999/ollama_shell">source &amp; README on GitHub →</a></p>
     <p><button class="resetp" id="resetp">reset tutorial progress</button></p>
   </footer>
+
+  <!-- ─────────────────────────── 18 ─────────────────────────── -->
+  <section class="chapter" id="ch18" aria-labelledby="h-ch18">
+    <h2 id="h-ch18"><span class="chn">18</span>The shell layer &amp; the rice</h2>
+    <p>Two lineages meet here. From <b>shell_gpt</b>: the terminal as a
+    conversation — say what you want, get the command, run / edit / describe /
+    chat / no; ask why the last thing failed and get the fix. From
+    <b>Omarchy</b>: one small palette file restyles <em>everything</em> — the
+    TUI, the CLI, and your terminal — and all twenty-two of its themes ship
+    built in.</p>
+    <p>
+      <span class="chip"><code>oshell fix</code><button class="copy" data-copy="oshell fix" aria-label="Copy: oshell fix">copy</button></span>
+      <span class="chip"><code>oshell theme set osaka-jade</code><button class="copy" data-copy="oshell theme set osaka-jade" aria-label="Copy: oshell theme set osaka-jade">copy</button></span>
+    </p>
+    <div class="demo" id="d18" data-ch="18" data-name="the shell layer &amp; the rice" role="group" aria-label="Interactive demo: oshell do, fix, explain, themes and fetch"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p><b>Roles</b> are the trick under <code>do</code>, <code>explain</code>,
+      <code>code</code> and <code>fix</code>: each is a small system prompt in
+      <code>~/.oshell/roles/</code> you can override by name — retune how
+      commands get written for <em>your</em> box in one markdown file. The
+      <b>last command</b> is recorded by a pure-shell hook (no process spawn)
+      as four plain lines: exit code, directory, time, command. <b>Themes</b>
+      are Omarchy's <code>colors.toml</code> verbatim, so the community's
+      hundreds of themes need no conversion; every switch regenerates
+      <code>~/.oshell/current/</code> (ghostty · alacritty · kitty · wezterm ·
+      btop · colors.sh) so terminals can simply include a file.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li><code># find files over 1g</code> then <kbd>⌃G</kbd> replaces the comment with the command on your line — nothing runs until Enter. Needs <code>eval "$(oshell init zsh)"</code> (or <code>bash</code>, or <code>oshell init fish | source</code>).</li>
+        <li><code>make 2&gt;&amp;1 | oshell fix</code> — piping the output in sharpens the diagnosis; without the init hook the pipe alone still works.</li>
+        <li>Destructive patterns (<code>rm -rf</code>, <code>git push --force</code>, <code>dd of=/dev/…</code>) get a ⚠ and never run under <code>--yes</code>.</li>
+        <li><code>oshell code … &gt; file</code> writes raw code when stdout isn't a terminal; on a terminal it's syntax-highlighted.</li>
+        <li>Only <code>accent</code>, <code>background</code>, <code>foreground</code> are required in a theme file — the rest is derived. Textual's own theme names still work for the TUI alone.</li>
+        <li>Status bar glyphs: <code>{"ui":{"nerd_font":"on"}}</code> forces Nerd Font icons; <code>"off"</code> plain Unicode; <code>auto</code> sniffs the terminal. <code>{"ui":{"gaps":false}}</code> reclaims two columns; <code>{"ui":{"statusbar":false}}</code> brings the stock header back.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 18">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch18-hash"> Type a <code>#</code> comment describing a task, press <kbd>⌃G</kbd>, read the command before running it</label>
+      <label><input type="checkbox" data-ex="ch18-fix"> Break a command on purpose, then <code>oshell fix</code></label>
+      <label><input type="checkbox" data-ex="ch18-theme"> <code>oshell theme list</code>, pick one, <code>oshell theme set</code> it, then <code>oshell fetch</code></label>
+      <label><input type="checkbox" data-ex="ch18-f1"> In the TUI press <kbd>F1</kbd>, then try <code>/screensaver</code></label>
+    </div>
+  </section>
 </main>
 
 <div class="grad" id="grad" role="dialog" aria-modal="true" aria-labelledby="gradtitle" aria-describedby="graddesc">
   <div class="gstars" aria-hidden="true"></div>
   <div class="ginner">
-    <div class="gbadge">17/17 chapters</div>
+    <div class="gbadge">18/18 chapters</div>
     <h2 id="gradtitle">🎓 you're a resident now</h2>
     <p id="graddesc">oshell isn't a demo on a webpage anymore — it lives on your
     machine, knows what's normal there, answers to your slash commands, and
@@ -1124,9 +1176,9 @@ single safest next command. Consult machine memory first.</pre></div>
     .replace(/&nbsp;/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
 
   /* ── progress: 16 chapters + exercises, one tracker ──────────── */
-  const KEY = 'oshell-tutorial-v3';   // bumped: 17 chapters now — stale 16-chapter progress must not misrender
+  const KEY = 'oshell-tutorial-v4';   // bumped: 18 chapters now — stale progress must not misrender
   const EXKEY = 'oshell-tutorial-ex-v1';
-  const TOTAL = 17;
+  const TOTAL = 18;
   let done = new Set(), ex = new Set();
   try { done = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch(e){}
   try { ex = new Set(JSON.parse(localStorage.getItem(EXKEY) || '[]')); } catch(e){}
@@ -1255,9 +1307,10 @@ single safest next command. Consult machine memory first.</pre></div>
         CARET(),
       ]},
       { ps:'$', cmd:'oshell tui', out:[
-        L('opening the full Textual workspace…','o-dim',320),
-        L('  panels: conversation · tools · context · activity','',260),
-        L('  extras: theme picker · command palette · ambient weather on the idle strip','',240),
+        L('opening the workspace — a desktop, not a chat window…','o-dim',320),
+        L('  bar: workspaces 1–4 · model · tools · ctx · tok/s · approvals · mood · theme · clock','',260),
+        L('  tiles: chat (opens on fastfetch) · vitals (a small btop) · tools · a launcher-style input','',260),
+        L('  22 Omarchy themes built in · F1 keybindings · ambient weather when you go quiet','',240),
         L("(it's the terminal on the <a href='index.html'>front page</a> — the one that dreams)",'o-dim',300),
       ]},
     ]},
@@ -1358,7 +1411,7 @@ single safest next command. Consult machine memory first.</pre></div>
       { ps:'$', cmd:'oshell do "convert every png here to webp"', out:[
         L('plan: 14 png files · cwebp not found · ImageMagick 7.1 is installed','o-dim',540),
         BOX('magick mogrify -format webp -quality 82 *.png'),
-        ASK('run it?  [y]es · [e]dit command · [n]o  › ', 'y', 1100),
+        ASK('r·un · e·dit · d·escribe · c·hat · n·o ❯ ', 'r', 1100),
         L('converting… 14/14','o-dim',700),
         L('✓ done — 14 webp written, originals kept (9.1 MB saved)','o-ok',320),
         L('logged to ~/.oshell/do_history.jsonl — future proposals learn from this.','o-dim',300),
@@ -1366,10 +1419,10 @@ single safest next command. Consult machine memory first.</pre></div>
       { ps:'$', cmd:'oshell do "find the biggest files here"', out:[
         L('plan: du + sort — read-only, cheap','o-dim',500),
         BOX('du -ah . | sort -rh | head -10'),
-        ASK('run it?  [y]es · [e]dit command · [n]o  › ', 'e', 1000),
+        ASK('r·un · e·dit · d·escribe · c·hat · n·o ❯ ', 'e', 1000),
         L('editing — the command is on your line now:','o-dim',420),
         BOX('du -ah . | sort -rh | head -25'),
-        ASK('run it?  [y]es · [n]o  › ', 'y', 800),
+        ASK('r·un · e·dit · d·escribe · c·hat · n·o ❯ ', 'r', 800),
         L('1.9G  ./models/qwen3-8b.gguf','o-dim',300),
         L('812M  ./venv','o-dim',130),
         L('406M  ./datasets/flightlogs.parquet   <span class="o-dim">… 22 more lines</span>','o-dim',130),
@@ -1377,7 +1430,7 @@ single safest next command. Consult machine memory first.</pre></div>
       { ps:'$', cmd:'oshell do "convert the new screenshots to webp"', out:[
         L('few-shot: 1 similar command in your do_history.jsonl (quality 82)','o-mag',540),
         BOX('magick mogrify -format webp -quality 82 screenshots/*.png'),
-        ASK('run it?  [y]es · [e]dit command · [n]o  › ', 'y', 900),
+        ASK('r·un · e·dit · d·escribe · c·hat · n·o ❯ ', 'r', 900),
         L('✓ done — 6 webp written. it remembered your quality setting.','o-ok',360),
       ]},
       { ps:'$', cmd:'oshell do "delete everything"', out:[
@@ -1412,9 +1465,14 @@ single safest next command. Consult machine memory first.</pre></div>
 
     d7: { stages: [
       { ps:'$', cmd:'eval "$(oshell init zsh)"', out:[
-        L('✓ zsh hooks installed','o-ok',380),
-        L("  <b>Ctrl+G</b>             summon oshell with your current command line",'o-dim',180),
+        L('✓ zsh hooks installed  (also: oshell init bash · oshell init fish | source)','o-ok',380),
+        L("  <b>Ctrl+G</b>             ask about your line · a <b>#</b> line becomes the command",'o-dim',180),
+        L("  last command       recorded for <b>oshell fix</b> / <b>oshell explain</b>",'o-dim',180),
         L("  command-not-found  a hint instead of a shrug",'o-dim',180),
+      ]},
+      { ps:'$', cmd:'# find files over 1g modified this week   ⌃G', out:[
+        L("<span class='o-user'>$</span> find . -type f -size +1G -mtime -7",'',700),
+        L("the comment became the command, on your line. Enter runs it; nothing ran yet.",'o-dim',320),
       ]},
       { ps:'$', cmd:'ffmpeg -i screen.mov', out:[
         L("<kbd>⌃G</kbd> <span class='o-dim'>— stuck mid-command? oshell reads the line you were writing…</span>",'',600),
@@ -1705,6 +1763,54 @@ single safest next command. Consult machine memory first.</pre></div>
         L('Apple Silicon detected (M-series) · MLX backend available','o-ok',460),
         L('fine-tune a local model on your own transcripts — QLoRA, on-device','',300),
         L('day 7 material. the tutorial ends; the rabbit hole does not.','o-dim',320),
+      ]},
+    ]},
+
+    d18: { stages: [
+      { ps:'$', cmd:'oshell do "free up docker disk space"', out:[
+        L("thinking (gemma4)…",'o-dim',420),
+        L("╭─ <span class='o-acc'>proposed</span> ──────────────────────────────╮",'',200),
+        L("│  <b>docker system prune -af --volumes</b>            │",'',120),
+        L("╰───────────────────────────────────────────╯",'',120),
+        L("  <span class='o-acc'>r</span>un · <span class='o-acc'>e</span>dit · <span class='o-acc'>d</span>escribe · <span class='o-acc'>c</span>hat · <span class='o-acc'>n</span>o ❯ d",'',520),
+        L("Removes <b>all</b> stopped containers, unused images (<code>-a</code>), build cache, and — <b>irreversibly</b> — every unused volume (<code>--volumes</code>). <code>-f</code> skips the confirmation.",'o-dim',420),
+        L("  r · e · d · c · n ❯ e",'',380),
+        L("command [docker system prune -af --volumes]: docker system prune -af",'o-dim',420),
+        L("✓ done <span class='o-dim'>(remembered — future proposals learn from it)</span>",'o-ok',300),
+      ]},
+      { ps:'$', cmd:'make 2>&1 | oshell fix', out:[
+        L("$ <b>make</b>  <span class='o-err'>exit 2</span>",'o-dim',300),
+        L("╭─ <span class='o-acc'>why</span> ─────────────────────────────────────────╮",'',200),
+        L("│ Your Makefile recipe lines start with spaces;  │",'',110),
+        L("│ make requires a literal tab before each one.   │",'',110),
+        L("╰────────────────────────────────────────────────╯",'',110),
+        L("╭─ <span class='o-acc'>proposed</span> ───────────────────────────────────╮",'',160),
+        L("│  <b>sed -i '' 's/^    /\\t/' Makefile &amp;&amp; make</b>          │",'',110),
+        L("╰────────────────────────────────────────────────╯",'',110),
+        L("  r · e · d · c · n ❯ r",'',420),
+        L("✓ done",'o-ok',300),
+      ]},
+      { ps:'$', cmd:'# list files over 1g modified this week   ⌃G', out:[
+        L("<span class='o-user'>$</span> find . -type f -size +1G -mtime -7",'',700),
+        L("(the comment became the command, on your line — Enter runs it, or edit first)",'o-dim',320),
+      ]},
+      { ps:'$', cmd:'oshell theme set osaka-jade', out:[
+        L("✓ theme → <span class='o-acc'>osaka-jade</span>  <span style='color:#111c18'>██</span><span style='color:#509475'>█</span><span style='color:#ff5345'>█</span><span style='color:#459451'>█</span><span style='color:#549e6a'>█</span><span style='color:#2dd5b7'>█</span><span style='color:#509475'>█</span><span style='color:#d2689c'>█</span><span style='color:#c1c497'>█</span>",'',360),
+        L("exports refreshed in ~/.oshell/current/ (ghostty.conf · alacritty.toml · kitty.conf · wezterm.lua · btop.theme · colors.sh)",'o-dim',300),
+        L("terminal follows along?  echo 'config-file = ~/.oshell/current/ghostty.conf' &gt;&gt; ~/.config/ghostty/config",'o-dim',320),
+      ]},
+      { ps:'$', cmd:'oshell fetch --no-probe', out:[
+        L(" <span class='o-acc'>██████╗ ███████╗██╗  ██╗███████╗██╗     ██╗     </span>    <b>you@oshell</b>",'',240),
+        L("<span class='o-acc'>██╔═══██╗██╔════╝██║  ██║██╔════╝██║     ██║     </span>    os      macOS 15.1 (arm64)",'',110),
+        L("<span class='o-mag'>██║   ██║███████╗███████║█████╗  ██║     ██║     </span>    theme   osaka-jade",'',110),
+        L("<span class='o-mag'>██║   ██║╚════██║██╔══██║██╔══╝  ██║     ██║     </span>    model   gemma4:26b · ollama",'',110),
+        L("<span class='o-cyan'>╚██████╔╝███████║██║  ██║███████╗███████╗███████╗</span>    machine memory   mechanic, drift",'',110),
+        L("<span class='o-cyan'> ╚═════╝ ╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝</span>    sessions 14 · memories 31 · mood rain",'',110),
+      ]},
+      { ps:'$', cmd:'oshell tui', out:[
+        L("<span class='o-acc'> ❯ oshell </span> gemma4:26b · ollama │ ⚙ 29 ● local │ ▣ ▰▰▱▱▱ 34% │ ⚡ 41 tok/s │ ▶ auto          ☾ rain │ osaka-jade │ ◔ 22:14",'',420),
+        L("a Waybar for the workspace: model · tools · privacy · context · tok/s · approvals · mood · theme · clock",'o-dim',320),
+        L("<kbd>F1</kbd> keybindings overlay · <kbd>Esc</kbd> menu → Style → Theme (live swatches) · /screensaver",'o-dim',320),
       ]},
     ]},
   };

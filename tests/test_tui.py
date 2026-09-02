@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -1220,3 +1221,177 @@ async def test_waking_from_daydream_keeps_the_mood(tmp_path, monkeypatch):
         app._tick()  # the rain is still falling in the strip
         await pilot.pause()
         assert "╱" in app._live_text
+
+
+# ── the rice: status bar, keys overlay, themes, screensaver ──────────────────
+async def test_statusbar_replaces_header_and_reports_state():
+    from oshell.tui.statusbar import StatusBar
+
+    app = _app()
+    async with app.run_test(size=(120, 36)) as pilot:
+        await pilot.pause()
+        bar = app.query_one(StatusBar)
+        assert not list(app.query("Header"))
+        text = bar.text
+        assert "oshell" in text and "llama3" in text and "scripted" in text
+        assert "1" in text and "local" in text  # tool count + privacy posture
+        assert "auto" in text  # approvals mode
+        assert "tokyo-night" in text  # the theme name rides on the right
+        # Busy state swaps the model for what the model is doing.
+        app._busy, app._status = True, "Calling current_time"
+        app._refresh_bar()
+        assert "Calling current_time" in bar.text
+
+
+async def test_statusbar_can_be_turned_off_for_the_stock_header():
+    from textual.widgets import Header
+
+    from oshell.tui.statusbar import StatusBar
+
+    cfg = Config()
+    cfg.ui.statusbar = False
+    cfg.ui.gaps = False
+    app = OllamaShellTUI(
+        Agent(_Scripted(), ToolRegistry([CurrentTimeTool()]), cfg), show_menu_on_start=False
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert not list(app.query(StatusBar))
+        assert app.query_one(Header)
+        assert "gaps" not in app.query_one("#body").classes
+
+
+def test_statusbar_render_is_pure_and_width_aware():
+    from oshell.tui.statusbar import BarState, gauge, nerd_font_enabled, render_bar
+
+    st = BarState(
+        model="m", provider="p", n_tools=3, n_net=1, ctx_fill=0.9, tok_s=42.0, theme="nord"
+    )
+    wide = render_bar(st, 120, {}, nerd=False, clock=False)
+    assert "1 net" in wide.plain and "42 tok/s" in wide.plain and "90%" in wide.plain
+    assert wide.plain.rstrip().endswith("nord") and wide.cell_len <= 120
+    narrow = render_bar(st, 30, {}, nerd=False, clock=False)
+    assert narrow.cell_len <= 30  # never overflows the bar's row
+    assert gauge(0.5) == "▰▰▱▱▱" and gauge(1.0) == "▰▰▰▰▰"
+    assert nerd_font_enabled("on") and not nerd_font_enabled("off")
+
+
+async def test_f1_opens_keys_overlay_and_any_key_closes_it():
+    from oshell.tui.keys import KeysScreen
+
+    app = _app()
+    async with app.run_test() as pilot:
+        await pilot.press("f1")
+        await pilot.pause()
+        assert isinstance(app.screen, KeysScreen)
+        from rich.console import Console
+
+        from oshell.tui.keys import keys_table
+
+        rec = Console(record=True, width=100)
+        rec.print(keys_table(list(app.BINDINGS)))
+        text = rec.export_text()
+        assert "/theme" in text and "Menu" in text and "F1" in text
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, KeysScreen)
+        # /keys does the same from the prompt.
+        assert app._handle_slash_command("/keys") is True
+        await pilot.pause()
+        assert isinstance(app.screen, KeysScreen)
+
+
+async def test_slash_theme_sets_persists_and_refreshes_exports(tmp_path, monkeypatch):
+    import json
+
+    from oshell import themes
+
+    monkeypatch.setattr(themes, "CURRENT_DIR", str(tmp_path / "current"))
+    app = _app()
+    async with app.run_test(size=(120, 36)) as pilot:
+        await pilot.pause()
+        assert app.theme == "tokyo-night"  # the default is Omarchy's default
+        assert "osaka-jade" in app.available_themes  # bundled palettes are registered
+        assert app._handle_slash_command("/theme osaka-jade") is True
+        await pilot.pause()
+        assert app.theme == "osaka-jade" and app.agent.config.theme == "osaka-jade"
+        assert json.loads(Path("config.local.json").read_text())["theme"] == "osaka-jade"
+        assert (tmp_path / "current" / "theme").read_text().strip() == "osaka-jade"
+        assert "osaka-jade" in app.query_one("#statusbar").text
+        # Unknown names are refused, state untouched.
+        app._handle_slash_command("/theme not-a-theme")
+        await pilot.pause()
+        assert app.theme == "osaka-jade"
+
+
+async def test_screensaver_menu_item_plays_the_mood_with_the_wordmark():
+    from oshell.tui.menu import MENU_ITEMS
+    from oshell.tui.overlay import MoodOverlay, _Logo
+
+    ids = [cid for cid, *_r in MENU_ITEMS]
+    assert "screensaver" in ids and "keys" in ids and "theme" in ids
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        app._on_menu_choice("screensaver")
+        await pilot.pause()
+        await pilot.pause(0.3)
+        overlay = app.screen
+        assert isinstance(overlay, MoodOverlay) and overlay.logo
+        logo = overlay.query_one("#logo", _Logo)
+        assert logo.display  # it fits at 120x40
+        await pilot.press("space")
+        await pilot.pause()
+        assert not isinstance(app.screen, MoodOverlay)
+
+
+# ── tiles: the riced-desktop layout ──────────────────────────────────────────
+async def test_tiles_layout_has_titled_windows_vitals_and_fastfetch():
+    from oshell.tui.vitals import VitalsPanel
+
+    app = _app()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        assert "tiles" in app.query_one("#body").classes
+        assert app.query_one("#conversation").border_title == "chat"
+        vit = app.query_one("#vitals", VitalsPanel)
+        assert vit.border_title == "vitals"
+        assert app.query_one("Input").border_title == "❯"
+        # A fresh session greets with fastfetch: the wordmark + the rig.
+        text = _convo_text(app)
+        assert "██████╗" in text and "@oshell" in text and "fully local" in text
+        # Vitals repaint from a sample without touching the machine.
+        from oshell.tui.vitals import VitalsSample
+
+        vit.show(VitalsSample(cpu_pct=50, mem_used_gb=8, mem_total_gb=16, loaded=[]))
+        assert "cpu" in vit.text and "50%" in vit.text and "nothing loaded" in vit.text
+
+
+async def test_workspaces_switch_tabs_and_light_the_bar():
+    from textual.widgets import TabbedContent
+
+    app = _app()
+    async with app.run_test(size=(120, 36)) as pilot:
+        await pilot.pause()
+        bar = app.query_one("#statusbar")
+        assert " 1  2  3  4 " in bar.text
+        app.action_workspace(2)
+        await pilot.pause()
+        assert app.query_one(TabbedContent).active == "tab-context"
+        assert bar.state.workspace == 2
+        app.action_workspace(0)
+        await pilot.pause()
+        assert app.query_one("Input").has_focus and bar.state.workspace == 0
+
+
+async def test_classic_layout_keeps_the_old_shape():
+    cfg = Config()
+    cfg.ui.layout = "classic"
+    app = OllamaShellTUI(
+        Agent(_Scripted(), ToolRegistry([CurrentTimeTool()]), cfg), show_menu_on_start=False
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert not list(app.query("#vitals"))
+        assert "tiles" not in app.query_one("#body").classes
+        assert app.query_one("#conversation").border_title in ("", None)
+        assert "Try:" in _convo_text(app)  # the small welcome card, not fastfetch

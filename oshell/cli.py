@@ -5,10 +5,17 @@ Subcommands:
     oshell resume [ID]     pick up where you left off (most recent session)
     oshell sessions        list saved sessions (rm to delete)
     oshell ask "..."       one-shot question; piped stdin becomes context
-    oshell do "..."        propose a shell command, confirm, run it
+    oshell do "..."        propose a shell command → run/edit/describe/chat/no
+    oshell explain [CMD]   describe a command (default: the last one you ran)
+    oshell code "..."      just code, no fences — redirect it into a file
+    oshell fix             why did the last command fail, and what fixes it
+    oshell roles           reusable system prompts (~/.oshell/roles/*.md)
+    oshell theme ...       Omarchy-format palettes: list/set/import/export
+    oshell fetch           neofetch for your assistant
+    oshell screensaver     the mood, full-terminal, until a key
     oshell models          list/pull/delete models on the backend
     oshell doctor          health-check the whole rig
-    oshell init zsh        print shell integration (Ctrl+G widget & more)
+    oshell init zsh        shell integration (Ctrl+G, last-command capture, …)
     oshell config          show the resolved configuration
     oshell tui             launch the Textual workspace (needs [tui] extra)
 
@@ -42,7 +49,28 @@ app = typer.Typer(
     help="Ollama Shell — a local-first, agentic shell for Ollama.",
     add_completion=False,
 )
-console = Console()
+
+
+def _themed_console() -> Console:
+    """A Console whose ``oshell.*`` styles come from the configured theme.
+
+    Falls back to the bundled default palette if the config can't be read or
+    names a Textual-only theme, so markup like ``[oshell.accent]`` always
+    resolves.
+    """
+    from . import themes
+
+    name = themes.DEFAULT_THEME
+    try:
+        name = Config.load().theme
+    except Exception:  # unparsable config: `oshell config` will explain, not us
+        pass
+    palette = themes.get_palette(name) or themes.get_palette(themes.DEFAULT_THEME)
+    assert palette is not None  # the default is bundled
+    return Console(theme=themes.to_rich_theme(palette))
+
+
+console = _themed_console()
 
 # Local LoRA fine-tuning lives in its own subcommand group: `oshell finetune ...`
 from .finetune.cli import finetune_app  # noqa: E402 - after app exists, before commands
@@ -99,6 +127,34 @@ def _privacy_banner(agent: Agent) -> Panel:
     else:
         body = "[bold green]Fully local[/]: no active tool reaches the network."
     return Panel(body, title="privacy", border_style="green", expand=False)
+
+
+def _print_banner(agent: Agent, resumed: str = "") -> None:
+    """The chat greeting: a one-line status bar in theme colors + privacy note."""
+    from rich.text import Text
+
+    net = [t.name for t in agent.registry.active() if not t.local_only]
+    bar = Text()
+    bar.append(" oshell ", style="oshell.accent")
+    bar.append("│ ", style="oshell.border.soft")
+    bar.append(agent.model, style="oshell.title")
+    bar.append(f" · {agent.provider.name} · {len(agent.registry)} tools ", style="oshell.muted")
+    bar.append("│ ", style="oshell.border.soft")
+    if net:
+        bar.append(f"◐ {len(net)} net", style="oshell.net")
+    else:
+        bar.append("● fully local", style="oshell.local")
+    if resumed:
+        bar.append(" │ ", style="oshell.border.soft")
+        bar.append_text(Text.from_markup(resumed.strip(" ·")))
+    console.print(bar)
+    if net:
+        console.print(
+            f"[oshell.muted]network-capable tools active: {', '.join(net)} — "
+            "only run when the model calls them. /help for commands.[/]\n"
+        )
+    else:
+        console.print("[oshell.muted]no active tool reaches the network. /help for commands.[/]\n")
 
 
 def _render_turn(agent: Agent, text: str) -> None:
@@ -348,18 +404,11 @@ def chat(
     agent = _build_agent(config, model)
     agent.messages.extend(prior)
 
-    console.print(
-        Panel.fit(
-            f"[bold cyan]Ollama Shell[/] · model [bold]{agent.model}[/]{resumed}",
-            border_style="cyan",
-        )
-    )
-    console.print(_privacy_banner(agent))
-    console.print("[dim]Type a message, or /help for commands.[/dim]\n")
+    _print_banner(agent, resumed)
 
     while True:
         try:
-            line = console.input("[bold green]›[/bold green] ").strip()
+            line = console.input("[oshell.prompt]❯[/] ").strip()
         except (EOFError, KeyboardInterrupt):
             console.print("\n[dim]bye[/dim]")
             break
@@ -397,12 +446,21 @@ def ask(
     json_out: bool = typer.Option(
         False, "--json", help="Emit {answer, model, tools} as JSON (for scripts/CI)"
     ),
+    role: str = typer.Option(None, "--role", help="Answer as a role (oshell roles)"),
 ) -> None:
     """One-shot question. Piped stdin becomes context: cat err.log | oshell ask "why?" """
     config = Config.load()
     # JSON mode is for machines: no approver (sensitive tools fail safe under
     # "ask"), no rich rendering, structured output only.
     agent = _build_agent(config, model, interactive=not json_out)
+    if role:
+        from . import roles as roles_mod
+
+        extra = roles_mod.role_prompt(role)
+        if extra is None:
+            console.print(f"[red]unknown role: {role}[/red] (see: oshell roles)")
+            raise typer.Exit(code=1)
+        agent.system_extra = extra
     if not sys.stdin.isatty():
         piped = sys.stdin.read().strip()
         if piped:
@@ -561,154 +619,6 @@ def sessions_rm(session_id: str) -> None:
     console.print(f"[green]✓[/green] deleted {session_id}")
 
 
-_DO_SYSTEM = (
-    "You translate a user's task into EXACTLY ONE shell command for {os} ({shell}). "
-    "Output ONLY the command — no backticks, no prose, no explanations. Prefer safe, "
-    "non-destructive commands; never invent destructive flags the task didn't ask for. "
-    "If the task is impossible or too dangerous for one command, output exactly: "
-    "CANNOT: <one-line reason>"
-)
-_DO_HISTORY = "~/.oshell/do_history.jsonl"
-
-
-def _do_examples(limit: int = 5) -> str:
-    """Recent successful task→command pairs, as few-shot context for `oshell do`."""
-    import json as _json
-    from pathlib import Path
-
-    path = Path(_DO_HISTORY).expanduser()
-    if not path.is_file():
-        return ""
-    good = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        try:
-            entry = _json.loads(line)
-        except _json.JSONDecodeError:  # pragma: no cover - defensive
-            continue
-        if entry.get("rc") == 0:
-            good.append(f"task: {entry['task']}\ncommand: {entry['command']}")
-    if not good:
-        return ""
-    return "\n\nCommands that worked for this user before:\n" + "\n".join(good[-limit:])
-
-
-def _record_do(task: str, command: str, rc: int) -> None:
-    import json as _json
-    import time
-    from pathlib import Path
-
-    path = Path(_DO_HISTORY).expanduser()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        entry = {"ts": time.strftime("%Y-%m-%d %H:%M"), "task": task, "command": command, "rc": rc}
-        with path.open("a", encoding="utf-8") as f:
-            f.write(_json.dumps(entry) + "\n")
-    except OSError:  # pragma: no cover - defensive
-        pass
-
-
-@app.command()
-def do(
-    task: str,
-    model: str = typer.Option(None, "--model", "-m", help="Override the model"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Run without confirming (bold move)"),
-) -> None:
-    """Turn TASK into a shell command: propose → confirm (y/e/n) → run."""
-    import os
-    import platform
-    import subprocess
-
-    from .providers.base import Message
-
-    config = Config.load()
-    provider = get_provider(config)
-    m = model or config.routing.deep_model or config.default_model
-
-    cwd = os.getcwd()
-    try:
-        entries = ", ".join(sorted(os.listdir(cwd))[:40])
-    except OSError:  # pragma: no cover - defensive
-        entries = ""
-    system = _DO_SYSTEM.format(
-        os=platform.system(), shell=os.environ.get("SHELL", "/bin/sh")
-    ) + _do_examples()
-    user = f"Working directory: {cwd}\nDirectory contents: {entries}\n\nTask: {task}"
-
-    with console.status(f"[dim]thinking ({m})…[/dim]"):
-        reply = "".join(
-            c.content
-            for c in provider.chat(
-                [Message(role="system", content=system), Message(role="user", content=user)],
-                model=m,
-                stream=False,
-                temperature=0.2,
-            )
-        )
-    command = reply.strip().strip("`").removeprefix("bash\n").removeprefix("sh\n").strip()
-    if not command:
-        console.print("[red]The model returned nothing usable.[/red]")
-        raise typer.Exit(code=1)
-    if command.upper().startswith("CANNOT:"):
-        console.print(f"[yellow]{command[7:].strip()}[/yellow]")
-        raise typer.Exit(code=1)
-    if "\n" in command:
-        command = command.splitlines()[0].strip()  # one command means one command
-
-    console.print(Panel(command, title="proposed", border_style="cyan", expand=False))
-    if not yes:
-        choice = typer.prompt("Run it? [y]es / [e]dit / [n]o", default="n").lower()
-        if choice.startswith("e"):
-            command = typer.prompt("command", default=command)
-        elif not choice.startswith("y"):
-            console.print("[dim]cancelled[/dim]")
-            raise typer.Exit()
-    rc = subprocess.run(command, shell=True).returncode
-    _record_do(task, command, rc)
-    if rc == 0:
-        console.print(
-            "[green]✓ done[/green] [dim](remembered — future suggestions learn from it)[/dim]"
-        )
-    else:
-        console.print(f"[red]exit {rc}[/red]")
-        raise typer.Exit(code=rc)
-
-
-_ZSH_SNIPPET = r"""# oshell shell integration — add to ~/.zshrc:  eval "$(oshell init zsh)"
-
-# Ctrl+G: summon oshell with whatever is on your command line as the question.
-# Empty line -> opens interactive chat.
-_oshell_ask_widget() {
-  local q="$BUFFER"
-  BUFFER=""
-  zle -I
-  if [[ -n "$q" ]]; then
-    oshell ask "$q" </dev/tty
-  else
-    oshell </dev/tty
-  fi
-  zle reset-prompt
-}
-zle -N _oshell_ask_widget
-bindkey '^G' _oshell_ask_widget
-
-# Unknown command? Point at the assistant instead of a dead end.
-command_not_found_handler() {
-  echo "zsh: command not found: $1" >&2
-  echo "  ↳ try: oshell do \"$*\"" >&2
-  return 127
-}
-"""
-
-
-@app.command()
-def init(shell: str = typer.Argument("zsh", help="Shell to integrate (zsh)")) -> None:
-    """Print shell integration: eval "$(oshell init zsh)" in your ~/.zshrc."""
-    if shell != "zsh":
-        console.print(f"[red]Only zsh is supported so far (got: {shell}).[/red]")
-        raise typer.Exit(code=1)
-    print(_ZSH_SNIPPET)
-
-
 @app.command()
 def setup() -> None:
     """First-run wizard: size models to this machine, configure routing."""
@@ -840,6 +750,15 @@ def tui(model: str = typer.Option(None, "--model", "-m")) -> None:
         console.print("[red]TUI needs the 'tui' extra:[/red] pip install 'ollama-shell[tui]'")
         raise typer.Exit(code=1) from None
     run_tui(model=model)
+
+
+# The sgpt lineage (do/explain/code/fix/roles/init) and the rice (theme/fetch/
+# screensaver) live in their own modules and register onto this app. Registered
+# last so `oshell --help` leads with chat/ask, the everyday verbs.
+from . import cli_shell, cli_theme  # noqa: E402
+
+cli_shell.register(app, console)
+cli_theme.register(app, console)
 
 
 @app.callback(invoke_without_command=True)

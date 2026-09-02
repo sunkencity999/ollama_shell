@@ -50,7 +50,7 @@ Issues = "https://github.com/sunkencity999/ollama_shell/issues"
 
 # ─── Opt-in capability bundles (pip install "ollama-shell[rag,tui]") ─────────
 [project.optional-dependencies]
-tui = ["textual>=0.50.0"]
+tui = ["textual>=0.50.0", "psutil>=5.9"]  # psutil: accurate CPU/RAM for the vitals tile
 rag = ["chromadb>=0.4.18", "sentence-transformers>=2.2.2"]
 finetune = ["mlx-lm>=0.20.0"]  # Apple Silicon LoRA training (NVIDIA: see Unsloth)
 docs = [
@@ -90,6 +90,10 @@ extend-exclude = ["tests/legacy", "examples", "scripts", "browser-use-mcp-server
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+# Embedded zsh/bash/fish snippets: shell lines don't wrap.
+"oshell/shellinit.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

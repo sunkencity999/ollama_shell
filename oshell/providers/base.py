@@ -153,6 +153,14 @@ class LLMProvider(ABC):
         """Remove a model from the backend."""
         raise NotImplementedError(f"the {self.name} backend cannot delete models")
 
+    def loaded_models(self) -> list[dict[str, Any]]:
+        """Models currently resident in memory: ``{name, size, size_vram, …}``.
+
+        Backends that can't tell return an empty list (the vitals tile then
+        shows "nothing loaded").
+        """
+        return []
+
     def health(self) -> bool:
         """Cheap reachability check; defaults to 'can we list models'."""
         try:

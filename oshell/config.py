@@ -167,6 +167,28 @@ def _default_mcp_servers() -> dict[str, MCPServerConfig]:
     }
 
 
+class UIConfig(BaseModel):
+    """How the TUI dresses: the Omarchy-flavored chrome."""
+
+    # Waybar-style status bar across the top (model · tools · context · vitals
+    # · clock) instead of Textual's stock header.
+    statusbar: bool = True
+    # Hyprland-style gaps between panes (a little breathing room; costs 2 cols).
+    gaps: bool = True
+    # Nerd Font glyphs in the bar/menus: auto (detect a Nerd Font-ish terminal
+    # via env), on, or off (plain Unicode fallbacks everywhere).
+    nerd_font: str = "auto"
+    # Show the live clock in the status bar.
+    clock: bool = True
+    # "tiles": the riced desktop — chat tile, live vitals tile (a small btop),
+    # tools tile, launcher-style input, fastfetch card on a fresh session.
+    # "classic": conversation + tabbed sidebar, no vitals.
+    layout: str = "tiles"
+    # The vitals tile samples CPU/RAM/loaded models every few seconds.
+    vitals: bool = True
+    vitals_interval: float = 2.0
+
+
 class FunConfig(BaseModel):
     """Quirky, non-essential delights (daydreams + ambient effects)."""
 
@@ -194,9 +216,11 @@ class Config(BaseModel):
     default_model: str = "llama3"
     default_vision_model: str = "llama3.2-vision"
 
-    # TUI color theme (any theme registered with Textual, e.g. "nord",
-    # "gruvbox", "tokyo-night"). Persisted when changed from the menu.
-    theme: str = "textual-dark"
+    # Color theme. Any bundled/imported palette (oshell theme list — the 22
+    # Omarchy palettes ship built in) restyles the TUI, the CLI and the
+    # exports in ~/.oshell/current/. Textual's own theme names still work
+    # for the TUI alone. Persisted when changed from the menu or `oshell theme set`.
+    theme: str = "tokyo-night"
 
     # Generation defaults
     temperature: float = 0.7
@@ -253,6 +277,9 @@ class Config(BaseModel):
 
     # Hidden browser computer-use (opt-in)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
+
+    # TUI chrome (status bar, gaps, glyphs)
+    ui: UIConfig = Field(default_factory=UIConfig)
 
     # Quirky delights
     fun: FunConfig = Field(default_factory=FunConfig)
