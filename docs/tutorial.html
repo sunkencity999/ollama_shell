@@ -1201,6 +1201,7 @@ single safest next command. Consult machine memory first.</pre></div>
         <li>Read-only shell commands (<code>df</code>, <code>du</code>, <code>ls</code>, <code>ps</code>, <code>git status</code>, <code>docker ps</code>…) run unattended; unknown binaries, <code>sudo</code>, redirects and mutating subcommands are queued instead.</li>
         <li><code>oshell orders install [--every 1h]</code> creates the orders job; <code>oshell orders add "…" --priority high</code>, <code>rm N</code>, <code>edit</code>, <code>check</code>. High = every wake, normal = when stale (~4h), low = ~daily; anything marked <em>attention</em> is re-checked every wake.</li>
         <li><code>oshell jobs watch NAME PATH "prompt" --pattern '*.dmg' --on created --settle 30 --recursive</code>. A new watch baselines first, so existing files don't fire. The model can create one with <code>watch_path</code>.</li>
+        <li>No editor needed: in the TUI, menu → <b>Standing orders</b> / <b>Scheduled jobs</b> / <b>Inbox</b> (or <code>/orders</code>, <code>/jobs</code>, <code>/inbox</code>) add, edit, reprioritize, pause, run, approve and dismiss with single keys.</li>
       </ul>
     </div></details>
     <div class="ex" role="group" aria-label="Try it for real: chapter 19">

@@ -66,6 +66,7 @@ from .menu import (
     ThemeScreen,
     feature_installed,
 )
+from .presence import InboxScreen, JobsScreen, OrdersScreen
 from .statusbar import StatusBar, nerd_font_enabled
 from .vitals import VitalsPanel, take_sample
 
@@ -565,6 +566,202 @@ class OllamaShellTUI(App):
                     pass
         self._inbox_ticks = 0  # recount on the next bar refresh
         self._refresh_bar()
+
+    # ── presence screens: orders / jobs / inbox, managed in-app ──────────────
+    def _open_orders(self) -> None:
+        jc = self.agent.config.jobs
+        from .. import orders as orders_mod
+
+        orders_mod.ensure_file(jc.orders_path)
+        self.push_screen(
+            OrdersScreen(jc.orders_path, jc.orders_state, jc.dir), self._on_orders_result
+        )
+
+    def _on_orders_result(self, result: tuple | None) -> None:
+        if not result:
+            self.query_one(Input).focus()
+            return
+        if result[0] == "install":
+            self._ensure_orders_job()
+            self.notify("Orders job created — it wakes hourly once the scheduler is installed.")
+            self._open_orders()
+        elif result[0] == "check":
+            self._ensure_orders_job()
+            self._run_job_bg("orders")
+
+    def _ensure_orders_job(self) -> None:
+        from .. import schedule
+
+        jc = self.agent.config.jobs
+        if schedule.load_job("orders", jc.dir) is None:
+            schedule.add_job(
+                schedule.Job(
+                    name="orders",
+                    prompt="Check the standing orders.",
+                    kind="orders",
+                    every=jc.orders_every,
+                    role="sysadmin",
+                    max_iterations=10,
+                ),
+                jc.dir,
+            )
+
+    def _open_jobs(self) -> None:
+        self.push_screen(JobsScreen(self.agent.config.jobs.dir), self._on_jobs_result)
+
+    def _on_jobs_result(self, result: tuple | None) -> None:
+        if not result:
+            self.query_one(Input).focus()
+            return
+        if result[0] == "run":
+            self._run_job_bg(result[1])
+        elif result[0] == "scheduler":
+            from .. import schedule
+
+            desc = schedule.install(dry_run=True)
+
+            def done(yes: bool | None) -> None:
+                if not yes:
+                    self._open_jobs()
+                    return
+
+                def work() -> None:
+                    try:
+                        schedule.install()
+                        self.call_from_thread(self.notify, f"✓ {desc}")
+                    except Exception as exc:
+                        self.call_from_thread(
+                            self.notify, f"Scheduler install failed: {exc}", severity="error"
+                        )
+                    self.call_from_thread(self._open_jobs)
+
+                self.run_worker(work, thread=True, exclusive=False)
+
+            self.push_screen(
+                ConfirmScreen(
+                    f"Register [b]oshell jobs tick[/b] with the OS?\n\n[dim]{escape(desc)} — "
+                    "runs whatever is due once a minute, exits otherwise.[/dim]"
+                ),
+                done,
+            )
+
+    def _run_job_bg(self, name: str) -> None:
+        """Run a job now in a worker thread; its note lands in the conversation."""
+        from .. import inbox, schedule
+
+        cfg = self.agent.config
+        job = schedule.load_job(name, cfg.jobs.dir)
+        if job is None:
+            self.notify(f"No job named {name}", severity="error")
+            return
+        self.notify(f"⏰ Running {name}…")
+        convo = self._conversation()
+
+        def work() -> None:
+            result = schedule.run_job(
+                job,
+                cfg,
+                provider=self.agent.provider,
+                directory=cfg.jobs.dir,
+                inbox_dir=cfg.jobs.inbox_dir,
+            )
+
+            def show() -> None:
+                if result.note is not None:
+                    convo.write(Markdown(inbox.render_markdown(result.note)))
+                    if result.note.pending:
+                        convo.write(
+                            "[dim]  proposed actions wait in the inbox — menu → Inbox → [b]a[/b] "
+                            "to approve[/dim]"
+                        )
+                    try:
+                        inbox.mark(result.note.id, "read", cfg.jobs.inbox_dir)
+                    except Exception:  # pragma: no cover - defensive
+                        pass
+                elif result.status == "skipped":
+                    convo.write(
+                        f"[dim]{escape(name)}: {escape(result.error or 'nothing to do')}[/dim]"
+                    )
+                self._inbox_ticks = 0
+                self._refresh_bar()
+
+            self.call_from_thread(show)
+
+        self.run_worker(work, thread=True, exclusive=False, group=f"job-{name}")
+
+    def _open_inbox(self) -> None:
+        self.push_screen(InboxScreen(self.agent.config.jobs.inbox_dir), self._on_inbox_result)
+
+    def _on_inbox_result(self, result: tuple | None) -> None:
+        from .. import inbox
+
+        idir = self.agent.config.jobs.inbox_dir
+        self._inbox_ticks = 0
+        if not result:
+            self.query_one(Input).focus()
+            self._refresh_bar()
+            return
+        kind, note_id = result
+        note = inbox.get(note_id, idir)
+        if note is None:
+            return
+        if kind == "show":
+            self._conversation().write(Markdown(inbox.render_markdown(note)))
+            if note.status == "unread":
+                inbox.mark(note.id, "read", idir)
+            self._refresh_bar()
+            self._open_inbox()
+        elif kind == "approve":
+            self._approve_note_bg(note)
+
+    def _approve_note_bg(self, note) -> None:
+        """Walk a note's proposals: confirm each in a modal, run the approved ones."""
+        from .. import inbox
+        from ..providers.base import ToolCall
+
+        idir = self.agent.config.jobs.inbox_dir
+        convo = self._conversation()
+
+        def work() -> None:
+            ran = 0
+            for p in note.proposals:
+                if p.status != "pending":
+                    continue
+                question = (
+                    f"Run this proposed action from [b]{escape(note.job)}[/b]?\n\n"
+                    f"[b]{escape(p.summary[:400])}[/b]"
+                )
+                try:
+                    yes = bool(
+                        self.call_from_thread(self.push_screen_wait, ConfirmScreen(question))
+                    )
+                except Exception:
+                    yes = False
+                if not yes:
+                    p.status = "dismissed"
+                    continue
+                try:
+                    call = ToolCall(name=p.tool, arguments=p.arguments)
+                    out = self.agent.registry.dispatch(call)
+                    p.status, p.result = "approved", out
+                    ran += 1
+                    self.call_from_thread(
+                        convo.write,
+                        f"[green]✓[/green] {escape(p.summary[:100])}\n"
+                        f"[dim]{escape(out[:600])}[/dim]",
+                    )
+                except Exception as exc:
+                    p.status, p.result = "failed", str(exc)
+                    self.call_from_thread(
+                        convo.write,
+                        f"[red]✗ {escape(p.summary[:100])}: {escape(str(exc))}[/red]",
+                    )
+            note.status = "approved" if ran else "read"
+            inbox.save(note, idir)
+            self.call_from_thread(self.notify, f"{ran} action{'s' if ran != 1 else ''} run")
+            self.call_from_thread(self._open_inbox)
+
+        self.run_worker(work, thread=True, exclusive=True, group="approve")
 
     def _menu_orders(self) -> None:
         from .. import orders as orders_mod
@@ -1095,11 +1292,11 @@ class OllamaShellTUI(App):
         elif choice == "screensaver":
             self._start_screensaver()
         elif choice == "inbox":
-            self.action_inbox()
+            self._open_inbox()
         elif choice == "jobs":
-            self._menu_jobs()
+            self._open_jobs()
         elif choice == "orders":
-            self._menu_orders()
+            self._open_orders()
         elif choice == "keys":
             self.action_show_keys()
         elif choice == "help":
@@ -1574,13 +1771,13 @@ class OllamaShellTUI(App):
             self.action_show_keys()
             return True
         if cmd == "inbox":
-            self.action_inbox()
+            self._open_inbox()
             return True
         if cmd == "jobs":
-            self._menu_jobs()
+            self._open_jobs()
             return True
         if cmd == "orders":
-            self._menu_orders()
+            self._open_orders()
             return True
         if cmd == "screensaver":
             self._start_screensaver()

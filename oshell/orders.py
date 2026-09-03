@@ -164,6 +164,42 @@ def remove_order(n: int, path: str | Path | None = None) -> Order:
     raise IndexError(f"no order #{n}")
 
 
+def update_order(
+    n: int,
+    text: str | None = None,
+    priority: str | None = None,
+    path: str | Path | None = None,
+) -> Order:
+    """Rewrite order #N's text and/or priority in place (keeps its line)."""
+    if priority is not None and priority not in PRIORITIES:
+        raise ValueError(f"priority must be one of {', '.join(PRIORITIES)}")
+    p = orders_path(path)
+    lines = p.read_text(encoding="utf-8").splitlines(keepends=True)
+    count = 0
+    for i, raw in enumerate(lines):
+        if raw.lstrip().startswith("#") or not _BULLET_RE.match(raw):
+            continue
+        count += 1
+        if count != n:
+            continue
+        cur = parse_orders(raw)[0]
+        new_text = " ".join((text if text is not None else cur.text).split())
+        if not new_text:
+            raise ValueError("an order needs text")
+        new_prio = priority if priority is not None else cur.priority
+        tag = f"[{new_prio}] " if new_prio != "normal" else ""
+        indent = raw[: len(raw) - len(raw.lstrip())]
+        lines[i] = f"{indent}- {tag}{new_text}\n"
+        p.write_text("".join(lines), encoding="utf-8")
+        return Order(n=n, text=new_text, priority=new_prio)
+    raise IndexError(f"no order #{n}")
+
+
+def cycle_priority(priority: str) -> str:
+    order = ("normal", "high", "low")
+    return order[(order.index(priority) + 1) % len(order)] if priority in order else "normal"
+
+
 # ── state ────────────────────────────────────────────────────────────────────
 def load_state(path: str | Path | None = None) -> State:
     p = state_path(path)

@@ -504,6 +504,13 @@ self; you never see it, you see `oshell orders`:
 `oshell orders add "…" --priority high`, `rm N`, `edit`, `check` (run now). The
 agent can't invent work that isn't on the list — that's the point of the file.
 
+**All of it is manageable from inside the TUI** — no editor required. Menu →
+**Standing orders** is a live editor (`a` add · `e` edit · `p` priority · `d`
+delete · `c` check now · `i` create the job); **Scheduled jobs** creates,
+pauses, runs and deletes jobs, adds file watches, and installs the OS
+scheduler; **Inbox** reads notes and walks you through proposed actions one
+confirmation at a time. `/orders`, `/jobs`, `/inbox` open the same screens.
+
 **File watches — fire on events, not on a clock.**
 
 ```bash

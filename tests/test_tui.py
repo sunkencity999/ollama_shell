@@ -1432,3 +1432,153 @@ async def test_inbox_lights_the_bar_and_renders_in_chat(tmp_path):
         app._menu_jobs()
         await pilot.pause()
         assert "No scheduled jobs" in _convo_text(app)
+
+
+# ── presence, managed in-app: orders / jobs / inbox screens ──────────────────
+def _presence_app(tmp_path):
+    cfg = Config()
+    cfg.jobs.dir = str(tmp_path / "jobs")
+    cfg.jobs.inbox_dir = str(tmp_path / "inbox")
+    cfg.jobs.orders_path = str(tmp_path / "orders.md")
+    cfg.jobs.orders_state = str(tmp_path / "orders.state.json")
+    cfg.jobs.notify = False
+    return OllamaShellTUI(
+        Agent(_Scripted(), ToolRegistry([CurrentTimeTool()]), cfg), show_menu_on_start=False
+    )
+
+
+async def test_orders_screen_adds_edits_reprioritizes_and_deletes(tmp_path):
+    from textual.widgets import Input as _Input
+
+    from oshell import orders
+    from oshell.tui.presence import OrdersScreen, PromptScreen
+
+    app = _presence_app(tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert app._handle_slash_command("/orders") is True
+        await pilot.pause()
+        scr = app.screen
+        assert isinstance(scr, OrdersScreen)
+        assert len(scr.items) == 3  # the template's examples, created on first open
+        # a → prompt → Enter adds an order.
+        await pilot.press("a")
+        await pilot.pause()
+        assert isinstance(app.screen, PromptScreen)
+        app.screen.query_one(_Input).value = "Tell me when the release build lands"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, OrdersScreen) and len(scr.items) == 4
+        assert scr.items[3].text == "Tell me when the release build lands"
+        assert scr.items[3].priority == "normal"
+        # p cycles the highlighted (new) order's priority: normal → high.
+        await pilot.press("p")
+        await pilot.pause()
+        assert scr.items[3].priority == "high"
+        assert "[high] Tell me when the release build lands" in (tmp_path / "orders.md").read_text()
+        # e edits the text in place.
+        await pilot.press("e")
+        await pilot.pause()
+        app.screen.query_one(_Input).value = "Tell me when the release build lands in ~/builds"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert scr.items[3].text.endswith("~/builds") and scr.items[3].priority == "high"
+        # d → confirm with y deletes it.
+        await pilot.press("d")
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+        assert len(scr.items) == 3
+        assert len(orders.load_orders(tmp_path / "orders.md")) == 3
+        # i creates the orders job.
+        await pilot.press("i")
+        await pilot.pause()
+        from oshell import schedule
+
+        assert schedule.load_job("orders", tmp_path / "jobs") is not None
+        assert isinstance(app.screen, OrdersScreen)  # reopened with the job line
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, OrdersScreen)
+
+
+async def test_jobs_screen_creates_toggles_and_deletes(tmp_path):
+    from textual.widgets import Input as _Input
+
+    from oshell import schedule
+    from oshell.tui.presence import JobsScreen
+
+    app = _presence_app(tmp_path)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app._open_jobs()
+        await pilot.pause()
+        scr = app.screen
+        assert isinstance(scr, JobsScreen) and scr.items == []
+        await pilot.press("n")
+        await pilot.pause()
+        app.screen.query_one(_Input).value = "is the disk filling up?"
+        await pilot.press("enter")
+        await pilot.pause()
+        app.screen.query_one(_Input).value = "every 6h"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert len(scr.items) == 1 and scr.items[0].every == "6h"
+        name = scr.items[0].name
+        await pilot.press("t")
+        await pilot.pause()
+        assert schedule.load_job(name, tmp_path / "jobs").enabled is False
+        await pilot.press("t")
+        await pilot.pause()
+        assert schedule.load_job(name, tmp_path / "jobs").enabled is True
+        await pilot.press("d")
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+        assert schedule.list_jobs(tmp_path / "jobs") == []
+
+
+async def test_inbox_screen_shows_and_dismisses(tmp_path):
+    from oshell import inbox
+    from oshell.tui.presence import InboxScreen
+
+    app = _presence_app(tmp_path)
+    idir = tmp_path / "inbox"
+    inbox.add(
+        "disk-watch",
+        "Disk at 91%",
+        "Big.",
+        [inbox.Proposal("run_command", {"command": "docker system prune -af"})],
+        directory=idir,
+    )
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app._open_inbox()
+        await pilot.pause()
+        scr = app.screen
+        assert isinstance(scr, InboxScreen) and len(scr.items) == 1
+        # Enter shows the note in the conversation (marks read) and reopens the inbox.
+        await pilot.press("enter")
+        await pilot.pause()
+        assert "Disk at 91%" in _convo_text(app)
+        assert inbox.list_notes(directory=idir)[0].status == "read"
+        assert isinstance(app.screen, InboxScreen)
+        # x dismisses the note and its proposal.
+        await pilot.press("x")
+        await pilot.pause()
+        n = inbox.list_notes(directory=idir)[0]
+        assert n.status == "dismissed" and n.proposals[0].status == "dismissed"
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, InboxScreen)
+
+
+def test_parse_when_shapes():
+    from oshell.tui.presence import _parse_when
+
+    assert _parse_when("every 6h") == {"every": "6h"}
+    assert _parse_when("6h") == {"every": "6h"}
+    assert _parse_when("cron 0 9 * * 1-5") == {"cron": "0 9 * * 1-5"}
+    assert _parse_when("0 9 * * 1-5") == {"cron": "0 9 * * 1-5"}
+    assert _parse_when("at 2026-09-05T09:00") == {"at": "2026-09-05T09:00"}
+    assert _parse_when("2026-09-05T09:00") == {"at": "2026-09-05T09:00"}
