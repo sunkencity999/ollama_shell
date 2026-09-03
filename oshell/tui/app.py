@@ -523,7 +523,75 @@ class OllamaShellTUI(App):
         st.busy = self._busy
         st.status = self._status
         st.workspace = self._current_workspace()
+        # Inbox counts are a directory listing — refresh every ~10s, not every second.
+        self._inbox_ticks = getattr(self, "_inbox_ticks", 0) + 1
+        if self._inbox_ticks % 10 == 1:
+            from .. import inbox
+
+            try:
+                idir = a.config.jobs.inbox_dir
+                st.inbox = inbox.unread_count(idir)
+                st.pending = inbox.pending_count(idir)
+            except Exception:  # pragma: no cover - defensive
+                st.inbox = st.pending = 0
         bar.repaint()
+
+    def action_inbox(self) -> None:
+        """Render the inbox (unread + pending) into the conversation."""
+        from .. import inbox
+
+        idir = self.agent.config.jobs.inbox_dir
+        notes = [
+            n for n in inbox.list_notes(directory=idir) if n.status == "unread" or n.pending
+        ]
+        convo = self._conversation()
+        if not notes:
+            convo.write("[dim]📥 Inbox empty — scheduled runs leave their notes here.[/dim]")
+            return
+        convo.write(
+            f"[b]📥 Inbox[/b] [dim]· {len(notes)} note{'s' if len(notes) != 1 else ''}[/dim]"
+        )
+        for n in notes[:8]:
+            convo.write(Markdown(inbox.render_markdown(n)))
+            if n.pending:
+                convo.write(
+                    f"[dim]  approve in a terminal:  oshell inbox approve {n.id}   "
+                    f"· dismiss: oshell inbox dismiss {n.id}[/dim]"
+                )
+            if n.status == "unread":
+                try:
+                    inbox.mark(n.id, "read", idir)
+                except Exception:  # pragma: no cover - defensive
+                    pass
+        self._inbox_ticks = 0  # recount on the next bar refresh
+        self._refresh_bar()
+
+    def _menu_jobs(self) -> None:
+        from .. import schedule
+
+        jobs = schedule.list_jobs(self.agent.config.jobs.dir)
+        convo = self._conversation()
+        if not jobs:
+            convo.write(
+                "[dim]No scheduled jobs. In a terminal:  "
+                'oshell jobs add disk-watch --every 6h "is the disk filling up?"  '
+                "then  oshell jobs install[/dim]"
+            )
+            return
+        state = (
+            "installed"
+            if schedule.installed()
+            else "[yellow]not installed — oshell jobs install[/yellow]"
+        )
+        convo.write(f"[b]⏰ Scheduled jobs[/b] [dim]· scheduler {state}[/dim]")
+        for j in jobs:
+            flag = "" if j.enabled else " [dim](off)[/dim]"
+            convo.write(
+                f"  [b]{escape(j.name)}[/b]{flag} · {escape(j.schedule)} · next "
+                f"{escape(schedule.describe_when(j.next_run))} · runs {j.runs}"
+                + (f" · {j.last_status}" if j.last_status else "")
+                + f"\n    [dim]{escape(j.prompt[:100])}[/dim]"
+            )
 
     def action_show_keys(self) -> None:
         """The keybindings overlay (F1 / Ctrl+G / /keys)."""
@@ -588,6 +656,19 @@ class OllamaShellTUI(App):
         self.set_interval(0.1, self._tick)
         if self.agent.config.fun.morning_digest:
             self.run_worker(self._maybe_morning_digest, thread=True, exclusive=False)
+        # Scheduled runs may have left notes while the shell was closed.
+        try:
+            from .. import inbox
+
+            n = inbox.unread_count(self.agent.config.jobs.inbox_dir)
+            pend = inbox.pending_count(self.agent.config.jobs.inbox_dir)
+        except Exception:  # pragma: no cover - defensive
+            n = pend = 0
+        if n or pend:
+            tail = f" · {pend} action{'s' if pend != 1 else ''} to approve" if pend else ""
+            self.notify(
+                f"📥 {n} new note{'s' if n != 1 else ''} from scheduled runs{tail} — /inbox"
+            )
         if self._show_menu_on_start:
             self.action_open_menu()
 
@@ -999,6 +1080,10 @@ class OllamaShellTUI(App):
             self._open_mood_picker()
         elif choice == "screensaver":
             self._start_screensaver()
+        elif choice == "inbox":
+            self.action_inbox()
+        elif choice == "jobs":
+            self._menu_jobs()
         elif choice == "keys":
             self.action_show_keys()
         elif choice == "help":
@@ -1471,6 +1556,12 @@ class OllamaShellTUI(App):
             return True
         if cmd == "keys":
             self.action_show_keys()
+            return True
+        if cmd == "inbox":
+            self.action_inbox()
+            return True
+        if cmd == "jobs":
+            self._menu_jobs()
             return True
         if cmd == "screensaver":
             self._start_screensaver()

@@ -4,9 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Learn Ollama Shell — interactive tutorial</title>
-<meta name="description" content="From zero to daily driver: eighteen interactive lessons in a fake terminal. Install oshell, chat with it, pipe your shell into it, configure it layer by layer, mount MCP servers, and let it learn your machine. All local. No cloud." />
+<meta name="description" content="From zero to daily driver: nineteen interactive lessons in a fake terminal. Install oshell, chat with it, pipe your shell into it, configure it layer by layer, mount MCP servers, and let it learn your machine. All local. No cloud." />
 <meta property="og:title" content="Learn Ollama Shell — interactive tutorial" />
-<meta property="og:description" content="Two parts, eighteen chapters, one starfield at the end. The first ten minutes get you running; the deep end makes it your daily driver. Type along — it types back." />
+<meta property="og:description" content="Two parts, nineteen chapters, one starfield at the end. The first ten minutes get you running; the deep end makes it your daily driver. Type along — it types back." />
 <meta property="og:type" content="website" />
 <style>
   :root{
@@ -270,8 +270,9 @@
     <li><a class="dotlink" href="#ch16" data-ch="16" title="Guardrails"><span class="n">16</span></a></li>
     <li><a class="dotlink" href="#ch17" data-ch="17" title="Cookbook &amp; your first week"><span class="n">17</span></a></li>
     <li><a class="dotlink" href="#ch18" data-ch="18" title="The shell layer &amp; the rice"><span class="n">18</span></a></li>
+    <li><a class="dotlink" href="#ch19" data-ch="19" title="Presence: scheduled runs &amp; the inbox"><span class="n">19</span></a></li>
   </ol>
-  <span class="navcount" id="navcount">0/18 chapters</span>
+  <span class="navcount" id="navcount">0/19 chapters</span>
 </nav>
 
 <main>
@@ -283,7 +284,7 @@
     <b>Part I</b> gets you running in ten minutes; <b>Part II</b> is the deep
     end — configuration, memory, machine telemetry, MCP servers, computer use —
     everything between "neat demo" and "I open this before my inbox."
-    Finish all eighteen chapters and something nice happens.</p>
+    Finish all nineteen chapters and something nice happens.</p>
     <p class="how">In every demo: <b>type</b> the ghosted command (any keys work),
     press <kbd>Tab</kbd> to autocomplete, <kbd>Enter</kbd> or <b>▶ run</b> to run it.
     The green "try it for real" boxes are homework — check them off as you go.
@@ -1024,7 +1025,7 @@ single safest next command. Consult machine memory first.</pre></div>
       <label><input type="checkbox" data-ex="day6"> <b>Day 6</b> — ask "what changed on this box since yesterday?"</label>
       <label><input type="checkbox" data-ex="day7"> <b>Day 7</b> — on Apple Silicon, peek at <code>oshell finetune</code>: yes, it fine-tunes locally</label>
     </div>
-    <p class="o-sys" style="max-width:720px">Finish all eighteen chapter demos and the sky does something.
+    <p class="o-sys" style="max-width:720px">Finish all nineteen chapter demos and the sky does something.
     <button class="dbtn" id="gradlink" hidden>🎓 view your graduation again</button></p>
   </section>
 
@@ -1151,12 +1152,60 @@ single safest next command. Consult machine memory first.</pre></div>
       <label><input type="checkbox" data-ex="ch18-f1"> In the TUI press <kbd>F1</kbd>, then try <code>/screensaver</code></label>
     </div>
   </section>
+
+  <!-- ─────────────────────────── 19 ─────────────────────────── -->
+  <section class="chapter" id="ch19" aria-labelledby="h-ch19">
+    <h2 id="h-ch19"><span class="chn">19</span>Presence: scheduled runs &amp; the inbox</h2>
+    <p>Everything so far happened while you were typing. This is what happens
+    while you're not. A <b>job</b> is a prompt plus a schedule; your OS runs
+    <code class="ic">oshell jobs tick</code> once a minute (launchd, systemd
+    user timer, Task Scheduler), which runs whatever is due and otherwise exits
+    in milliseconds. Each run is a fresh agent that wakes <em>with context</em>
+    — its role, your memories, Mechanic&nbsp;×&nbsp;Drift, and its own previous
+    report — and leaves one short note in your <b>inbox</b>. Nothing sensitive
+    runs unattended: it's queued as a proposal you approve or dismiss.</p>
+    <p>
+      <span class="chip"><code>oshell jobs add disk-watch --every 6h "is the disk filling up?"</code><button class="copy" data-copy='oshell jobs add disk-watch --every 6h "is the disk filling up?"' aria-label="Copy: oshell jobs add">copy</button></span>
+      <span class="chip"><code>oshell jobs install</code><button class="copy" data-copy="oshell jobs install" aria-label="Copy: oshell jobs install">copy</button></span>
+    </p>
+    <div class="demo" id="d19" data-ch="19" data-name="scheduled runs &amp; the inbox" role="group" aria-label="Interactive demo: oshell jobs, a scheduled run, the inbox, approving a proposal"></div>
+    <details class="why"><summary>⚙ why it works this way</summary><div class="inner">
+      <p>No daemon: the OS scheduler is already the best-tested loop on your
+      machine, and a tick that finds nothing due costs nothing — no 26B model
+      is kept warm for a heartbeat. <b>Presence is the delivery, not the run:</b>
+      a note you'll actually read, a single notification, a count in the status
+      bar. Continuity comes from feeding each run its previous report, so a
+      watch remembers what it saw last time. And the trust rule is the same one
+      the rest of the shell lives by: unattended runs may look and report;
+      changing the machine waits for your <kbd>y</kbd>.</p>
+      <p>The model may schedule its own follow-ups (<code>schedule_followup</code>):
+      "check the build again in 30 minutes" becomes a one-shot child job. That
+      isn't gated — whatever the follow-up does is still subject to approvals.</p>
+    </div></details>
+    <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
+      <ul>
+        <li>Schedules: <code>--every 15m|6h|1d</code>, <code>--cron "0 9 * * 1-5"</code>, or <code>--at 2026-09-05T09:00</code> (one-shot, deletes itself after).</li>
+        <li><code>--approvals read-only</code> hides sensitive tools; <code>--approvals auto</code> lets them run unattended (you get a warning — treat it like cron with sudo).</li>
+        <li><code>--rounds</code> (tool-round budget, default 6) and <code>--timeout</code> (seconds, default 300) bound every run; the default model is your routing fast model.</li>
+        <li><code>oshell jobs run NAME</code> runs one now in the foreground and still files the note. <code>oshell jobs install --dry-run</code> shows the plist / units / schtasks line before anything is written.</li>
+        <li>Prompts may be your custom commands: <code>oshell jobs add standup --cron "0 9 * * 1-5" "/standup"</code>.</li>
+        <li>Notes are JSON files in <code>~/.oshell/inbox/</code>; <code>oshell inbox clear</code> keeps ones with pending actions unless <code>--all</code>.</li>
+      </ul>
+    </div></details>
+    <div class="ex" role="group" aria-label="Try it for real: chapter 19">
+      <h3>Try it for real</h3>
+      <label><input type="checkbox" data-ex="ch19-add"> Add a read-only watch you actually care about and <code>oshell jobs run</code> it once</label>
+      <label><input type="checkbox" data-ex="ch19-install"> <code>oshell jobs install</code>, then come back tomorrow and read the inbox</label>
+      <label><input type="checkbox" data-ex="ch19-approve"> Approve (or dismiss) one proposed action from a note</label>
+      <label><input type="checkbox" data-ex="ch19-followup"> Ask the model in chat to "check on this again in an hour" and watch a follow-up appear in <code>oshell jobs</code></label>
+    </div>
+  </section>
 </main>
 
 <div class="grad" id="grad" role="dialog" aria-modal="true" aria-labelledby="gradtitle" aria-describedby="graddesc">
   <div class="gstars" aria-hidden="true"></div>
   <div class="ginner">
-    <div class="gbadge">18/18 chapters</div>
+    <div class="gbadge">19/19 chapters</div>
     <h2 id="gradtitle">🎓 you're a resident now</h2>
     <p id="graddesc">oshell isn't a demo on a webpage anymore — it lives on your
     machine, knows what's normal there, answers to your slash commands, and
@@ -1176,9 +1225,9 @@ single safest next command. Consult machine memory first.</pre></div>
     .replace(/&nbsp;/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
 
   /* ── progress: 16 chapters + exercises, one tracker ──────────── */
-  const KEY = 'oshell-tutorial-v4';   // bumped: 18 chapters now — stale progress must not misrender
+  const KEY = 'oshell-tutorial-v5';   // bumped: 19 chapters now — stale progress must not misrender
   const EXKEY = 'oshell-tutorial-ex-v1';
-  const TOTAL = 18;
+  const TOTAL = 19;
   let done = new Set(), ex = new Set();
   try { done = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch(e){}
   try { ex = new Set(JSON.parse(localStorage.getItem(EXKEY) || '[]')); } catch(e){}
@@ -1811,6 +1860,48 @@ single safest next command. Consult machine memory first.</pre></div>
         L("<span class='o-acc'> ❯ oshell </span> gemma4:26b · ollama │ ⚙ 29 ● local │ ▣ ▰▰▱▱▱ 34% │ ⚡ 41 tok/s │ ▶ auto          ☾ rain │ osaka-jade │ ◔ 22:14",'',420),
         L("a Waybar for the workspace: model · tools · privacy · context · tok/s · approvals · mood · theme · clock",'o-dim',320),
         L("<kbd>F1</kbd> keybindings overlay · <kbd>Esc</kbd> menu → Style → Theme (live swatches) · /screensaver",'o-dim',320),
+      ]},
+    ]},
+
+    d19: { stages: [
+      { ps:'$', cmd:'oshell jobs add disk-watch --every 6h "is the disk filling up? what grew?" --role sysadmin', out:[
+        L("✓ disk-watch · every 6h · next 09-03 09:00 (now)",'o-ok',360),
+        L("The OS scheduler isn't installed yet — nothing runs until: oshell jobs install",'o-dim',300),
+      ]},
+      { ps:'$', cmd:'oshell jobs install', out:[
+        L("✓ launchd agent com.oshell.jobs (every 60s)  log: ~/.oshell/jobs.log",'o-ok',420),
+        L("(Linux: systemd --user timer · Windows: Task Scheduler · --dry-run shows the files first)",'o-dim',300),
+      ]},
+      { ps:'$', cmd:'oshell jobs run disk-watch', out:[
+        L("running disk-watch (every 6h) · 6 rounds…",'o-dim',400),
+        L("⚙ run_command({'command': 'df -h /'})",'o-dim',300),
+        L("  ↳ $ df -h / [exit 0] /dev/disk3s1  1.8T  1.6T  180G  91%  /",'o-dim',260),
+        L("⚙ run_command({'command': 'du -sh ~/Library/Caches ~/.ollama/models 2>/dev/null | sort -rh | head -3'})",'o-dim',300),
+        L("  ↳ 212G ~/.ollama/models · 38G ~/Library/Caches",'o-dim',260),
+        L("⚙ run_command({'command': 'docker system prune -af'})",'o-dim',300),
+        L("  ↳ [queued] this action was saved to the user's inbox for approval and did NOT run.",'o-warn',420),
+        L("⚙ schedule_followup({'prompt': 'is the disk still above 90%?', 'delay': '2h'})",'o-dim',300),
+        L("  ↳ scheduled disk-watch-followup (at 11:02) → the user will see its report in their inbox",'o-dim',300),
+        L("╭─ <span class='o-acc'>inbox · 20260903-090012-disk-watch</span> ───────────────────────╮",'',240),
+        L("│ <b>Disk at 91% — Ollama models are the bulk.</b>                       │",'',110),
+        L("│ 212G in ~/.ollama/models (5 models you haven't used in a month), │",'',110),
+        L("│ 38G caches. Queued a Docker prune; suggest `oshell models rm`.    │",'',110),
+        L("│ <b>Proposed actions</b> (nothing ran): 1. `docker system prune -af`  │",'',110),
+        L("╰─────────────────────────────────────────────────────────────────╯",'',110),
+      ]},
+      { ps:'$', cmd:'oshell inbox', out:[
+        L("<b>id</b>                              <b>when</b>         <b>job</b>         <b>title</b>                         <b>actions</b>",'o-dim',280),
+        L("20260903-090012-disk-watch      09-03 09:00  disk-watch  Disk at 91% — Ollama models…  <span class='o-warn'>1 to approve</span>",'',140),
+        L("oshell inbox show ID · approve ID · dismiss ID · clear",'o-dim',240),
+      ]},
+      { ps:'$', cmd:'oshell inbox approve 20260903-090012-disk-watch', out:[
+        BOX('docker system prune -af'),
+        ASK('Run it? [y/N] ', 'y', 900),
+        L("✓ Total reclaimed space: 14.2GB",'o-ok',380),
+      ]},
+      { ps:'$', cmd:'oshell tui', out:[
+        L("<span class='o-acc'> ❯ oshell </span> 1  2  3  4  gemma4:26b · ollama │ ⚙ 32 ● local │ ▣ ▱▱▱▱▱ 2% │ ▶ auto        <span class='o-warn'>✉ 1</span> │ ☾ rain │ tokyo-night │ ◔ 11:04",'',420),
+        L("the inbox lights up in the bar when a run left something for you · /inbox · menu → Inbox",'o-dim',320),
       ]},
     ]},
   };

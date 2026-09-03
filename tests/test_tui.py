@@ -1395,3 +1395,40 @@ async def test_classic_layout_keeps_the_old_shape():
         assert "tiles" not in app.query_one("#body").classes
         assert app.query_one("#conversation").border_title in ("", None)
         assert "Try:" in _convo_text(app)  # the small welcome card, not fastfetch
+
+
+# ── presence: inbox in the bar, /inbox, jobs in the menu ─────────────────────
+async def test_inbox_lights_the_bar_and_renders_in_chat(tmp_path):
+    from oshell import inbox
+    from oshell.tui.menu import MENU_ITEMS
+
+    ids = [cid for cid, *_r in MENU_ITEMS]
+    assert "inbox" in ids and "jobs" in ids
+    cfg = Config()
+    cfg.jobs.inbox_dir = str(tmp_path / "inbox")
+    cfg.jobs.dir = str(tmp_path / "jobs")
+    inbox.add(
+        "disk-watch",
+        "Disk at 91%",
+        "Ollama models are the bulk.",
+        [inbox.Proposal("run_command", {"command": "docker system prune -af"})],
+        directory=cfg.jobs.inbox_dir,
+    )
+    app = OllamaShellTUI(
+        Agent(_Scripted(), ToolRegistry([CurrentTimeTool()]), cfg), show_menu_on_start=False
+    )
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        bar = app.query_one("#statusbar")
+        assert bar.state.inbox == 1 and bar.state.pending == 1
+        assert "1 to approve" in bar.text
+        assert app._handle_slash_command("/inbox") is True
+        await pilot.pause()
+        text = _convo_text(app)
+        assert "Disk at 91%" in text and "docker system prune -af" in text
+        assert "oshell inbox approve" in text
+        # Reading marks the note read; the pending proposal keeps it lit.
+        assert inbox.unread_count(cfg.jobs.inbox_dir) == 0
+        app._menu_jobs()
+        await pilot.pause()
+        assert "No scheduled jobs" in _convo_text(app)

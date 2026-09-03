@@ -263,6 +263,9 @@ class Agent:
         # An optional role prompt (oshell roles) appended to the system prompt;
         # survives rebuilds. Set via the ``system_extra`` property.
         self._system_extra: str | None = None
+        # What the model is told when the approver declines (unattended runs
+        # replace "the user declined" with "queued in the inbox").
+        self.denial_text: str | None = None
         # Context management: indices into ``self.messages``.
         self.pinned: set[int] = {0}  # system prompt is pinned by default
         self.excluded: set[int] = set()
@@ -347,7 +350,9 @@ class Agent:
             approved = False
         if approved:
             return None
-        return "[denied] the user declined this action. Ask before trying a different approach."
+        return self.denial_text or (
+            "[denied] the user declined this action. Ask before trying a different approach."
+        )
 
     # ── context health: fill estimate + compaction ────────────────────────────
     def context_fill(self) -> float:

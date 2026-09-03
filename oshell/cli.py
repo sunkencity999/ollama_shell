@@ -12,6 +12,8 @@ Subcommands:
     oshell roles           reusable system prompts (~/.oshell/roles/*.md)
     oshell theme ...       Omarchy-format palettes: list/set/import/export
     oshell fetch           neofetch for your assistant
+    oshell jobs ...        scheduled runs: add/list/run/install (launchd, systemd, schtasks)
+    oshell inbox ...       notes + proposed actions from scheduled runs: show/approve
     oshell screensaver     the mood, full-terminal, until a key
     oshell models          list/pull/delete models on the backend
     oshell doctor          health-check the whole rig
@@ -755,10 +757,11 @@ def tui(model: str = typer.Option(None, "--model", "-m")) -> None:
 # The sgpt lineage (do/explain/code/fix/roles/init) and the rice (theme/fetch/
 # screensaver) live in their own modules and register onto this app. Registered
 # last so `oshell --help` leads with chat/ask, the everyday verbs.
-from . import cli_shell, cli_theme  # noqa: E402
+from . import cli_jobs, cli_shell, cli_theme  # noqa: E402
 
 cli_shell.register(app, console)
 cli_theme.register(app, console)
+cli_jobs.register(app, console)
 
 
 @app.callback(invoke_without_command=True)

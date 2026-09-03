@@ -83,6 +83,11 @@ def default_registry(
 
     # MCP servers mounted as native tools (mechanic + drift by default — the
     # shell's memory of the machine). Missing servers contribute nothing.
+    if config.jobs.tools:
+        from .schedule import schedule_tools
+
+        tools += schedule_tools(config.jobs.dir)
+
     from ..mcp import mcp_tools
 
     tools += mcp_tools(config)

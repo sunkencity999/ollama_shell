@@ -106,6 +106,7 @@ oshell finetune detect  # local LoRA training backend
 oshell fetch            # neofetch for your assistant — see the rig at a glance
 oshell theme set osaka-jade   # one of 22 Omarchy themes; TUI + CLI + terminal exports
 eval "$(oshell init zsh)"     # Ctrl+G, '#…'→command, `oshell fix` knows your last command
+oshell jobs add disk-watch --every 6h "is the disk filling up?" && oshell jobs install
 ```
 
 `oshell` not found? Open a new terminal (so PATH reloads) or add the printed bin
@@ -425,6 +426,57 @@ away. **`/screensaver`** plays the mood over the workspace with the wordmark
 adrift in the theme's hues; `oshell screensaver` does the same in any plain
 terminal. And `oshell fetch` is a neofetch for the assistant itself: logo, rig,
 model, backend, machine memory, sessions, memories, theme.
+
+## Presence — scheduled runs and the inbox
+
+Everything above happens while you're typing. This is what happens while you're
+not. A **job** is a prompt plus a schedule; the OS scheduler (launchd, systemd
+user timers, or Task Scheduler) runs `oshell jobs tick` once a minute, which
+runs whatever is due and otherwise exits in milliseconds — no daemon, no model
+kept warm for nothing.
+
+```bash
+oshell jobs add disk-watch --every 6h  "is the disk filling up? what grew?" --role sysadmin
+oshell jobs add morning    --cron "0 8 * * 1-5" "what changed on this box overnight? anything abnormal per Mechanic?"
+oshell jobs add release    --at 2026-09-05T09:00 "is the v0.3 build in ~/builds finished? summarize the log"
+oshell jobs install        # register the once-a-minute tick with your OS
+oshell jobs run disk-watch # try one now, in the foreground
+oshell inbox               # what the runs left for you
+```
+
+Each run is a **fresh agent with context**: the job's role, its budget (tool
+rounds and wall clock), your memories, the machine-memory tools, and its own
+**previous report** — so a watch has continuity instead of amnesia. It writes
+one short Markdown note to `~/.oshell/inbox/`, pings you once through the
+desktop notifier, and the TUI shows the count in the status bar (`✉ 2 · 1 to
+approve`, also `/inbox`).
+
+**Nothing that changes the machine runs unattended.** Read-only shell
+commands run (`df`, `du`, `ls`, `ps`, `git status`, `docker ps`, `top -l 1`… a
+conservative allowlist: unknown binaries, `sudo`, output redirects, subshells,
+and mutating subcommands all fail it). When a job wants to *change* something —
+`rm`, `docker system prune`, `git push`, GUI control — the call is queued as a
+**proposal** in the note with the exact command, and the model is told it was
+queued so it can finish its read-only work and report. You approve from a
+terminal:
+
+```bash
+oshell inbox show 20260903-080012-disk-watch
+oshell inbox approve 20260903-080012-disk-watch     # each proposal shown, confirmed, run
+oshell inbox dismiss 20260903-080012-disk-watch
+```
+
+Per job: `--approvals read-only` hides sensitive tools entirely; `--approvals
+auto` lets them run unattended (you'll get a warning — use it for jobs you'd
+trust a cron script with). `--rounds` and `--timeout` cap the budget;
+`--model` pins a model (the routing fast model is the default).
+
+**The agent plans its own follow-ups.** In chat or in a scheduled run, the
+model can call `schedule_followup` ("check the build again in 30 minutes", "watch
+this every 6h") — a one-shot child job appears under the parent, runs later,
+and reports to the inbox. Scheduling itself isn't gated, because whatever the
+follow-up does is subject to the same approvals as any other run. `list_jobs`
+and `cancel_job` round it out; `{"jobs":{"tools":false}}` removes them.
 
 ## Guardrails — trust infrastructure for an agent with a shell
 

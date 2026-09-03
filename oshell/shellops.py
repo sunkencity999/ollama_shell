@@ -290,3 +290,124 @@ def is_destructive(command: str) -> bool:
         r"\bkillall\b|\bpkill\s+-9\b",
     )
     return any(re.search(p, command, re.I) for p in patterns)
+
+
+# ── read-only classification (what an unattended run may execute) ────────────
+# First words of commands that only *look*. A segment whose first word isn't
+# here is treated as mutating. Deliberately conservative: unknown → queue.
+READONLY_COMMANDS = frozenset(
+    """
+    df du ls ll la cat head tail less more wc stat file readlink realpath pwd echo printf
+    date cal uptime uname hostname whoami id groups env printenv which whereis type
+    ps top htop pgrep pstree lsof netstat ss ifconfig ip arp ping traceroute dig nslookup
+    host free vm_stat vmstat iostat sar nproc lscpu lsblk lspci lsusb dmidecode sysctl
+    sw_vers system_profiler diskutil launchctl systemctl journalctl dmesg last w who
+    git docker kubectl brew apt dpkg rpm pip pip3 uv npm node python python3 ollama
+    grep egrep fgrep rg ag awk sed sort uniq cut tr column jq yq xxd od strings diff cmp
+    find fd tree basename dirname test true false sleep timeout time
+    curl wget openssl md5 md5sum sha256sum shasum
+    """.split()
+)
+# Subcommands that make an otherwise-listed binary mutate. Anything else with
+# that binary is allowed only if the subcommand is in READONLY_SUBCOMMANDS.
+READONLY_SUBCOMMANDS: dict[str, frozenset[str]] = {
+    "git": frozenset(
+        "status log diff show branch tag remote rev-parse describe blame ls-files "
+        "shortlog stash config fetch".split()
+    ),
+    "docker": frozenset("ps images inspect logs stats top version info system events".split()),
+    "kubectl": frozenset("get describe logs top version cluster-info config explain".split()),
+    "brew": frozenset("list outdated info deps uses config doctor leaves --version".split()),
+    "apt": frozenset("list show search policy".split()),
+    "dpkg": frozenset("-l -L -s -S --list --status".split()),
+    "pip": frozenset("list show freeze check --version".split()),
+    "pip3": frozenset("list show freeze check --version".split()),
+    "uv": frozenset("pip tree --version".split()),
+    "npm": frozenset("ls list view outdated --version".split()),
+    "ollama": frozenset("list ls ps show --version".split()),
+    "launchctl": frozenset("list print".split()),
+    "systemctl": frozenset(
+        "status list-units list-timers show is-active is-enabled --user".split()
+    ),
+    "diskutil": frozenset("list info apfs".split()),
+    "sysctl": frozenset({"-n", "-a"}),
+    "node": frozenset({"--version", "-v"}),
+    "python": frozenset({"--version", "-V"}),
+    "python3": frozenset({"--version", "-V"}),
+    "docker system": frozenset({"df"}),
+}
+_MUTATING_FLAGS = {
+    "find": ("-delete", "-exec", "-execdir", "-ok", "-okdir"),
+    "sed": ("-i",),
+    "curl": ("-o", "-O", "--output", "-X", "--request", "-d", "--data", "-F", "--form", "-T"),
+    "wget": ("-O", "--output-document", "-P", "--directory-prefix"),
+    "top": (),  # macOS `top` without -l streams forever; the timeout handles that
+    "tail": ("-f", "-F"),
+    "journalctl": ("-f", "--follow", "--vacuum-size", "--vacuum-time", "--rotate"),
+    "docker": ("--rm",),
+}
+_SUBSHELL_RE = re.compile(r"\$\(|`|<\(|>\(")
+_REDIRECT_RE = re.compile(r"(?<![0-9&])>>?(?!&)|>\s*[^&\s]")
+
+
+def is_readonly(command: str) -> bool:
+    """True if every segment of ``command`` only inspects (safe to run unattended).
+
+    Splits on ``|``, ``&&``, ``||`` and ``;``; each segment's first word must be a
+    known read-only binary (with read-only subcommands/flags where the binary
+    can also mutate). Output redirects (``>``), subshells, and ``sudo`` make the
+    whole thing not read-only. Unknown → False: the burden of proof is on the
+    command, because a wrong "yes" here changes the machine while nobody watches.
+    """
+    cmd = command.strip()
+    if not cmd or "\n" in cmd:
+        return False
+    if _SUBSHELL_RE.search(cmd):
+        return False
+    # Allow only stderr redirects like 2>/dev/null and 2>&1.
+    scrubbed = re.sub(r"2>\s*/dev/null|2>&1|&>\s*/dev/null", "", cmd)
+    if ">" in scrubbed or "<" in scrubbed:
+        return False
+    for seg in re.split(r"\|\||&&|;|\|", scrubbed):
+        words = seg.strip().split()
+        if not words:
+            return False
+        # env assignments and `env` prefixes are fine; `sudo`, `xargs`, `sh -c` are not.
+        while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+            words = words[1:]
+        if not words:
+            return False
+        head = words[0].rsplit("/", 1)[-1]
+        if head in ("sudo", "doas", "xargs", "sh", "bash", "zsh", "eval", "exec", "nohup"):
+            return False
+        if head not in READONLY_COMMANDS:
+            return False
+        subs = READONLY_SUBCOMMANDS.get(head)
+        if subs is not None:
+            rest = [
+                w
+                for w in words[1:]
+                if not (
+                    w.startswith("-")
+                    and head not in ("sysctl", "dpkg", "node", "python", "python3", "brew")
+                )
+            ]
+            first = rest[0] if rest else (words[1] if len(words) > 1 else "")
+            if head == "docker" and first == "system":
+                second = rest[1] if len(rest) > 1 else ""
+                if second not in READONLY_SUBCOMMANDS["docker system"]:
+                    return False
+            elif first not in subs:
+                return False
+        for flag in _MUTATING_FLAGS.get(head, ()):
+            if flag in words[1:]:
+                return False
+        if head == "top" and "-l" not in words and platform_is_mac():
+            return False  # would stream forever
+    return True
+
+
+def platform_is_mac() -> bool:
+    import platform
+
+    return platform.system() == "Darwin"

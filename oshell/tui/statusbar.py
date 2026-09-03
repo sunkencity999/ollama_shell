@@ -33,6 +33,7 @@ _NERD = {
     "clock": "",  # clock
     "mood": "",  # moon
     "busy": "",  # spinner
+    "inbox": "",  # envelope
 }
 _PLAIN = {
     "logo": "❯",
@@ -47,6 +48,7 @@ _PLAIN = {
     "clock": "◔",
     "mood": "☾",
     "busy": "…",
+    "inbox": "✉",
 }
 
 _HEX = __import__("re").compile(r"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
@@ -83,6 +85,8 @@ class BarState:
     status: str = ""  # what the model is doing when busy
     workspaces: tuple[str, ...] = ("chat", "tools", "context", "activity")
     workspace: int = 0  # index into workspaces (the focused tile / sidebar tab)
+    inbox: int = 0  # unread notes from scheduled runs
+    pending: int = 0  # proposed actions awaiting approval
 
 
 def gauge(fill: float, cells: int = 5) -> str:
@@ -146,7 +150,17 @@ def render_bar(
 
     def right_side(show_mood: bool, show_theme: bool) -> Text:
         right = Text(no_wrap=True)
+        if state.inbox or state.pending:
+            # The inbox lights up when a scheduled run left something for you.
+            st = Style.parse(f"bold {warn if state.pending else pop}")
+            st += Style(meta={"@click": "app.inbox"})
+            label = f"{g['inbox']} {state.inbox}"
+            if state.pending:
+                label += f" · {state.pending} to approve"
+            right.append(label, style=st)
         if show_mood and state.mood and state.mood != "none":
+            if right.plain:
+                right.append_text(sep)
             right.append(f"{g['mood']} {state.mood}", style=muted)
         if show_theme and state.theme:
             if right.plain:

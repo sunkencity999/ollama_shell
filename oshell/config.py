@@ -167,6 +167,16 @@ def _default_mcp_servers() -> dict[str, MCPServerConfig]:
     }
 
 
+class JobsConfig(BaseModel):
+    """Scheduled runs (oshell jobs) and the inbox they report to."""
+
+    dir: str = "~/.oshell/jobs"
+    inbox_dir: str = "~/.oshell/inbox"
+    notify: bool = True  # desktop notification when a run files a note
+    # Let the model call schedule_followup / list_jobs / cancel_job.
+    tools: bool = True
+
+
 class UIConfig(BaseModel):
     """How the TUI dresses: the Omarchy-flavored chrome."""
 
@@ -280,6 +290,9 @@ class Config(BaseModel):
 
     # TUI chrome (status bar, gaps, glyphs)
     ui: UIConfig = Field(default_factory=UIConfig)
+
+    # Scheduled runs + inbox
+    jobs: JobsConfig = Field(default_factory=JobsConfig)
 
     # Quirky delights
     fun: FunConfig = Field(default_factory=FunConfig)

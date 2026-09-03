@@ -105,3 +105,47 @@ def test_destructive_tripwire():
     assert shellops.is_destructive("sudo dd if=x of=/dev/disk2")
     assert not shellops.is_destructive("ls -la")
     assert not shellops.is_destructive("rm notes.txt")
+
+
+def test_readonly_classifier_is_conservative():
+    ro = shellops.is_readonly
+    for cmd in (
+        "df -h /",
+        "du -sh ~/Library/Caches 2>/dev/null | sort -rh | head -5",
+        "git status",
+        "git log --oneline -5",
+        "docker ps",
+        "docker system df",
+        "ps aux | grep ollama",
+        "top -l 1 | head -12",
+        "find . -name '*.log' -size +100M",
+        "PATH=/usr/bin df -h",
+        "systemctl --user status oshell-jobs.timer",
+        "curl -s localhost:11434/api/tags",
+        "tail -n 50 ~/.oshell/jobs.log",
+    ):
+        assert ro(cmd), cmd
+    for cmd in (
+        "rm -rf /tmp/build",
+        "docker system prune -af",
+        "git push --force",
+        "find . -name '*.tmp' -delete",
+        "sed -i 's/a/b/' f",
+        "echo hi > out.txt",
+        "cat x | xargs rm",
+        "sudo df",
+        "sh -c 'ls'",
+        "ls $(pwd)",
+        "tail -f log",
+        "curl -o f http://x",
+        "brew upgrade",
+        "pip install x",
+        "kill -9 123",
+        "mv a b",
+        "ollama rm foo",
+        "npm install",
+        "frobnicate --now",  # unknown binary → not read-only
+        "",
+        "ls\nrm -rf x",
+    ):
+        assert not ro(cmd), cmd

@@ -20,6 +20,8 @@ SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/mood [name]", "idle ambience: rain, snow, aurora, ocean, …"),
     ("/screensaver", "play the mood over the workspace now"),
     ("/keys", "this overlay"),
+    ("/inbox", "notes & proposed actions from scheduled runs"),
+    ("/jobs", "what runs while you're away"),
     ("/clear", "new conversation"),
     ("/daydream", "let the model wander 💭"),
     ("/route [on|off]", "automatic model routing"),
