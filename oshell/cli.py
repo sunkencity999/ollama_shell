@@ -692,6 +692,80 @@ def doctor() -> None:
         f"{ok} memory",
         f"{cfg.memory.path}" + ("" if mem_path.exists() else " (empty — will be created)"),
     )
+
+    # ── what ./install.sh sets up beyond the command itself ──────────────────
+    import os as _os
+
+    from . import inbox as inbox_mod
+    from . import orders as orders_mod
+    from . import schedule as schedule_mod
+    from . import themes as themes_mod
+    from .roles import shell_name
+
+    rc_for = {
+        "zsh": Path(_os.environ.get("ZDOTDIR") or "~").expanduser() / ".zshrc",
+        "bash": Path("~/.bashrc").expanduser(),
+        "fish": Path("~/.config/fish/config.fish").expanduser(),
+    }
+    sh = shell_name()
+    rc = rc_for.get(sh)
+    hooked = False
+    if rc is not None and rc.is_file():
+        try:
+            hooked = "oshell init" in rc.read_text(encoding="utf-8")
+        except OSError:
+            hooked = False
+    if rc is None:
+        table.add_row(f"{warn} shell integration", f"{sh}: no automatic hook (oshell init --help)")
+    elif hooked:
+        table.add_row(f"{ok} shell integration", f"{sh} · {rc}")
+    else:
+        table.add_row(
+            f"{warn} shell integration",
+            f'not in {rc} — add:  eval "$(oshell init {sh})"',
+        )
+
+    palette = themes_mod.get_palette(cfg.theme)
+    cur = themes_mod.current_dir()
+    exports = "exports in ~/.oshell/current" if (cur / "theme").is_file() else "no exports yet"
+    table.add_row(
+        f"{ok} theme",
+        f"{cfg.theme} · {exports}" + ("" if palette else " (Textual-only theme: TUI only)"),
+    )
+
+    jobs = schedule_mod.list_jobs(cfg.jobs.dir)
+    if schedule_mod.installed():
+        table.add_row(
+            f"{ok} scheduler", f"installed · {len(jobs)} job{'s' if len(jobs) != 1 else ''}"
+        )
+    elif jobs:
+        table.add_row(
+            f"{warn} scheduler",
+            f"not installed — {len(jobs)} job{'s' if len(jobs) != 1 else ''} will never wake "
+            "(oshell jobs install)",
+        )
+    else:
+        table.add_row(f"{ok} scheduler", "not installed (no jobs yet — oshell jobs add …)")
+    n_orders = len(orders_mod.load_orders(cfg.jobs.orders_path))
+    has_orders_job = schedule_mod.load_job("orders", cfg.jobs.dir) is not None
+    if n_orders and not has_orders_job:
+        table.add_row(
+            f"{warn} standing orders",
+            f"{n_orders} orders but no orders job (oshell orders install)",
+        )
+    else:
+        table.add_row(
+            f"{ok} standing orders",
+            f"{n_orders} in {cfg.jobs.orders_path}"
+            + (" · job installed" if has_orders_job else ""),
+        )
+    pend = inbox_mod.pending_count(cfg.jobs.inbox_dir)
+    unread = inbox_mod.unread_count(cfg.jobs.inbox_dir)
+    mark = warn if pend else ok
+    table.add_row(
+        f"{mark} inbox",
+        f"{unread} unread · {pend} action{'s' if pend != 1 else ''} awaiting approval",
+    )
     console.print(table)
 
     feats = Table(title="Optional capabilities")

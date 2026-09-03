@@ -87,11 +87,15 @@ pip install "ollama-shell[tui]"  # the shell + full TUI in one command ([all] = 
 
 #    The full experience (source) — same thing PLUS the machine-memory
 #    pair (Mechanic + Drift) registered as user services, which pip can't do:
-./install.sh                    # macOS / Linux — core + tui + machine memory
+./install.sh                    # macOS / Linux — the command, machine memory, shell
+                                #   integration, theme exports, the job scheduler +
+                                #   standing orders, then the first-run wizard
 ./install.sh all                # the works: tui, rag, docs, vision, finetune
 ./install.sh rag                # …or any custom subset (web search is built in)
-./install.sh tui --no-monitors  # skip Mechanic + Drift
-#   Windows (PowerShell):  .\install.ps1   (no monitors — they need launchd/systemd)
+./install.sh --no-monitors --no-shell --no-jobs --no-orders --no-setup   # each step is skippable
+./install.sh --dry-run          # show what would happen, change nothing
+#   Windows (PowerShell):  .\install.ps1 [-NoShell] [-NoJobs] [-NoOrders] [-NoSetup] [-DryRun]
+#   (no Mechanic/Drift — they need launchd/systemd; everything else installs)
 
 # 2. Make sure Ollama is running (https://ollama.com), then — from anywhere:
 oshell setup            # first-run wizard: sizes models to THIS machine,
@@ -115,10 +119,13 @@ checkout, `make install` builds a local `.venv`; `make run / tui / test` wrap th
 common flows. On macOS you can also double-click **Start Ollama Shell.command**.
 
 **Or straight from PyPI:** `pip install "ollama-shell[tui]"` gets you the shell
-and the TUI (add `[all]` for every extra). The one thing pip can't do is install
-the [Mechanic](https://github.com/sunkencity999/mechanic) ×
-[Drift](https://github.com/sunkencity999/drift) machine-memory monitors — grab
-those from their repos, or use `./install.sh`, which sets up everything.
+and the TUI (add `[all]` for every extra). What pip can't do, `./install.sh`
+does: the [Mechanic](https://github.com/sunkencity999/mechanic) ×
+[Drift](https://github.com/sunkencity999/drift) machine-memory monitors, the
+shell hook in your rc, the job scheduler, and the standing-orders job. After a
+pip install, the same steps are one command each: `eval "$(oshell init zsh)"`,
+`oshell jobs install`, `oshell orders install`. `oshell doctor` shows which
+are in place.
 
 > Because the install is **editable**, code changes take effect on the next
 > launch — but a *running* `oshell` won't hot-reload. After updating, quit and
