@@ -818,7 +818,9 @@ class OllamaShellTUI(App):
         mood = self.agent.config.fun.mood
         if mood == "none":
             mood = "starfield"
-        self.push_screen(MoodOverlay(mood, logo=True), self._on_takeover_wake)
+        self.push_screen(
+            MoodOverlay(mood, logo=True, on_wake=self._keep_mood_alive), self._on_takeover_wake
+        )
 
     def _set_theme(self, name: str, announce: bool = True) -> bool:
         """Apply a theme everywhere: live TUI, config, ~/.oshell/current exports."""
@@ -1093,7 +1095,10 @@ class OllamaShellTUI(App):
                 # workspace). Waking resumes the strip mood, not another takeover.
                 from .overlay import MoodOverlay
 
-                self.push_screen(MoodOverlay(fun.mood), self._on_takeover_wake)
+                self.push_screen(
+                    MoodOverlay(fun.mood, on_wake=self._keep_mood_alive),
+                    self._on_takeover_wake,
+                )
                 return
             if mood_on and idle > fun.mood_idle_seconds:
                 try:

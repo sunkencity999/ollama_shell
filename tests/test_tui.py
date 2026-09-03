@@ -694,8 +694,9 @@ async def test_tick_renders_aurora_and_ember_when_busy():
         app._ember = (ambient.EMBER_COLORS["net"], _time.monotonic())
         app._tick()
         await pilot.pause()
-        # The spark and an aurora hue (not plain cyan) are both in the strip.
-        assert ambient.EMBER_FRAMES[0] in app._live_text
+        # A spark (whichever frame the clock has reached) and an aurora hue
+        # (not plain cyan) are both in the strip.
+        assert any(frame in app._live_text for frame in ambient.EMBER_FRAMES)
         assert any(hex_ in app._live_text for hex_ in ambient.AURORA)
         app._busy = False
 

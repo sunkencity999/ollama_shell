@@ -59,11 +59,23 @@ class MoodOverlay(ModalScreen[None]):
     }
     """
 
-    def __init__(self, mood: str, logo: bool = False) -> None:
+    def __init__(self, mood: str, logo: bool = False, on_wake=None) -> None:
         super().__init__(classes="dimmer" if logo else "")
         self.mood = mood
         self.logo = logo
         self._tick = 0
+        # Called synchronously *before* dismiss so the app can rewind its idle
+        # clock in the same frame — otherwise a tick can land between the pop
+        # and the dismiss callback and take the stage right back.
+        self._on_wake = on_wake
+
+    def _wake(self) -> None:
+        if self._on_wake is not None:
+            try:
+                self._on_wake()
+            except Exception:
+                pass
+        self.dismiss(None)
 
     def compose(self) -> ComposeResult:
         for _ in range(_MAX_FLECKS):
@@ -143,8 +155,8 @@ class MoodOverlay(ModalScreen[None]):
     # ── waking up (the wake event is swallowed, screensaver-style) ────────────
     def on_key(self, event: Key) -> None:
         event.stop()
-        self.dismiss(None)
+        self._wake()
 
     def on_mouse_down(self, event: MouseDown) -> None:
         event.stop()
-        self.dismiss(None)
+        self._wake()
