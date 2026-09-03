@@ -117,6 +117,49 @@ def register(app: typer.Typer, console: Console) -> None:
                 "oshell jobs install[/]"
             )
 
+    @jobs_app.command("watch")
+    def jobs_watch(
+        name: str = typer.Argument(..., help="short name"),
+        path: str = typer.Argument(..., help="file or directory to watch"),
+        prompt: str = typer.Argument(..., help="what to do when it changes"),
+        pattern: str = typer.Option("*", "--pattern", help="glob filter, e.g. '*.log'"),
+        on: str = typer.Option("any", "--on", help="any | created | modified | deleted"),
+        settle: int = typer.Option(10, "--settle", help="seconds unchanged before it counts"),
+        recursive: bool = typer.Option(False, "--recursive", "-r", help="walk subdirectories"),
+        every: str = typer.Option("1m", "--every", help="rescan interval"),
+        role: str = typer.Option(None, "--role"),
+        approvals: str = typer.Option("ask", "--approvals", help="ask | read-only | auto"),
+        replace: bool = typer.Option(False, "--replace"),
+    ) -> None:
+        """Run PROMPT when files under PATH change (created/modified/deleted, settled).
+
+        Nothing runs until something changes: the minute-tick only rescans the path.
+        """
+        from . import watch as watch_mod
+
+        try:
+            spec = watch_mod.WatchSpec(
+                path=path, pattern=pattern, event=on, settle=settle, recursive=recursive
+            )
+            job = schedule.Job(
+                name=name,
+                prompt=prompt,
+                kind="watch",
+                watch=spec.to_dict(),
+                every=every,
+                role=role,
+                approvals=approvals,
+            )
+            schedule.add_job(job, _dir(), replace=replace)
+            # Baseline now: report only what happens from here on.
+            watch_mod.check(job.name, spec, schedule.jobs_dir(_dir()))
+        except (ValueError, FileExistsError) as exc:
+            console.print(f"[oshell.err]{exc}[/]")
+            raise typer.Exit(code=1) from None
+        console.print(f"[oshell.ok]✓[/] {job.name} · {job.schedule} · rescans {every}")
+        if not schedule.installed():
+            console.print("[oshell.muted]Scheduler not installed yet — oshell jobs install[/]")
+
     @jobs_app.command("rm")
     def jobs_rm(name: str) -> None:
         """Delete a job."""
@@ -196,8 +239,7 @@ def register(app: typer.Typer, console: Console) -> None:
                 )
 
         console.print(
-            f"[oshell.muted]running {job.name} ({job.schedule}) · "
-            f"{job.max_iterations} rounds…[/]"
+            f"[oshell.muted]running {job.name} ({job.schedule}) · {job.max_iterations} rounds…[/]"
         )
         result = schedule.run_job(
             job, cfg, directory=cfg.jobs.dir, inbox_dir=cfg.jobs.inbox_dir, on_event=show
@@ -254,6 +296,145 @@ def register(app: typer.Typer, console: Console) -> None:
     def jobs_uninstall() -> None:
         """Remove the OS scheduler entry (jobs stay on disk)."""
         console.print(f"[oshell.ok]✓[/] {schedule.uninstall()}")
+
+    # ── standing orders ──────────────────────────────────────────────────────
+    orders_app = typer.Typer(help="Standing orders: outcomes to keep true (~/.oshell/orders.md).")
+    app.add_typer(orders_app, name="orders")
+
+    def _ocfg():
+        return Config.load().jobs
+
+    @orders_app.callback(invoke_without_command=True)
+    def orders(ctx: typer.Context) -> None:
+        """Show the standing orders and what was last found for each."""
+        if ctx.invoked_subcommand is not None:
+            return
+        from . import orders as orders_mod
+
+        jc = _ocfg()
+        items = orders_mod.load_orders(jc.orders_path)
+        state = orders_mod.load_state(jc.orders_state)
+        console.print(
+            Panel(
+                Markdown(orders_mod.render(items, state)),
+                title="[oshell.accent]standing orders[/]",
+                border_style="oshell.border.soft",
+            )
+        )
+        job = schedule.load_job("orders", jc.dir)
+        if job is None:
+            console.print(
+                "[oshell.muted]No orders job yet — nothing checks these until:  "
+                "oshell orders install[/]"
+            )
+        else:
+            console.print(
+                f"[oshell.muted]orders job: {job.schedule} · next "
+                f"{schedule.describe_when(job.next_run)} · runs {job.runs}"
+                + (
+                    ""
+                    if schedule.installed()
+                    else " · scheduler not installed (oshell jobs install)"
+                )
+                + "[/]"
+            )
+        console.print(
+            f"[oshell.muted]edit: {orders_mod.orders_path(jc.orders_path)}  · "
+            'oshell orders add "…" [--priority high] · rm N · check[/]'
+        )
+
+    @orders_app.command("add")
+    def orders_add(
+        text: str = typer.Argument(..., help="the order, in plain language"),
+        priority: str = typer.Option("normal", "--priority", "-p", help="high | normal | low"),
+    ) -> None:
+        """Append an order to ~/.oshell/orders.md."""
+        from . import orders as orders_mod
+
+        try:
+            o = orders_mod.add_order(text, priority, _ocfg().orders_path)
+        except ValueError as exc:
+            console.print(f"[oshell.err]{exc}[/]")
+            raise typer.Exit(code=1) from None
+        console.print(f"[oshell.ok]✓[/] #{o.n} [{o.priority}] {escape(o.text)}")
+
+    @orders_app.command("rm")
+    def orders_rm(n: int = typer.Argument(..., help="order number (oshell orders)")) -> None:
+        """Remove order #N."""
+        from . import orders as orders_mod
+
+        try:
+            o = orders_mod.remove_order(n, _ocfg().orders_path)
+        except (IndexError, OSError) as exc:
+            console.print(f"[oshell.err]{exc}[/]")
+            raise typer.Exit(code=1) from None
+        console.print(f"[oshell.ok]✓[/] removed #{n}: {escape(o.text)}")
+
+    @orders_app.command("edit")
+    def orders_edit() -> None:
+        """Open orders.md in $EDITOR."""
+        import os
+        import subprocess
+
+        from . import orders as orders_mod
+
+        path = orders_mod.ensure_file(_ocfg().orders_path)
+        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "nano"
+        subprocess.run([editor, str(path)])
+
+    @orders_app.command("install")
+    def orders_install(
+        every: str = typer.Option(None, "--every", help="how often to wake (default 1h)"),
+        role: str = typer.Option("sysadmin", "--role"),
+        replace: bool = typer.Option(False, "--replace"),
+    ) -> None:
+        """Create the `orders` job (and the orders file if missing)."""
+        from . import orders as orders_mod
+
+        jc = _ocfg()
+        orders_mod.ensure_file(jc.orders_path)
+        try:
+            job = schedule.Job(
+                name="orders",
+                prompt="Check the standing orders.",
+                kind="orders",
+                every=every or jc.orders_every,
+                role=role,
+                max_iterations=10,
+            )
+            schedule.add_job(job, jc.dir, replace=replace)
+        except FileExistsError:
+            console.print("[oshell.muted]orders job already exists (use --replace)[/]")
+            return
+        except ValueError as exc:
+            console.print(f"[oshell.err]{exc}[/]")
+            raise typer.Exit(code=1) from None
+        console.print(
+            f"[oshell.ok]✓[/] orders job · {job.schedule} · file: "
+            f"{orders_mod.orders_path(jc.orders_path)}"
+        )
+        if not schedule.installed():
+            console.print("[oshell.muted]Scheduler not installed yet — oshell jobs install[/]")
+
+    @orders_app.command("check")
+    def orders_check() -> None:
+        """Check the standing orders right now (runs the orders job in the foreground)."""
+        cfg = Config.load()
+        job = schedule.load_job("orders", cfg.jobs.dir)
+        if job is None:
+            from . import orders as orders_mod
+
+            orders_mod.ensure_file(cfg.jobs.orders_path)
+            job = schedule.Job(
+                name="orders",
+                prompt="Check the standing orders.",
+                kind="orders",
+                every=cfg.jobs.orders_every,
+                role="sysadmin",
+                max_iterations=10,
+            )
+            schedule.add_job(job, cfg.jobs.dir)
+        jobs_run(name="orders", quiet=False)
 
     # ── inbox ────────────────────────────────────────────────────────────────
     inbox_app = typer.Typer(help="Notes and proposed actions from scheduled runs.")

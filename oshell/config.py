@@ -173,8 +173,12 @@ class JobsConfig(BaseModel):
     dir: str = "~/.oshell/jobs"
     inbox_dir: str = "~/.oshell/inbox"
     notify: bool = True  # desktop notification when a run files a note
-    # Let the model call schedule_followup / list_jobs / cancel_job.
+    # Let the model call schedule_followup / list_jobs / cancel_job / watch_path.
     tools: bool = True
+    # Standing orders: outcomes to keep true, checked by the `orders` job.
+    orders_path: str = "~/.oshell/orders.md"
+    orders_state: str = "~/.oshell/orders.state.json"
+    orders_every: str = "1h"  # how often the orders job wakes (oshell orders install)
 
 
 class UIConfig(BaseModel):

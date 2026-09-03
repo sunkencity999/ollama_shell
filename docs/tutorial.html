@@ -1155,7 +1155,7 @@ single safest next command. Consult machine memory first.</pre></div>
 
   <!-- ─────────────────────────── 19 ─────────────────────────── -->
   <section class="chapter" id="ch19" aria-labelledby="h-ch19">
-    <h2 id="h-ch19"><span class="chn">19</span>Presence: scheduled runs &amp; the inbox</h2>
+    <h2 id="h-ch19"><span class="chn">19</span>Presence: jobs, standing orders, watches &amp; the inbox</h2>
     <p>Everything so far happened while you were typing. This is what happens
     while you're not. A <b>job</b> is a prompt plus a schedule; your OS runs
     <code class="ic">oshell jobs tick</code> once a minute (launchd, systemd
@@ -1181,6 +1181,14 @@ single safest next command. Consult machine memory first.</pre></div>
       <p>The model may schedule its own follow-ups (<code>schedule_followup</code>):
       "check the build again in 30 minutes" becomes a one-shot child job. That
       isn't gated — whatever the follow-up does is still subject to approvals.</p>
+      <p><b>Standing orders</b> are the closest thing to a drive, and they're a
+      text file: <code>~/.oshell/orders.md</code>, one outcome per line, tagged
+      <code>[high]</code> / <code>[low]</code>. One hourly job reads the list plus
+      what it found last time, checks what's due, and reports only what changed.
+      The agent can't invent work that isn't on the list. <b>Watches</b> fire on
+      events instead of a clock: the minute-tick rescans a path and the agent wakes
+      only when files changed and <em>settled</em> — so a build still writing isn't
+      "finished".</p>
     </div></details>
     <details class="edge"><summary>⚑ edge cases &amp; flags</summary><div class="inner">
       <ul>
@@ -1190,6 +1198,9 @@ single safest next command. Consult machine memory first.</pre></div>
         <li><code>oshell jobs run NAME</code> runs one now in the foreground and still files the note. <code>oshell jobs install --dry-run</code> shows the plist / units / schtasks line before anything is written.</li>
         <li>Prompts may be your custom commands: <code>oshell jobs add standup --cron "0 9 * * 1-5" "/standup"</code>.</li>
         <li>Notes are JSON files in <code>~/.oshell/inbox/</code>; <code>oshell inbox clear</code> keeps ones with pending actions unless <code>--all</code>.</li>
+        <li>Read-only shell commands (<code>df</code>, <code>du</code>, <code>ls</code>, <code>ps</code>, <code>git status</code>, <code>docker ps</code>…) run unattended; unknown binaries, <code>sudo</code>, redirects and mutating subcommands are queued instead.</li>
+        <li><code>oshell orders install [--every 1h]</code> creates the orders job; <code>oshell orders add "…" --priority high</code>, <code>rm N</code>, <code>edit</code>, <code>check</code>. High = every wake, normal = when stale (~4h), low = ~daily; anything marked <em>attention</em> is re-checked every wake.</li>
+        <li><code>oshell jobs watch NAME PATH "prompt" --pattern '*.dmg' --on created --settle 30 --recursive</code>. A new watch baselines first, so existing files don't fire. The model can create one with <code>watch_path</code>.</li>
       </ul>
     </div></details>
     <div class="ex" role="group" aria-label="Try it for real: chapter 19">
@@ -1198,6 +1209,8 @@ single safest next command. Consult machine memory first.</pre></div>
       <label><input type="checkbox" data-ex="ch19-install"> <code>oshell jobs install</code>, then come back tomorrow and read the inbox</label>
       <label><input type="checkbox" data-ex="ch19-approve"> Approve (or dismiss) one proposed action from a note</label>
       <label><input type="checkbox" data-ex="ch19-followup"> Ask the model in chat to "check on this again in an hour" and watch a follow-up appear in <code>oshell jobs</code></label>
+      <label><input type="checkbox" data-ex="ch19-orders"> Write two standing orders you mean, <code>oshell orders install</code>, then <code>oshell orders check</code></label>
+      <label><input type="checkbox" data-ex="ch19-watch"> Put a watch on your Downloads folder and drop a file in it</label>
     </div>
   </section>
 </main>
@@ -1899,8 +1912,22 @@ single safest next command. Consult machine memory first.</pre></div>
         ASK('Run it? [y/N] ', 'y', 900),
         L("✓ Total reclaimed space: 14.2GB",'o-ok',380),
       ]},
+      { ps:'$', cmd:'oshell orders add "Tell me if anything new is listening on a network port" && oshell orders install', out:[
+        L("✓ #2 [normal] Tell me if anything new is listening on a network port",'o-ok',360),
+        L("✓ orders job · every 1h · file: ~/.oshell/orders.md",'o-ok',300),
+      ]},
+      { ps:'$', cmd:'oshell orders', out:[
+        L("✓ <b>1.</b> [high] Keep the main disk under 80% used… — <i>ok 40m ago</i>: 62% used",'',300),
+        L("⚠ <b>2.</b> Tell me if anything new is listening… — <i>attention 40m ago</i>: :8080 (python) appeared",'',300),
+        L("· <b>3.</b> [low] Once a day, mention any service… — <i>ok 19h ago</i>: no changes",'',300),
+        L("orders job: every 1h · next 12:00 (in 20m) · runs 6",'o-dim',260),
+      ]},
+      { ps:'$', cmd:'oshell jobs watch release ~/builds "is the release build good? summarize the log" --pattern "*.dmg" --settle 30', out:[
+        L("✓ release · watch ~/builds *.dmg · rescans 1m",'o-ok',360),
+        L("(fires only when a .dmg appears and stops changing for 30s — the change list goes into the prompt)",'o-dim',320),
+      ]},
       { ps:'$', cmd:'oshell tui', out:[
-        L("<span class='o-acc'> ❯ oshell </span> 1  2  3  4  gemma4:26b · ollama │ ⚙ 32 ● local │ ▣ ▱▱▱▱▱ 2% │ ▶ auto        <span class='o-warn'>✉ 1</span> │ ☾ rain │ tokyo-night │ ◔ 11:04",'',420),
+        L("<span class='o-acc'> ❯ oshell </span> 1  2  3  4  gemma4:26b · ollama │ ⚙ 33 ● local │ ▣ ▱▱▱▱▱ 2% │ ▶ auto        <span class='o-warn'>✉ 1</span> │ ☾ rain │ tokyo-night │ ◔ 11:04",'',420),
         L("the inbox lights up in the bar when a run left something for you · /inbox · menu → Inbox",'o-dim',320),
       ]},
     ]},

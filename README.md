@@ -478,6 +478,45 @@ and reports to the inbox. Scheduling itself isn't gated, because whatever the
 follow-up does is subject to the same approvals as any other run. `list_jobs`
 and `cancel_job` round it out; `{"jobs":{"tools":false}}` removes them.
 
+**Standing orders — the closest thing to a drive, and it's a text file.**
+`~/.oshell/orders.md` lists outcomes you want kept true, one per line, tagged
+`[high]`, `[normal]` or `[low]`:
+
+```markdown
+- [high] Keep the main disk under 80% used; warn me at 75% and say what grew.
+- Tell me if anything new is listening on a network port.
+- [low] Once a day, mention any launchd/systemd service that appeared or vanished.
+```
+
+`oshell orders install` creates one job that wakes hourly, reads the list plus
+**what it found last time** (`orders.state.json`), decides which orders are due
+(high: every wake · normal: when stale · low: about daily · anything marked
+*attention*: always), checks them with read-only tools, and reports only what
+changed. The report ends in a `STATUS` block the agent writes for its future
+self; you never see it, you see `oshell orders`:
+
+```
+✓ 1. [high] Keep the main disk under 80% …  — ok 40m ago: 62% used
+⚠ 2. Tell me if anything new is listening …  — attention 40m ago: :8080 (python) appeared
+· 3. [low] Once a day, mention any service …  — ok 19h ago: no changes
+```
+
+`oshell orders add "…" --priority high`, `rm N`, `edit`, `check` (run now). The
+agent can't invent work that isn't on the list — that's the point of the file.
+
+**File watches — fire on events, not on a clock.**
+
+```bash
+oshell jobs watch release ~/builds "is the release build good? summarize the log" --pattern '*.dmg' --settle 30
+```
+
+The minute-tick rescans the path (a directory listing, microseconds) and the
+agent wakes only when files were created, modified or deleted **and have
+settled** — unchanged for `--settle` seconds, so a build still writing isn't
+reported as finished. The change list goes into the prompt. `--on
+created|modified|deleted`, `--recursive`, and a `watch_path` tool so the model
+can set one up itself: *"tell me when the ISO in ~/Downloads finishes"*.
+
 ## Guardrails — trust infrastructure for an agent with a shell
 
 - **Approval modes.** `{"approvals": "ask"}` (or `/approvals ask`) makes every

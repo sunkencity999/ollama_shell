@@ -566,6 +566,20 @@ class OllamaShellTUI(App):
         self._inbox_ticks = 0  # recount on the next bar refresh
         self._refresh_bar()
 
+    def _menu_orders(self) -> None:
+        from .. import orders as orders_mod
+
+        jc = self.agent.config.jobs
+        items = orders_mod.load_orders(jc.orders_path)
+        state = orders_mod.load_state(jc.orders_state)
+        convo = self._conversation()
+        convo.write("[b]📋 Standing orders[/b]")
+        convo.write(Markdown(orders_mod.render(items, state)))
+        convo.write(
+            f"[dim]  file: {escape(str(orders_mod.orders_path(jc.orders_path)))} · "
+            "oshell orders add \"…\" · oshell orders install[/dim]"
+        )
+
     def _menu_jobs(self) -> None:
         from .. import schedule
 
@@ -1084,6 +1098,8 @@ class OllamaShellTUI(App):
             self.action_inbox()
         elif choice == "jobs":
             self._menu_jobs()
+        elif choice == "orders":
+            self._menu_orders()
         elif choice == "keys":
             self.action_show_keys()
         elif choice == "help":
@@ -1562,6 +1578,9 @@ class OllamaShellTUI(App):
             return True
         if cmd == "jobs":
             self._menu_jobs()
+            return True
+        if cmd == "orders":
+            self._menu_orders()
             return True
         if cmd == "screensaver":
             self._start_screensaver()

@@ -46,6 +46,7 @@ MENU_SECTIONS: list[tuple[str, list[tuple[str, str, str]]]] = [
         [
             ("inbox", "Inbox", "Notes & proposed actions from scheduled runs"),
             ("jobs", "Scheduled jobs", "What runs while you're away"),
+            ("orders", "Standing orders", "Outcomes the agent keeps true for you"),
             ("memory", "Memory", "View what the assistant remembers"),
             ("knowledge", "Knowledge base", "How to store & recall local notes"),
             ("daydream", "Daydream", "Let the model wander and free-associate 💭"),

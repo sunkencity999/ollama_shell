@@ -22,6 +22,7 @@ SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/keys", "this overlay"),
     ("/inbox", "notes & proposed actions from scheduled runs"),
     ("/jobs", "what runs while you're away"),
+    ("/orders", "standing orders and their last findings"),
     ("/clear", "new conversation"),
     ("/daydream", "let the model wander 💭"),
     ("/route [on|off]", "automatic model routing"),

@@ -30,6 +30,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from . import inbox
+from . import orders as orders_mod
+from . import watch as watch_mod
 from .config import Config
 
 DEFAULT_DIR = "~/.oshell/jobs"
@@ -187,10 +189,21 @@ class Job:
     next_run: float | None = None
     runs: int = 0
     last_status: str = ""
+    # prompt (default) · orders (re-read ~/.oshell/orders.md each wake) ·
+    # watch (fires only when the watched path changed — see oshell.watch)
+    kind: str = "prompt"
+    watch: dict | None = None
 
     def __post_init__(self) -> None:
         if not _NAME_RE.match(self.name):
             raise ValueError("job names are lowercase letters, digits, '-' and '_'")
+        if self.kind not in ("prompt", "orders", "watch"):
+            raise ValueError("kind must be prompt, orders or watch")
+        if self.kind == "watch":
+            if not self.watch:
+                raise ValueError("a watch job needs a watch spec (path, pattern, event, settle)")
+            watch_mod.WatchSpec.from_dict(self.watch)  # validates
+            self.every = self.every or "1m"
         if not (self.every or self.cron or self.at):
             raise ValueError("a job needs a schedule: every / cron / at")
         if self.every:
@@ -205,6 +218,8 @@ class Job:
 
     @property
     def schedule(self) -> str:
+        if self.kind == "watch" and self.watch:
+            return watch_mod.WatchSpec.from_dict(self.watch).describe()
         if self.every:
             return f"every {self.every}"
         if self.cron:
@@ -282,6 +297,12 @@ def add_job(job: Job, directory: str | Path | None = None, replace: bool = False
     return job
 
 
+def _slug_tail(path: str) -> str:
+    """'~/builds/release' → 'release' (for auto-named watch jobs)."""
+    tail = Path(path).expanduser().name or "path"
+    return re.sub(r"[^a-z0-9_-]+", "-", tail.lower()).strip("-") or "path"
+
+
 def unique_name(base: str, directory: str | Path | None = None) -> str:
     slug = re.sub(r"[^a-z0-9_-]+", "-", base.lower()).strip("-")[:40] or "followup"
     name, n = slug, 2
@@ -292,8 +313,23 @@ def unique_name(base: str, directory: str | Path | None = None) -> str:
 
 
 def due_jobs(now: float | None = None, directory: str | Path | None = None) -> list[Job]:
+    """Jobs to run now. Watch jobs are 'due' only when their path changed."""
     now = now if now is not None else time.time()
-    return [j for j in list_jobs(directory) if j.is_due(now)]
+    out: list[Job] = []
+    for j in list_jobs(directory):
+        if not j.is_due(now):
+            continue
+        if j.kind == "watch":
+            spec = watch_mod.WatchSpec.from_dict(j.watch or {})
+            changes = watch_mod.check(j.name, spec, jobs_dir(directory), now)
+            if not changes:
+                # Nothing happened: rescan next interval; not a run.
+                j.next_run = now + parse_interval(j.every or "1m")
+                save_job(j, directory)
+                continue
+            j.pending_changes = changes  # type: ignore[attr-defined]
+        out.append(j)
+    return out
 
 
 # ── running ──────────────────────────────────────────────────────────────────
@@ -387,6 +423,25 @@ def run_job(
         rendered = custom.render(head, rest)
         if rendered is not None:
             prompt = rendered
+    orders_now: list[orders_mod.Order] = []
+    orders_state: orders_mod.State | None = None
+    if job.kind == "orders":
+        orders_now = orders_mod.load_orders(config.jobs.orders_path)
+        orders_state = orders_mod.load_state(config.jobs.orders_state)
+        if not orders_now:
+            return RunResult(job=job, note=None, status="skipped", error="no standing orders")
+        prompt = orders_mod.build_prompt(orders_now, orders_state)
+    elif job.kind == "watch":
+        changes = getattr(job, "pending_changes", None)
+        if changes is None:  # run by hand: rescan so there's something to say
+            spec = watch_mod.WatchSpec.from_dict(job.watch or {})
+            changes = watch_mod.check(job.name, spec, jobs_dir(directory))
+        spec = watch_mod.WatchSpec.from_dict(job.watch or {})
+        listing = watch_mod.describe_changes(changes) if changes else "(no changes detected)"
+        prompt = (
+            f"{prompt}\n\nWatched path: {spec.path}\n"
+            f"Files changed since the last check (settled ≥{spec.settle}s):\n{listing}"
+        )
     t0 = time.monotonic()
     CURRENT_JOB = job.name
     try:
@@ -415,6 +470,10 @@ def run_job(
                 timed_out = True
                 break
         body = answer.strip() or "(the model returned no report)"
+        if job.kind == "orders" and orders_state is not None:
+            orders_mod.apply_report(orders_now, orders_state, body)
+            orders_mod.save_state(orders_state, config.jobs.orders_state)
+            body = orders_mod.strip_status_block(body) or body
         if hit_limit:
             body += f"\n\n_stopped at the {job.max_iterations}-round tool budget_"
         if timed_out:
