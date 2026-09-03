@@ -78,4 +78,4 @@ def test_init_snippets_cover_the_four_features(shell):
     themed = shellinit.snippet(shell, prompt=True)
     assert len(themed) > len(s) and "OSHELL_ACCENT" in themed
     with pytest.raises(ValueError):
-        shellinit.snippet("powershell")
+        shellinit.snippet("cmd")

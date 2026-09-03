@@ -1422,13 +1422,20 @@ async def test_inbox_lights_the_bar_and_renders_in_chat(tmp_path):
         bar = app.query_one("#statusbar")
         assert bar.state.inbox == 1 and bar.state.pending == 1
         assert "1 to approve" in bar.text
+        # /inbox opens the inbox screen; Enter reads the note into the chat.
+        from oshell.tui.presence import InboxScreen
+
         assert app._handle_slash_command("/inbox") is True
+        await pilot.pause()
+        assert isinstance(app.screen, InboxScreen)
+        await pilot.press("enter")
         await pilot.pause()
         text = _convo_text(app)
         assert "Disk at 91%" in text and "docker system prune -af" in text
-        assert "oshell inbox approve" in text
         # Reading marks the note read; the pending proposal keeps it lit.
         assert inbox.unread_count(cfg.jobs.inbox_dir) == 0
+        await pilot.press("escape")
+        await pilot.pause()
         app._menu_jobs()
         await pilot.pause()
         assert "No scheduled jobs" in _convo_text(app)

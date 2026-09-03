@@ -156,7 +156,13 @@ def parse_colors_toml(text: str) -> dict[str, str]:
             raise ValueError(f"not a colors.toml: {exc}") from exc
     else:  # pragma: no cover - 3.10 only
         data = {}
-        for m in re.finditer(r'^\s*([A-Za-z_][\w]*)\s*=\s*"([^"]*)"', text, re.M):
+        line_re = re.compile(r'^\s*([A-Za-z_][\w]*)\s*=\s*"([^"]*)"\s*(#.*)?$')
+        for raw in text.splitlines():
+            if not raw.strip() or raw.lstrip().startswith("#"):
+                continue
+            m = line_re.match(raw)
+            if not m:
+                raise ValueError(f"not a colors.toml: can't parse line {raw.strip()!r}")
             data[m.group(1)] = m.group(2)
     return {k: v for k, v in data.items() if isinstance(v, str)}
 
